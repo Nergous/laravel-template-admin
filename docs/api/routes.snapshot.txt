@@ -2,6 +2,7 @@
   ANY             / .......................................................... Illuminate\Routing › RedirectController
   GET|HEAD        admin ....................................... admin.dashboard › Admin\AdminDashboardController@index
   GET|HEAD        admin/activity-log ............... admin.activity-log.index › Admin\AdminActivityLogController@index
+  DELETE          admin/activity-log ............... admin.activity-log.clear › Admin\AdminActivityLogController@clear
   GET|HEAD        admin/bot-messages ................ admin.bot-messages.index › Admin\AdminBotMessageController@index
   PUT             admin/bot-messages/{code} ....... admin.bot-messages.update › Admin\AdminBotMessageController@update
   DELETE          admin/bot-messages/{code} ....... admin.bot-messages.reset › Admin\AdminBotMessageController@destroy
@@ -47,5 +48,5 @@
   GET|HEAD        storage/{path} ....................................................................... storage.local
   GET|HEAD        up ................................................................................................. 
 
-                                                                                                   Showing [47] routes
+                                                                                                   Showing [48] routes
 

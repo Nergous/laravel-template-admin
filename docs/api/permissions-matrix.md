@@ -74,7 +74,8 @@
 
 | Метод     | URI                                             | Право маршрута | Право действия                                       | Примечания                                |
 | --------- | ----------------------------------------------- | -------------- | ---------------------------------------------------- | ----------------------------------------- |
-| GET       | `/roles`, `/roles/create`, `/roles/{role}/edit` | `roles.view`   | —                                                    | список / формы                            |
+| GET       | `/roles`                                        | `roles.view`   | —                                                    | список                                    |
+| GET       | `/roles/create`, `/roles/{role}`, `/roles/{role}/edit` | `roles.view`   | —                                             | заглушки-редиректы на index (формы — дровер) |
 | POST      | `/roles`                                        | `roles.view`   | **`roles.create`**                                   | `RoleRequest`                             |
 | PUT/PATCH | `/roles/{role}`                                 | `roles.view`   | **`roles.edit`** (+ только админ для системной роли) | `RoleRequest`                             |
 | DELETE    | `/roles/{role}`                                 | `roles.delete` | —                                                    | нельзя системную / назначенную роль → 422 |
@@ -101,10 +102,11 @@
 
 ### Activity Log / Settings
 
-| Метод | URI             | Право маршрута      | Право действия | Примечания                                             |
-| ----- | --------------- | ------------------- | -------------- | ------------------------------------------------------ |
-| GET   | `/activity-log` | `activity-log.view` | —              | журнал                                                 |
-| GET   | `/settings`     | `settings.view`     | —              | —                                                      |
+| Метод  | URI             | Право маршрута        | Право действия | Примечания                                             |
+| ------ | --------------- | --------------------- | -------------- | ------------------------------------------------------ |
+| GET    | `/activity-log` | `activity-log.view`   | —              | журнал                                                 |
+| DELETE | `/activity-log` | `activity-log.delete` | —              | очистка журнала до даты `before` (события раньше — удаляются) |
+| GET    | `/settings`     | `settings.view`       | —              | —                                                      |
 | PUT   | `/settings`     | `settings.edit`     | —              | `UpdateSettingsRequest` (правила из `Setting::SCHEMA`) |
 
 ### Bot Messages (модуль под `bot.enabled`)

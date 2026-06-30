@@ -11,6 +11,18 @@ use Spatie\Permission\PermissionRegistrar;
 abstract class TestCase extends BaseTestCase
 {
     /**
+     * The test suite runs pure PHP (no `npm run build`), so the Vite manifest is
+     * absent. Stub Vite out globally — `@vite` in admin.blade.php would otherwise
+     * throw ViteManifestNotFoundException on every Inertia full-page render.
+     */
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->withoutVite();
+    }
+
+    /**
      * Seeds base roles and permissions (admin/operator + all permissions).
      */
     protected function seedRolesAndPermissions(): void

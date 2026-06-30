@@ -1,20 +1,20 @@
 # syntax=docker/dockerfile:1.7
 
 # =============================================================================
-#  Laravel Admin Template — multi-stage образ.
+#  Laravel Admin Template — multi-stage image.
 #
-#  Runtime: FrankenPHP (Caddy + PHP-FPM в одном процессе, опц. worker-режим).
-#  Стадии:  vendor  → composer-зависимости (без dev)
-#           assets  → сборка фронта (Vite/Vue)
-#           base    → общий runtime с PHP-расширениями
-#           prod    → финальный образ (по умолчанию)
-#           dev     → образ для разработки (с dev-зависимостями, без сборки)
+#  Runtime: FrankenPHP (Caddy + PHP-FPM in one process, optional worker mode).
+#  Stages:  vendor  → composer dependencies (without dev)
+#           assets  → frontend build (Vite/Vue)
+#           base    → shared runtime with PHP extensions
+#           prod    → final image (default)
+#           dev     → development image (with dev dependencies, no build)
 #
-#  Сборка:  docker build --target prod -t laravel-admin .
+#  Build:   docker build --target prod -t laravel-admin .
 #           docker build --target dev  -t laravel-admin:dev .
 # =============================================================================
 
-# ---------- composer vendor (prod, без dev-зависимостей) ----------
+# ---------- composer vendor (prod, without dev dependencies) ----------
 FROM composer:2 AS vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
@@ -22,7 +22,7 @@ RUN composer install \
         --no-dev --no-interaction --no-scripts \
         --prefer-dist --no-autoloader
 
-# ---------- vite build (фронт) ----------
+# ---------- vite build (frontend) ----------
 FROM node:20-alpine AS assets
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -32,16 +32,16 @@ COPY resources ./resources
 COPY public ./public
 RUN npm run build
 
-# ---------- base runtime (общая основа для prod и dev) ----------
+# ---------- base runtime (shared base for prod and dev) ----------
 FROM dunglas/frankenphp:php8.4-alpine AS base
 
-# Расширения под весь спектр БД/драйверов, которые поддерживает проект:
-#   pdo_mysql  — MySQL/MariaDB (дефолт стека)
+# Extensions covering the full range of DBs/drivers the project supports:
+#   pdo_mysql  — MySQL/MariaDB (stack default)
 #   pdo_pgsql  — PostgreSQL
-#   pdo_sqlite — SQLite (дефолт .env.example, тесты)
-#   redis      — кэш/сессии/очереди
-#   gd         — оптимизация изображений (ImageOptimizer -> WebP)
-#   intl       — локализация (проект RU)
+#   pdo_sqlite — SQLite (.env.example default, tests)
+#   redis      — cache/sessions/queues
+#   gd         — image optimization (ImageOptimizer -> WebP)
+#   intl       — localization (RU project)
 #   bcmath/pcntl/opcache/zip/mbstring — Laravel runtime + queue worker
 RUN install-php-extensions \
         pdo_mysql \
@@ -56,12 +56,12 @@ RUN install-php-extensions \
         mbstring \
         opcache
 
-# composer нужен для dump-autoload по финальным путям (prod) и установки в dev
+# composer is needed for dump-autoload against the final paths (prod) and for installing in dev
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 
-# Непривилегированный пользователь приложения (uid/gid 1000 — совместимо с bind-mount).
-# Образ FrankenPHP уже содержит www-data; задаём ему предсказуемый uid и право
-# биндить привилегированные порты не требуется — слушаем :8000.
+# Unprivileged application user (uid/gid 1000 — compatible with bind-mount).
+# The FrankenPHP image already contains www-data; we give it a predictable uid, and the
+# right to bind privileged ports isn't needed — we listen on :8000.
 RUN set -eux; \
     apk add --no-cache shadow su-exec; \
     usermod -u 1000 www-data 2>/dev/null || true; \
@@ -74,36 +74,36 @@ COPY docker/Caddyfile    /etc/frankenphp/Caddyfile
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# FrankenPHP слушает на этом порту (переопределяется через SERVER_NAME в compose)
+# FrankenPHP listens on this port (overridden via SERVER_NAME in compose)
 ENV SERVER_NAME=":8000"
 EXPOSE 8000
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]
 
-# ---------- dev (bind-mount кода, dev-зависимости, без предсборки) ----------
+# ---------- dev (code bind-mount, dev dependencies, no pre-build) ----------
 FROM base AS dev
 ENV APP_ENV=local
-# Код монтируется bind-mount'ом из compose.dev.yaml; vendor/build ставятся
-# на месте через entrypoint при первом запуске. Entrypoint стартует от root
-# (chown bind-mount/томов), затем понижает привилегии до www-data через su-exec.
+# The code is mounted via bind-mount from compose.dev.yaml; vendor/build are installed
+# in place by the entrypoint on the first run. The entrypoint starts as root
+# (chown bind-mount/volumes), then drops privileges to www-data via su-exec.
 
-# ---------- prod (финальный самодостаточный образ) ----------
+# ---------- prod (final self-contained image) ----------
 FROM base AS prod
 ENV APP_ENV=production
 
-# Копируем приложение и артефакты стадий сборки
+# Copy the application and the build-stage artifacts
 COPY . /app
 COPY --from=vendor /app/vendor       /app/vendor
 COPY --from=assets /app/public/build /app/public/build
 
-# Авторитативный classmap по финальным путям + права на storage/cache
+# Authoritative classmap against the final paths + permissions on storage/cache
 RUN set -eux; \
     composer dump-autoload --optimize --classmap-authoritative --no-dev; \
     mkdir -p storage/framework/cache storage/framework/sessions \
              storage/framework/views storage/logs bootstrap/cache; \
     chown -R www-data:www-data /app
 
-# Контейнер стартует от root для chown смонтированного storage-тома на первом
-# запуске; entrypoint.sh затем понижает привилегии до www-data (su-exec) перед
-# запуском FrankenPHP/worker. См. docker/entrypoint.sh.
+# The container starts as root to chown the mounted storage volume on the first
+# run; entrypoint.sh then drops privileges to www-data (su-exec) before
+# starting FrankenPHP/worker. See docker/entrypoint.sh.

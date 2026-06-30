@@ -1,20 +1,20 @@
 # =============================================================================
-#  DEV-стек с hot-reload: bind-mount кода + Vite dev server + queue + БД.
+#  DEV stack with hot-reload: code bind-mount + Vite dev server + queue + DB.
 #
-#  Запуск:
-#    cp .env.example .env        # APP_ENV=local, APP_DEBUG=true (дефолты подходят)
+#  Run:
+#    cp .env.example .env        # APP_ENV=local, APP_DEBUG=true (the defaults are fine)
 #    docker compose -f compose.dev.yaml up --build
 #
-#  Что внутри:
-#    app   — FrankenPHP отдаёт Laravel на http://localhost:8000, код смонтирован
-#            bind-mount'ом (правки PHP подхватываются: opcache validate_timestamps=1).
-#    vite  — Vite dev server (HMR) на http://localhost:5173.
-#    queue — queue:listen (перечитывает код на каждой задаче, удобно в dev).
-#    db    — MariaDB (или используйте SQLite: DB_CONNECTION=sqlite в .env, тогда
-#            сервис db можно не запускать).
+#  What's inside:
+#    app   — FrankenPHP serves Laravel at http://localhost:8000, with the code mounted
+#            via bind-mount (PHP edits are picked up: opcache validate_timestamps=1).
+#    vite  — Vite dev server (HMR) at http://localhost:5173.
+#    queue — queue:listen (re-reads the code on every job, handy in dev).
+#    db    — MariaDB (or use SQLite: DB_CONNECTION=sqlite in .env, in which case the
+#            db service doesn't need to be started).
 #
-#  Первый старт: entrypoint поставит vendor/ автоматически (composer install),
-#  node_modules ставит сервис vite (npm ci) в свой анонимный том.
+#  First start: the entrypoint installs vendor/ automatically (composer install),
+#  node_modules is installed by the vite service (npm ci) into its own anonymous volume.
 # =============================================================================
 
 services:
@@ -29,13 +29,13 @@ services:
     environment:
       APP_ENV: local
       OPTIMIZE: "false"
-      RUN_SEEDS: "true"   # в dev удобно иметь демо-данные
+      RUN_SEEDS: "true"   # in dev it's handy to have demo data
     ports:
       - "8000:8000"
     volumes:
       - .:/app
-      # vendor/ в именованном томе — чтобы не перетирался пустой папкой с хоста
-      # и не конфликтовал с правами Windows.
+      # vendor/ in a named volume — so it isn't clobbered by an empty folder from the host
+      # and doesn't conflict with Windows permissions.
       - vendor-dev:/app/vendor
       - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/zzz-dev.ini:ro
     networks: [internal]
@@ -49,7 +49,7 @@ services:
     working_dir: /app
     command: sh -c "npm ci && npm run dev"
     environment:
-      # Слушать на всех интерфейсах в контейнере, HMR-клиент — на localhost.
+      # Listen on all interfaces inside the container, the HMR client — on localhost.
       VITE_HOST: "0.0.0.0"
       VITE_HMR_HOST: "localhost"
     ports:
@@ -69,7 +69,7 @@ services:
       RUN_MIGRATIONS: "false"
       RUN_SEEDS: "false"
       OPTIMIZE: "false"
-    # queue:listen перечитывает код между задачами — то, что нужно в разработке.
+    # queue:listen re-reads the code between jobs — exactly what you want in development.
     command: php artisan queue:listen --tries=1 --timeout=0
     volumes:
       - .:/app

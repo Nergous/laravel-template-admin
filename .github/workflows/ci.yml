@@ -1,6 +1,6 @@
 name: CI
 
-# Линт, тесты (PHP + Python-бот), сборка фронта, сборка и скан prod-образа.
+# Lint, tests (PHP + Python bot), frontend build, build and scan of the prod image.
 on:
   push:
     branches: [main]
@@ -8,7 +8,7 @@ on:
   pull_request:
     branches: [main]
 
-# Отменяем устаревшие прогоны на одной ветке/PR.
+# Cancel outdated runs on the same branch/PR.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   # --------------------------------------------------------------------------
-  # Стиль кода (Laravel Pint, PSR-12) — падаем при отклонениях.
+  # Code style (Laravel Pint, PSR-12) — fail on deviations.
   # --------------------------------------------------------------------------
   lint-php:
     runs-on: ubuntu-latest
@@ -47,7 +47,7 @@ jobs:
         run: ./vendor/bin/pint --test
 
   # --------------------------------------------------------------------------
-  # PHPUnit на SQLite (:memory:, см. phpunit.xml). Матрица версий PHP.
+  # PHPUnit on SQLite (:memory:, see phpunit.xml). PHP version matrix.
   # --------------------------------------------------------------------------
   test-php:
     runs-on: ubuntu-latest
@@ -85,7 +85,7 @@ jobs:
         run: php artisan test
 
   # --------------------------------------------------------------------------
-  # Сборка фронта (Vite). Артефакт public/build — smoke-test репозитория.
+  # Frontend build (Vite). The public/build artifact is a repo smoke test.
   # --------------------------------------------------------------------------
   build-frontend:
     runs-on: ubuntu-latest
@@ -115,8 +115,8 @@ jobs:
           retention-days: 7
 
   # --------------------------------------------------------------------------
-  # Тесты Python-бота (pytest). Часть тестов ходит в реальную MariaDB —
-  # поднимаем сервис-контейнер. Креды берутся из modules/max-bot/.env.example.
+  # Python bot tests (pytest). Some tests hit a real MariaDB —
+  # we bring up a service container. Credentials come from modules/max-bot/.env.example.
   # --------------------------------------------------------------------------
   test-bot:
     runs-on: ubuntu-latest
@@ -151,8 +151,8 @@ jobs:
         run: pytest
 
   # --------------------------------------------------------------------------
-  # Сборка prod-образа (только на push в main/теги). Кэш слоёв через GHA.
-  # Образ выгружается артефактом для джоба scan.
+  # Build the prod image (only on push to main/tags). Layer cache via GHA.
+  # The image is uploaded as an artifact for the scan job.
   # --------------------------------------------------------------------------
   build-image:
     runs-on: ubuntu-latest
@@ -174,9 +174,9 @@ jobs:
           cache-to: type=gha,mode=max
           outputs: type=docker,dest=/tmp/image.tar
 
-      # --- Публикация в GHCR (опционально) -----------------------------------
-      # Раскомментируйте + добавьте `permissions: packages: write` на уровне job,
-      # чтобы пушить образ в ghcr.io по sha/тегам:
+      # --- Publishing to GHCR (optional) -------------------------------------
+      # Uncomment + add `permissions: packages: write` at the job level
+      # to push the image to ghcr.io by sha/tags:
       # - name: Login to GHCR
       #   uses: docker/login-action@v3
       #   with:
@@ -200,8 +200,8 @@ jobs:
           retention-days: 1
 
   # --------------------------------------------------------------------------
-  # Скан образа: Trivy (HIGH/CRITICAL) + анти-регресс #1 — проверяем, что
-  # в prod-образ не попали .env / *.sqlite (секреты/данные).
+  # Image scan: Trivy (HIGH/CRITICAL) + anti-regression #1 — verify that
+  # no .env / *.sqlite (secrets/data) got into the prod image.
   # --------------------------------------------------------------------------
   scan:
     runs-on: ubuntu-latest
@@ -227,10 +227,10 @@ jobs:
             done
             ls database/*.sqlite *.sqlite >/dev/null 2>&1 && bad="$bad sqlite"
             if [ -n "$bad" ]; then
-              echo "УТЕЧКА: в образ попали чувствительные файлы:$bad"
+              echo "LEAK: sensitive files got into the image:$bad"
               exit 1
             fi
-            echo "OK: .env/*.sqlite в образе не обнаружены"
+            echo "OK: no .env/*.sqlite found in the image"
           '
 
       - name: Trivy scan (HIGH/CRITICAL)

@@ -1,22 +1,22 @@
-/* Утилиты компоновки уровня приложения, общие для страниц админки.
-   Чистая презентация без бизнес-логики; держим отдельно от дизайн-системы
-   (nergous-cit остаётся domain/locale-agnostic). Раньше эти правила были
-   продублированы в scoped-стилях почти каждой страницы. */
+/* Application-level layout utilities shared across the admin pages.
+   Pure presentation with no business logic; kept separate from the design system
+   (nergous-cit stays domain/locale-agnostic). These rules used to be
+   duplicated in the scoped styles of almost every page. */
 
-/* Вертикальная раскладка страницы: колонка с равными отступами. */
+/* Vertical page layout: a column with equal gaps. */
 .page {
     display: flex;
     flex-direction: column;
     gap: 16px;
 }
 
-/* Пагинатор внизу страницы прижат вправо. */
+/* The paginator at the bottom of the page is aligned to the right. */
 .page__pager {
     display: flex;
     justify-content: flex-end;
 }
 
-/* Кластер иконочных действий в строке таблицы. */
+/* A cluster of icon actions in a table row. */
 .row-actions {
     display: flex;
     gap: 4px;
@@ -27,7 +27,7 @@
 .row-actions--end {
     justify-content: flex-end;
 }
-/* Квадратная иконочная кнопка действия (30×30). */
+/* Square icon action button (30×30). */
 .row-actions__btn {
     width: 30px;
     height: 30px;

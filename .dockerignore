@@ -1,4 +1,4 @@
-# --- VCS / IDE / агент-метаданные ---
+# --- VCS / IDE / agent metadata ---
 
 .git
 .gitignore
@@ -7,7 +7,7 @@
 .vscode
 .claude
 
-# --- зависимости/артефакты (ставятся/собираются внутри образа) ---
+# --- dependencies/artifacts (installed/built inside the image) ---
 
 node_modules
 vendor
@@ -15,7 +15,7 @@ public/build
 public/hot
 public/storage
 
-# --- runtime storage (создаётся entrypoint'ом / монтируется томом) ---
+# --- runtime storage (created by the entrypoint / mounted as a volume) ---
 
 storage/app/public/*
 !storage/app/public/.gitkeep
@@ -32,20 +32,20 @@ storage/logs/*
 bootstrap/cache/*
 !bootstrap/cache/.gitkeep
 
-# --- тесты / линтеры (не нужны в prod-образе) ---
+# --- tests / linters (not needed in the prod image) ---
 
 tests
 phpunit.xml
 .phpunit.result.cache
 .editorconfig
 
-# --- секреты / локальные env (в образ не кладём; .env монтируется/задаётся снаружи) ---
+# --- secrets / local env (not put into the image; .env is mounted/provided from outside) ---
 
 .env
 .env.*
 !.env.example
 
-# --- compose / docker-метафайлы (не часть кода приложения) ---
+# --- compose / docker meta-files (not part of the application code) ---
 
 docker-compose.yml
 docker-compose.override.yml
@@ -53,7 +53,7 @@ compose.dev.yaml
 compose.*.yaml
 .dockerignore
 
-# --- БД-файлы / документация / дизайн-исходники ---
+# --- DB files / documentation / design sources ---
 
 *.sqlite
 *.md
@@ -62,12 +62,12 @@ figma
 docs
 design-system
 
-# --- внутренние инструкции агента и отчёты аудита (в prod-образ не нужны) ---
+# --- agent's internal instructions and audit reports (not needed in the prod image) ---
 
 CLAUDE.md
 audit
 
-# --- Модуль Бот ---
+# --- Bot module ---
 
 modules/max-bot/venv
 modules/max-bot/__pycache__

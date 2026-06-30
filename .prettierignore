@@ -1,9 +1,9 @@
-# Сборка и зависимости
+# Build and dependencies
 public/build
 node_modules
 vendor
 
-# Не форматируем PHP/Blade/доки — у них свои инструменты (Pint) и стиль
+# We don't format PHP/Blade/docs — they have their own tools (Pint) and style
 *.php
 *.blade.php
 *.md

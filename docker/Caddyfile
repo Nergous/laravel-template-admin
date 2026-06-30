@@ -1,26 +1,26 @@
 # =============================================================================
-#  FrankenPHP / Caddy конфиг для Laravel Admin Template.
+#  FrankenPHP / Caddy config for the Laravel Admin Template.
 #
-#  SERVER_NAME задаётся через окружение (по умолчанию ":8000" из Dockerfile).
-#  За reverse-proxy (nginx/traefik) терминирующим TLS — оставляем HTTP на :8000,
-#  trustProxies уже настроен в bootstrap/app.php.
+#  SERVER_NAME is set via the environment (default ":8000" from the Dockerfile).
+#  Behind a reverse proxy (nginx/traefik) terminating TLS — we keep HTTP on :8000,
+#  trustProxies is already configured in bootstrap/app.php.
 #
-#  Worker-режим (опционально, выше throughput): раскомментируйте `worker`-строку
-#  и задайте FRANKENPHP_CONFIG="worker ./public/index.php" — но он держит
-#  состояние между запросами, требует worker-совместимого кода. Для шаблона по
-#  умолчанию выключен (classic mode, безопасен для любого Laravel-приложения).
+#  Worker mode (optional, higher throughput): uncomment the `worker` line
+#  and set FRANKENPHP_CONFIG="worker ./public/index.php" — but it keeps
+#  state between requests and requires worker-compatible code. For the template it is
+#  off by default (classic mode, safe for any Laravel application).
 # =============================================================================
 
 {
-	# Caddy admin API выключаем — в контейнере не нужен.
+	# Disable the Caddy admin API — not needed in the container.
 	admin off
 
-	# Уровень логов управляется снаружи; здесь только формат.
+	# The log level is controlled from outside; only the format here.
 	frankenphp {
 		# worker ./public/index.php
 	}
 
-	# За внешним TLS-прокси автоматический HTTPS Caddy не нужен.
+	# Behind an external TLS proxy, Caddy's automatic HTTPS is not needed.
 	auto_https off
 }
 
@@ -28,30 +28,30 @@
 	root * /app/public
 	encode zstd br gzip
 
-	# Загруженные медиа (/storage → symlink на storage/app/public) отдаём СТРОГО
-	# как статику: этот handle не доходит до php_server, поэтому ни один файл под
-	# /storage не исполняется как PHP (эшелонированная защита к S1 — даже если на
-	# диск попадёт .php). nosniff запрещает браузеру угадывать тип (txt→html), а
-	# Content-Disposition: attachment заставляет скачивать, а не рендерить при
-	# прямой навигации (нейтрализует stored-XSS из .html/.svg). На инлайн-картинки
-	# в админке не влияет: лайтбокс/превью грузят их через <img> (subresource —
-	# Content-Disposition игнорируется), а не-изображения UI и так открывает/качает.
+	# Uploaded media (/storage → symlink to storage/app/public) is served STRICTLY
+	# as static: this handle never reaches php_server, so no file under
+	# /storage is executed as PHP (defense-in-depth for S1 — even if a .php ends up
+	# on disk). nosniff stops the browser from guessing the type (txt→html), and
+	# Content-Disposition: attachment forces a download rather than rendering on
+	# direct navigation (neutralizes stored-XSS from .html/.svg). It doesn't affect inline
+	# images in the admin: the lightbox/preview load them via <img> (a subresource —
+	# Content-Disposition is ignored), and non-images the UI opens/downloads anyway.
 	@storage path /storage/*
 	handle @storage {
 		header X-Content-Type-Options nosniff
 		header Content-Disposition attachment
-		# Ограничивающий per-response CSP: даже если файл всё же отрендерится,
-		# sandbox + default-src 'none' гасят скрипты/формы/плагины (S8 — песочница
-		# для пользовательского контента, дополняет nosniff/attachment из S1).
+		# A restrictive per-response CSP: even if the file does get rendered,
+		# sandbox + default-src 'none' kill scripts/forms/plugins (S8 — a sandbox
+		# for user content, complementing nosniff/attachment from S1).
 		header Content-Security-Policy "default-src 'none'; sandbox"
 		file_server
 	}
 
-	# Остальной трафик: health-check Laravel (/up), ассеты из public/build и SPA —
-	# через PHP.
+	# The rest of the traffic: Laravel health check (/up), assets from public/build and the SPA —
+	# through PHP.
 	handle {
 		php_server {
-			# Перед index.php пробуем отдать существующий файл (ассеты из public/build).
+			# Before index.php, try to serve an existing file (assets from public/build).
 			try_files {path} {path}/ /index.php?{query}
 		}
 	}

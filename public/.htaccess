@@ -5,11 +5,11 @@
 
     RewriteEngine On
 
-    # Эшелонированная защита к S1: загруженные медиа (/storage → symlink на
-    # storage/app/public) — это статика, её нельзя исполнять как код. Запрещаем
-    # прямой доступ к любым скриптовым расширениям под /storage (403), не полагаясь
-    # на конкретный SAPI/handler. Должно идти ДО фронт-контроллера: тот пропускает
-    # существующие файлы (!-f), поэтому реальный /storage/x.php иначе ушёл бы в PHP.
+    # Defense-in-depth for S1: uploaded media (/storage → symlink to
+    # storage/app/public) is static and must not be executed as code. We forbid
+    # direct access to any script extension under /storage (403), without relying
+    # on a specific SAPI/handler. This must come BEFORE the front controller: that one passes
+    # existing files (!-f) through, so a real /storage/x.php would otherwise reach PHP.
     RewriteRule ^storage/.*\.(?i:php[0-9]?|phar|phtml|phps|pht|cgi|pl|py|asp|aspx|jsp|sh)$ - [F]
 
     # Handle Authorization Header
@@ -31,18 +31,18 @@
     RewriteRule ^ index.php [L]
 </IfModule>
 
-# Безопасные заголовки для отдаваемых медиа (/storage): запрет MIME-sniffing и
-# принудительное скачивание вместо рендера — нейтрализует stored-XSS из .html/.svg
-# (S1). Статику /storage отдаёт сам Apache в обход Laravel, поэтому security-
-# заголовки приложения сюда не доходят — задаём их здесь. На инлайн-картинки в
-# админке не влияет (грузятся через <img>, для subresource Content-Disposition
-# игнорируется).
+# Safe headers for served media (/storage): forbid MIME-sniffing and force a
+# download instead of rendering — neutralizes stored-XSS from .html/.svg
+# (S1). Apache serves /storage statically, bypassing Laravel, so the application's
+# security headers don't reach here — we set them here. It doesn't affect inline images
+# in the admin (loaded via <img>; for a subresource Content-Disposition is
+# ignored).
 <IfModule mod_headers.c>
     <If "%{REQUEST_URI} =~ m#^/storage/#">
         Header always set X-Content-Type-Options "nosniff"
         Header always set Content-Disposition "attachment"
-        # Песочница для пользовательского контента (S8): гасит скрипты/формы,
-        # даже если файл всё же отрендерится. Дополняет nosniff/attachment (S1).
+        # A sandbox for user content (S8): kills scripts/forms,
+        # even if the file does get rendered. Complements nosniff/attachment (S1).
         Header always set Content-Security-Policy "default-src 'none'; sandbox"
     </If>
 </IfModule>

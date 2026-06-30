@@ -14,9 +14,9 @@
 
 ## Стек
 
-- **PHP** ^8.2 · **Laravel** ^12
+- **PHP** ^8.4 · **Laravel** ^12
 - **Inertia** ^3 (`inertiajs/inertia-laravel`) · **Vue** ^3.5 — SPA (один Blade-шаблон, остальное во Vue)
-- **Vite** 7 · дизайн-система **nergous-cit** (`resources/js/lib/nergous-cit`, zero-deps Vue-библиотека)
+- **Vite** 7 · дизайн-система **nergous-cit** (`resources/js/lib/nergous-cit`, zero-deps Vue-библиотека) — вендоренный снапшот из отдельного репозитория [`Nergous/nergous-cit`](https://github.com/Nergous/nergous-cit); обновляется командой `npm run ds:pull`
 - **spatie/laravel-permission** ^7 (RBAC)
 - **SQLite** по умолчанию (совместимо с MySQL/MariaDB/PostgreSQL)
 - Очереди: `database` driver — для асинхронной обработки медиа
@@ -28,7 +28,7 @@
 Для пути через [Docker](#docker) ничего из этого не нужно — расширения и версии вшиты
 в образ. Для локального запуска без Docker:
 
-- **PHP** 8.2+ с расширениями `pdo_sqlite` (БД по умолчанию), `gd` со сборкой WebP
+- **PHP** 8.4+ с расширениями `pdo_sqlite` (БД по умолчанию), `gd` со сборкой WebP
   (оптимизация медиа; без неё оригиналы сохраняются без превью — `ImageOptimizer`
   молча отдаёт фолбэк), `mbstring`, `intl`.
 - **Composer** 2.

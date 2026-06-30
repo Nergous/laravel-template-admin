@@ -6,7 +6,8 @@
         "build": "vite build",
         "dev": "vite",
         "format": "prettier --write \"resources/js/**/*.{js,vue}\"",
-        "format:check": "prettier --check \"resources/js/**/*.{js,vue}\""
+        "format:check": "prettier --check \"resources/js/**/*.{js,vue}\"",
+        "ds:pull": "tiged --mode=git --force Nergous/nergous-cit resources/js/lib/nergous-cit"
     },
     "devDependencies": {
         "concurrently": "^9.0.1",

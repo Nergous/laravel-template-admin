@@ -5,6 +5,23 @@ All notable changes to the project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [semantic versioning](https://semver.org/).
 
+## [1.2.2] — 2026-06-30
+
+### Changed
+
+- **Dependencies & toolchain modernized** (batched Dependabot backlog — #22, #23, #24, #25):
+  - **Build:** migrated to **Vite 8** (new Rolldown bundler) + `laravel-vite-plugin` 3, with a
+    re-sync of the vendored `nergous-cit` snapshot so its `package.json` `exports` resolve under
+    Rolldown's stricter resolution. Frontend: `vue` 3.5.39, `@inertiajs/vue3` 3.5.
+  - **PHP:** `spatie/laravel-permission` 7 → **8**; dev tooling `laravel/pint` 1.29.3,
+    `laravel/pail` 1.2.7, `laravel/sail` 1.63, `nunomaduro/collision` 8.9.4, `laravel/tinker` 3.
+  - **Python bot:** `maxapi` 1.2.1, `aiohttp` 3.14.1, `pytest` 9.1.1.
+  - **CI / images:** GitHub Actions majors (checkout 7, upload/download-artifact 7/8,
+    setup-buildx 4, build-push 7, cache 6, setup-node 6, setup-python) — also clears the
+    Node 20 deprecation warnings; Docker assets base image `node:20-alpine` → `node:26-alpine`.
+- **Dependabot** now groups each ecosystem's minor/patch bumps into a single PR (majors stay
+  individual) to cut PR noise.
+
 ## [1.2.1] — 2026-06-30
 
 ### Security
@@ -81,6 +98,7 @@ The first release of the Laravel admin panel template: an Inertia + Vue 3 SPA, t
 nergous-cit design system, RBAC (spatie/laravel-permission), a media library with
 asynchronous processing, an activity log, settings, and an optional bot module.
 
+[1.2.2]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nergous/laravel-template-admin/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Nergous/laravel-template-admin/compare/v1.0.0...v1.1.0

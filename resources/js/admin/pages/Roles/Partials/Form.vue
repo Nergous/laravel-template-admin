@@ -1,22 +1,15 @@
 <script setup>
-import { Link } from "@inertiajs/vue3";
-import {
-    NInput,
-    NTextarea,
-    NCheckbox,
-    NButton,
-    NFormField,
-} from "@/lib/nergous-cit";
+import { NInput, NTextarea, NCheckbox, NFormField } from "@/lib/nergous-cit";
 import { formatDateTime } from "@/lib/format.js";
 
+// Презентационная форма роли для дровера на странице Index. Кнопки сохранения/
+// отмены живёт в футере NDrawer (DrawerFooter), сабмит — на родительской странице.
 const props = defineProps({
-    form: { type: Object, required: true }, // useForm({ name, permissions: [names] })
+    form: { type: Object, required: true }, // useForm({ name, description, permissions: [names] })
     allPermissions: { type: Object, required: true }, // { users:[{id,name}], media:[...], ... }
-    submitLabel: { type: String, default: "Сохранить" },
     // Метаданные роли — только на edit. { created_by, updated_by, created_at, updated_at }.
     meta: { type: Object, default: null },
 });
-const emit = defineEmits(["submit"]);
 
 const GROUP_LABELS = {
     users: "Пользователи",
@@ -35,7 +28,7 @@ function toggle(name, checked) {
 </script>
 
 <template>
-    <form class="rform" @submit.prevent="emit('submit')">
+    <form class="rform" @submit.prevent>
         <NFormField label="Название роли" :error="form.errors.name" required>
             <NInput
                 v-model="form.name"
@@ -124,18 +117,6 @@ function toggle(name, checked) {
                 </div>
             </dl>
         </div>
-
-        <div class="rform__actions">
-            <NButton :as="Link" href="/admin/roles" variant="ghost"
-                >Отмена</NButton
-            >
-            <NButton
-                variant="primary"
-                type="submit"
-                :loading="form.processing"
-                >{{ submitLabel }}</NButton
-            >
-        </div>
     </form>
 </template>
 
@@ -202,11 +183,5 @@ function toggle(name, checked) {
     margin: 0;
     font-weight: 600;
     color: var(--text);
-}
-.rform__actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
 }
 </style>

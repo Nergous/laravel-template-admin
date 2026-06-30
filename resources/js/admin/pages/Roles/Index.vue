@@ -1,6 +1,6 @@
 <script setup>
-import { ref } from "vue";
-import { Link, router } from "@inertiajs/vue3";
+import { ref, computed } from "vue";
+import { router, useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
     NCard,
@@ -9,8 +9,11 @@ import {
     NInput,
     NPagination,
     NEmptyState,
+    NDrawer,
 } from "@/lib/nergous-cit";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
+import DrawerFooter from "@/admin/components/DrawerFooter.vue";
+import RoleForm from "@/admin/pages/Roles/Partials/Form.vue";
 import { useConfirm } from "@/admin/composables/useConfirm.js";
 import { useIndexFilters } from "@/admin/composables/useIndexFilters.js";
 import { can } from "@/lib/can.js";
@@ -20,6 +23,8 @@ import { swatchColor } from "@/lib/swatch.js";
 const props = defineProps({
     roles: { type: Object, required: true },
     permissionsTotal: { type: Number, default: 0 },
+    // Сгруппированные права для матрицы в дровере: { users:[{id,name}], ... }
+    allPermissions: { type: Object, default: () => ({}) },
     filters: { type: Object, default: () => ({}) },
 });
 
@@ -28,6 +33,70 @@ const { reload, onSearch } = useIndexFilters("/admin/roles", () => ({
     search: search.value,
 }));
 
+/* ---------- drawer (create | edit) ---------- */
+const drawerOpen = ref(false);
+const mode = ref("create"); // create | edit
+const editing = ref(null); // полная строка роли при edit
+const form = useForm({ name: "", description: "", permissions: [] });
+
+const drawerTitle = computed(() =>
+    mode.value === "edit" && editing.value ? editing.value.name : "Новая роль",
+);
+const drawerSubtitle = computed(() =>
+    mode.value === "edit" && editing.value
+        ? editing.value.description || "Роль"
+        : "Набор прав доступа",
+);
+// Панель «Сведения» в форме — только на edit.
+const drawerMeta = computed(() =>
+    mode.value === "edit" && editing.value
+        ? {
+              created_by: editing.value.creator_name,
+              updated_by: editing.value.editor_name,
+              created_at: editing.value.created_at,
+              updated_at: editing.value.updated_at,
+          }
+        : null,
+);
+
+function openCreate() {
+    mode.value = "create";
+    editing.value = null;
+    form.clearErrors();
+    form.defaults({ name: "", description: "", permissions: [] });
+    form.reset();
+    drawerOpen.value = true;
+}
+function openEdit(role) {
+    mode.value = "edit";
+    editing.value = role;
+    form.clearErrors();
+    form.defaults({
+        name: role.name,
+        description: role.description ?? "",
+        permissions: [...(role.permission_names ?? [])],
+    });
+    form.reset();
+    drawerOpen.value = true;
+}
+function closeDrawer() {
+    drawerOpen.value = false;
+}
+function submit() {
+    if (mode.value === "edit" && editing.value) {
+        form.put(`/admin/roles/${editing.value.id}`, {
+            preserveScroll: true,
+            onSuccess: closeDrawer,
+        });
+    } else {
+        form.post("/admin/roles", {
+            preserveScroll: true,
+            onSuccess: closeDrawer,
+        });
+    }
+}
+
+/* ---------- delete ---------- */
 const del = useConfirm();
 
 function confirmDelete() {
@@ -53,10 +122,9 @@ function confirmDelete() {
                 </div>
                 <NButton
                     v-if="can('roles.create')"
-                    :as="Link"
-                    href="/admin/roles/create"
                     variant="primary"
                     icon="plus"
+                    @click="openCreate"
                     >Создать</NButton
                 >
             </div>
@@ -73,10 +141,9 @@ function confirmDelete() {
             >
                 <NButton
                     v-if="can('roles.create')"
-                    :as="Link"
-                    href="/admin/roles/create"
                     variant="primary"
                     icon="plus"
+                    @click="openCreate"
                     >Создать роль</NButton
                 >
             </NEmptyState>
@@ -99,16 +166,17 @@ function confirmDelete() {
                                     }"
                                 />
                                 <h2 class="role__name">
-                                    <component
-                                        :is="can('roles.edit') ? Link : 'span'"
-                                        :href="
-                                            can('roles.edit')
-                                                ? `/admin/roles/${role.id}/edit`
-                                                : undefined
-                                        "
+                                    <button
+                                        v-if="can('roles.edit')"
+                                        type="button"
                                         class="role__name-link"
-                                        >{{ role.name }}</component
+                                        @click="openEdit(role)"
                                     >
+                                        {{ role.name }}
+                                    </button>
+                                    <span v-else class="role__name-link">{{
+                                        role.name
+                                    }}</span>
                                 </h2>
                                 <NBadge size="sm">{{
                                     role.is_system ? "системная" : "кастомная"
@@ -170,6 +238,32 @@ function confirmDelete() {
                 </div>
             </template>
         </div>
+
+        <!-- create | edit drawer -->
+        <NDrawer
+            v-model="drawerOpen"
+            :title="drawerTitle"
+            :subtitle="drawerSubtitle"
+            close-label="Закрыть"
+        >
+            <RoleForm
+                :form="form"
+                :all-permissions="allPermissions"
+                :meta="drawerMeta"
+            />
+            <template #footer="{ close }">
+                <DrawerFooter
+                    :loading="form.processing"
+                    @cancel="
+                        () => {
+                            form.reset();
+                            close();
+                        }
+                    "
+                    @save="submit"
+                />
+            </template>
+        </NDrawer>
 
         <ConfirmModal
             :open="del.open"
@@ -235,23 +329,33 @@ function confirmDelete() {
 }
 .role__name-link {
     display: block;
+    width: 100%;
     color: inherit;
     text-decoration: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
-/* Растянутая ссылка: кликабельна вся карточка, но в DOM одна ссылка. */
-a.role__name-link::after {
+button.role__name-link {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+/* Растянутая кнопка: кликабельна вся карточка, но в DOM одна кнопка. */
+button.role__name-link::after {
     content: "";
     position: absolute;
     inset: 0;
     border-radius: var(--radius-lg);
 }
-a.role__name-link:focus-visible {
+button.role__name-link:focus-visible {
     outline: none;
 }
-a.role__name-link:focus-visible::after {
+button.role__name-link:focus-visible::after {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }

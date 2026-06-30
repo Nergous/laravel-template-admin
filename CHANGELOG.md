@@ -5,7 +5,7 @@ All notable changes to the project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.2.1] — 2026-06-30
 
 ### Security
 
@@ -81,6 +81,7 @@ The first release of the Laravel admin panel template: an Inertia + Vue 3 SPA, t
 nergous-cit design system, RBAC (spatie/laravel-permission), a media library with
 asynchronous processing, an activity log, settings, and an optional bot module.
 
+[1.2.1]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nergous/laravel-template-admin/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Nergous/laravel-template-admin/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Nergous/laravel-template-admin/releases/tag/v1.0.0

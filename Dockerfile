@@ -23,7 +23,7 @@ RUN composer install \
         --prefer-dist --no-autoloader
 
 # ---------- vite build (frontend) ----------
-FROM node:20-alpine AS assets
+FROM node:26-alpine AS assets
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci

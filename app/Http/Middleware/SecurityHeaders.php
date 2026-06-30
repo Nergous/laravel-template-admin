@@ -8,28 +8,28 @@ use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Добавляет HTTP security-заголовки ко всем web-ответам.
+ * Adds HTTP security headers to all web responses.
  *
- * - Статические заголовки (X-Frame-Options, nosniff, Referrer-Policy,
- *   X-XSS-Protection, Permissions-Policy) ставятся всегда.
- * - HSTS — только при HTTPS-запросе.
- * - Content-Security-Policy с per-request nonce — только в production:
- *   локальный Vite dev-server/HMR отдаёт скрипты со стороннего origin
- *   (http://localhost:5173, ws://), и строгий script-src 'self' их бы заблокировал.
+ * - Static headers (X-Frame-Options, nosniff, Referrer-Policy,
+ *   X-XSS-Protection, Permissions-Policy) are always set.
+ * - HSTS — only on an HTTPS request.
+ * - Content-Security-Policy with a per-request nonce — only in production:
+ *   the local Vite dev-server/HMR serves scripts from a third-party origin
+ *   (http://localhost:5173, ws://), and a strict script-src 'self' would block them.
  *
- * Nonce генерируется через Vite::useCspNonce() ДО рендера view, поэтому
+ * The nonce is generated via Vite::useCspNonce() BEFORE the view is rendered, so
  *
- * @vite-теги получают его автоматически, а в blade он доступен как
- * {{ \Illuminate\Support\Facades\Vite::cspNonce() }} — единственный inline-скрипт
- * (анти-флэш темы/плотности) в resources/views/admin.blade.php уже помечен им.
+ * @vite tags receive it automatically, and in blade it is available as
+ * {{ \Illuminate\Support\Facades\Vite::cspNonce() }} — the single inline script
+ * (theme/density anti-flash) in resources/views/admin.blade.php is already marked with it.
  */
 class SecurityHeaders
 {
-    /** Прогоняет запрос дальше и навешивает security-заголовки (HSTS/CSP — по условиям). */
+    /** Passes the request through and attaches security headers (HSTS/CSP — conditionally). */
     public function handle(Request $request, Closure $next): Response
     {
-        // Должно выполниться до рендера view, чтобы @vite и {{ Vite::cspNonce() }}
-        // увидели один и тот же nonce.
+        // Must run before the view is rendered so that @vite and {{ Vite::cspNonce() }}
+        // see the same nonce.
         $nonce = Vite::useCspNonce();
 
         $response = $next($request);
@@ -53,13 +53,13 @@ class SecurityHeaders
     }
 
     /**
-     * Собирает строку CSP. script-src использует nonce — инлайн-скрипты без nonce
-     * (в т.ч. инъектированные через XSS) браузер выполнять не будет.
+     * Builds the CSP string. script-src uses the nonce — the browser will not execute
+     * inline scripts without a nonce (including those injected via XSS).
      *
-     * Единственная уступка — style-src 'unsafe-inline': nonce не покрывает
-     * атрибуты style="", а XSS-риск инлайн-стилей низкий.
+     * The only concession is style-src 'unsafe-inline': the nonce does not cover
+     * style="" attributes, and the XSS risk of inline styles is low.
      *
-     * @param  string  $nonce  CSP-nonce этого запроса; подставляется в script-src
+     * @param  string  $nonce  the CSP nonce of this request; substituted into script-src
      */
     protected function contentSecurityPolicy(string $nonce): string
     {

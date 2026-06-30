@@ -29,7 +29,7 @@ class ActivityLogTest extends TestCase
 
     public function test_recent_feed_forbidden_without_activity_log_view(): void
     {
-        $this->actingAsUserWith([]); // аутентифицирован, но без activity-log.view
+        $this->actingAsUserWith([]); // authenticated, but without activity-log.view
 
         $this->getJson(route('admin.notifications.recent'))->assertForbidden();
     }
@@ -45,7 +45,7 @@ class ActivityLogTest extends TestCase
 
     public function test_clear_forbidden_without_delete_permission(): void
     {
-        // Право на просмотр есть, на очистку — нет: гранулярность view ≠ delete.
+        // Has the view permission but not the clear one: granularity of view != delete.
         $this->actingAsUserWith(['activity-log.view']);
 
         $log = ActivityLog::create([
@@ -58,7 +58,7 @@ class ActivityLogTest extends TestCase
         $this->delete(route('admin.activity-log.clear'), ['before' => now()->toDateString()])
             ->assertForbidden();
 
-        // Запрос отклонён — старая запись на месте.
+        // The request is rejected — the old record stays in place.
         $this->assertDatabaseHas('activity_log', ['id' => $log->id]);
     }
 

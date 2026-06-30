@@ -2,16 +2,17 @@
 
 return [
     /*
-    | Имя роли «суперадмин».
+    | The "superadmin" role name.
     |
-    | Это роль с полным доступом: её права заблокированы в матрице (менять нельзя),
-    | её нельзя снять у себя, новые разрешения выдаются ей автоматически. Чтобы
-    | переименовать суперадмина или назначить другую роль — меняется ЗДЕСЬ одно
-    | значение (и сидер пересоздаёт роль под новым именем).
+    | This is the role with full access: its permissions are locked in the matrix
+    | (cannot be changed), it cannot be removed from yourself, and new permissions
+    | are granted to it automatically. To rename the superadmin or assign a different
+    | role, change the single value HERE (and the seeder recreates the role under
+    | the new name).
     |
-    | Не путать с «защищённой» ролью (колонка roles.is_system: нельзя удалить или
-    | переименовать) — ею могут быть несколько ролей (по умолчанию admin и operator).
-    | Суперадмин всегда защищён; обратное не обязательно.
+    | Not to be confused with a "protected" role (the roles.is_system column: cannot
+    | be deleted or renamed) — there can be several such roles (admin and operator
+    | by default). The superadmin is always protected; the reverse is not required.
     */
     'superadmin_role' => env('RBAC_SUPERADMIN_ROLE', 'admin'),
 ];

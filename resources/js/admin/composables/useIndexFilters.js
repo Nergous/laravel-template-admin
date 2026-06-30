@@ -2,21 +2,21 @@ import { onBeforeUnmount } from "vue";
 import { router } from "@inertiajs/vue3";
 
 /**
- * Серверные фильтры списка поверх Inertia: дебаунс-поиск, сортировка, пагинация.
+ * Server-side list filters on top of Inertia: debounced search, sorting, pagination.
  *
- * Инкапсулирует повторяющиеся reload / onSearch (debounce) / onSort и очистку
- * таймера при уходе со страницы — то, что иначе копируется в каждую Index-страницу
- * с таблицей и поиском. Само состояние фильтров (search, role, …) остаётся на
- * странице и приходит сюда снимком через `params()`.
+ * Encapsulates the repetitive reload / onSearch (debounce) / onSort and clearing
+ * the timer when leaving the page — what would otherwise be copied into every Index page
+ * with a table and search. The filter state itself (search, role, …) stays on the
+ * page and arrives here as a snapshot via `params()`.
  *
- * Подходит страницам с дебаунс-поиском (Users, Roles). Страницам с мгновенными
- * фильтрами-чипами (ActivityLog) или клиентским фильтром + поллингом (Media)
- * этот composable не нужен — у них другая модель.
+ * Suits pages with debounced search (Users, Roles). Pages with instant
+ * chip filters (ActivityLog) or a client-side filter + polling (Media)
+ * don't need this composable — they use a different model.
  *
- * @param {string} url — URL ресурса, например "/admin/users"
- * @param {() => Record<string, any>} params — снимок текущих фильтров,
- *        например () => ({ search: search.value, sort: props.currentSort, ... })
- * @param {{ debounce?: number }} [opts] — задержка дебаунса поиска (мс, по умолчанию 300)
+ * @param {string} url — resource URL, e.g. "/admin/users"
+ * @param {() => Record<string, any>} params — snapshot of the current filters,
+ *        e.g. () => ({ search: search.value, sort: props.currentSort, ... })
+ * @param {{ debounce?: number }} [opts] — search debounce delay (ms, default 300)
  * @returns {{ reload: (extra?: object) => void, onSearch: () => void, onSort: (e: {key: string, dir: string}) => void }}
  */
 export function useIndexFilters(url, params, { debounce = 300 } = {}) {
@@ -39,7 +39,7 @@ export function useIndexFilters(url, params, { debounce = 300 } = {}) {
         reload({ sort: key, direction: dir, page: 1 });
     }
 
-    // Не дать отложенному поиску дёрнуть reload() после ухода со страницы.
+    // Prevent a pending search from triggering reload() after leaving the page.
     onBeforeUnmount(() => clearTimeout(timer));
 
     return { reload, onSearch, onSort };

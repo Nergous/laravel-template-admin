@@ -5,8 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Базовые таблицы аутентификации (users, password_reset_tokens, sessions) с
- * доменными расширениями users.
+ * Base authentication tables (users, password_reset_tokens, sessions) with
+ * domain extensions for users.
  */
 return new class extends Migration
 {
@@ -29,9 +29,9 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique('email_active', 'users_email_unique');
-            $table->index('name');        // сортировка списка по имени
-            $table->index('created_at');  // сортировка по дате регистрации
-            $table->index('deleted_at');  // предикат корзины WHERE deleted_at IS NOT NULL (L1)
+            $table->index('name');        // sort the list by name
+            $table->index('created_at');  // sort by registration date
+            $table->index('deleted_at');  // trash predicate WHERE deleted_at IS NOT NULL (L1)
         });
 
         if (! $this->innodbAutoIndexesForeignKeys()) {

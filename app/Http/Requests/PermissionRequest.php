@@ -6,19 +6,19 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Form Request для создания и переименования разрешений.
+ * Form Request for creating and renaming permissions.
  *
- * Имя ограничено латиницей, цифрами и символами . _ - и должно быть уникальным.
+ * The name is restricted to Latin letters, digits and the characters . _ - and must be unique.
  */
 class PermissionRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Доступ к разделу уже закрыт middleware permission:permissions.view на
-        // маршруте (routes/web.php). Здесь — тонкий гейт действия по HTTP-методу:
-        // POST (store) требует permissions.create, PUT/PATCH (update) —
-        // permissions.edit. Это устраняет грубое create || edit, при котором
-        // владелец только edit мог создавать, а владелец только create — редактировать.
+        // Access to the section is already gated by the permission:permissions.view
+        // middleware on the route (routes/web.php). Here — a fine-grained gate of the
+        // action by HTTP method: POST (store) requires permissions.create, PUT/PATCH
+        // (update) — permissions.edit. This eliminates the crude create || edit, under
+        // which an edit-only owner could create, and a create-only owner could edit.
         $permission = $this->isMethod('POST') ? 'permissions.create' : 'permissions.edit';
 
         return $this->user()?->can($permission) === true;

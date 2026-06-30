@@ -11,13 +11,13 @@ use Illuminate\Support\Facades\Hash;
 class UserSeeder extends Seeder
 {
     /**
-     * Наполнение пользователями.
+     * Seeding users.
      *
-     * - production            — только администратор, пароль берётся из env
-     *                           (ADMIN_PASSWORD) и хэшируется. Без пароля аккаунт
-     *                           не создаётся.
-     * - local / прочие среды  — тестовые администратор и оператор с паролем
-     *                           "password123". Не для production.
+     * - production            — only the administrator; the password is taken from env
+     *                           (ADMIN_PASSWORD) and hashed. Without a password the account
+     *                           is not created.
+     * - local / other envs    — test administrator and operator with the password
+     *                           "password123". Not for production.
      */
     public function run(): void
     {
@@ -31,10 +31,10 @@ class UserSeeder extends Seeder
     }
 
     /**
-     * Создаёт администратора по данным из окружения.
+     * Creates the administrator from environment data.
      *
-     * Если ADMIN_PASSWORD не задан — выводит предупреждение и ничего не создаёт,
-     * чтобы не появился аккаунт с известным/пустым паролем.
+     * If ADMIN_PASSWORD is not set — prints a warning and creates nothing,
+     * so that no account with a known/empty password appears.
      */
     private function seedProductionAdmin(): void
     {
@@ -55,7 +55,7 @@ class UserSeeder extends Seeder
     }
 
     /**
-     * Создаёт двух тестовых пользователей. Не использовать в production.
+     * Creates two test users. Do not use in production.
      */
     private function seedTestUsers(): void
     {
@@ -64,11 +64,11 @@ class UserSeeder extends Seeder
     }
 
     /**
-     * Идемпотентно создаёт/обновляет пользователя и назначает роль.
+     * Idempotently creates/updates a user and assigns a role.
      *
-     * Учитывает soft-delete: если пользователь с таким email лежит в корзине —
-     * восстанавливает его (а не падает на UNIQUE при повторном прогоне сидера).
-     * Пароль/имя выставляются только при создании, существующие не перезаписываются.
+     * Accounts for soft delete: if a user with this email is in the trash —
+     * restores it (rather than failing on UNIQUE when the seeder runs again).
+     * Password/name are set only on creation; existing ones are not overwritten.
      */
     private function upsertUser(string $email, string $name, string $password, string $roleName): void
     {
@@ -80,7 +80,7 @@ class UserSeeder extends Seeder
         }
 
         if ($user->trashed()) {
-            $user->restore(); // снимает deleted_at и сохраняет
+            $user->restore(); // clears deleted_at and saves
         } else {
             $user->save();
         }

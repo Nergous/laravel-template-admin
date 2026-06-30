@@ -1,7 +1,7 @@
 /**
- * can(perm) — UI-проверка прав поверх шаренных пропсов Inertia (auth.can).
- * Только для условного рендера; сервер проверяет права независимо (middleware в routes/web.php).
- * Пустой/отсутствующий perm → true (намеренно: для пунктов меню без ограничений).
+ * can(perm) — UI permission check on top of Inertia's shared props (auth.can).
+ * For conditional rendering only; the server checks permissions independently (middleware in routes/web.php).
+ * Empty/missing perm → true (intentional: for menu items without restrictions).
  */
 import { usePage } from "@inertiajs/vue3";
 

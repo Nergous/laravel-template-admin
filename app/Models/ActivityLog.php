@@ -11,11 +11,11 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Lang;
 
 /**
- * Запись журнала действий (аудита): кто (user_id) что сделал (action)
- * и над какой сущностью (полиморфная связь subject). changes — JSON-diff
- * изменений. Время фиксируется вручную (created_at), updated_at не ведётся.
- * Создаётся трейтом LogsActivity и контроллерами ролей/разрешений — оба
- * пишут через единую точку ActivityLog::record().
+ * An activity (audit) log entry: who (user_id) did what (action) and to which
+ * entity (the polymorphic subject relation). changes is a JSON diff of the
+ * changes. The time is recorded manually (created_at); updated_at is not kept.
+ * Created by the LogsActivity trait and by the roles/permissions controllers —
+ * both write through the single ActivityLog::record() entry point.
  *
  * @property int $id
  * @property int|null $user_id
@@ -58,7 +58,7 @@ class ActivityLog extends Model
         return $this->belongsTo(User::class);
     }
 
-    /** Субъект действия (полиморфная связь); withTrashed — чтобы показывать и удалённые. */
+    /** The action subject (polymorphic relation); withTrashed — to also show deleted ones. */
     public function subject(): MorphTo
     {
         return $this->morphTo()->withTrashed();
@@ -67,23 +67,24 @@ class ActivityLog extends Model
     // ---------- Scopes ----------
 
     /**
-     * Записи за последние сутки. Единое определение окна «недавних» действий —
-     * используют и счётчик-бейдж в HandleInertiaRequests, и фид recent().
+     * Entries from the last 24 hours. The single definition of the "recent"
+     * actions window — used by both the badge counter in HandleInertiaRequests
+     * and the recent() feed.
      */
     public function scopeRecent(Builder $query): Builder
     {
         return $query->where('created_at', '>=', now()->subDay());
     }
 
-    // ---------- Retention / чистка ----------
+    // ---------- Retention / cleanup ----------
 
     /**
-     * Записи журнала старше срока хранения (config('audit.retention_days'),
-     * по умолчанию 180 дней). Ежедневный model:prune удаляет их одним
-     * DELETE — MassPrunable не гидрирует модели и не шлёт события (для
-     * аудит-лога событий на удаление нет, чистка должна быть дешёвой).
-     * retention_days <= 0 → возвращаем заведомо пустую выборку (чистка
-     * отключена, журнал растёт неограниченно).
+     * Log entries older than the retention period (config('audit.retention_days'),
+     * 180 days by default). The daily model:prune deletes them in a single
+     * DELETE — MassPrunable does not hydrate models and does not fire events (the
+     * audit log has no deletion events, the cleanup must be cheap).
+     * retention_days <= 0 → return a deliberately empty result set (cleanup is
+     * disabled, the log grows without bound).
      */
     public function prunable(): Builder
     {
@@ -96,26 +97,27 @@ class ActivityLog extends Model
         return static::where('created_at', '<', now()->subDays($days));
     }
 
-    // ---------- Запись ----------
+    // ---------- Writing ----------
 
     /**
-     * Единая точка записи в журнал. Используется и трейтом LogsActivity
-     * (авто-события моделей), и контроллерами ролей/разрешений (ручной лог).
+     * The single entry point for writing to the log. Used both by the LogsActivity
+     * trait (automatic model events) and by the roles/permissions controllers
+     * (manual logging).
      *
-     * Почему две точки входа: собственные модели
-     * (User, Media) логируются автоматически трейтом LogsActivity через события
-     * Eloquent. Role/Permission — модели пакета spatie; повесить на них трейт
-     * можно лишь подклассом, а это сменило бы их getMorphClass() и потребовало
-     * миграции уже накопленных строк журнала.
+     * Why two entry points: own models
+     * (User, Media) are logged automatically by the LogsActivity trait via Eloquent
+     * events. Role/Permission are models from the spatie package; the trait can be
+     * attached to them only via a subclass, and that would change their
+     * getMorphClass() and require migrating the already accumulated log rows.
      *
-     * Помимо subject_label фиксирует actor_label — снимок имени автора, чтобы
-     * «кто сделал» переживало физическое удаление пользователя. Сбой записи
-     * журнала не должен срывать действие пользователя, поэтому исключения
-     * проглатываются (с report()).
+     * Besides subject_label, it records actor_label — a snapshot of the author's
+     * name, so that "who did it" survives the physical deletion of the user. A
+     * failure to write the log must not break the user's action, so exceptions are
+     * swallowed (with report()).
      *
-     * @param  Model  $subject  Сущность, над которой совершено действие
-     * @param  string  $action  Имя действия (created, updated, deleted, restored …)
-     * @param  array<string, array{0: mixed, 1: mixed}>|null  $changes  Diff изменённых полей: поле → [старое, новое]
+     * @param  Model  $subject  The entity the action was performed on
+     * @param  string  $action  The action name (created, updated, deleted, restored …)
+     * @param  array<string, array{0: mixed, 1: mixed}>|null  $changes  Diff of changed fields: field → [old, new]
      */
     public static function record($subject, string $action, ?array $changes = null): void
     {
@@ -136,7 +138,7 @@ class ActivityLog extends Model
     }
 
     /**
-     * Человеко-читаемая метка субъекта: title → name → filename → id.
+     * Human-readable subject label: title → name → filename → id.
      */
     protected static function labelFor($subject): string
     {
@@ -146,10 +148,10 @@ class ActivityLog extends Model
             ?? (string) $subject->getKey();
     }
 
-    // ---------- Helpers отображения ----------
+    // ---------- Display helpers ----------
 
     /**
-     * Человеко-читаемое название действия (строки — в lang/<locale>/activity.php).
+     * Human-readable action name (strings are in lang/<locale>/activity.php).
      */
     public function actionLabel(): string
     {
@@ -159,11 +161,11 @@ class ActivityLog extends Model
     }
 
     /**
-     * Человеко-читаемое имя модели для отображения в журнале.
+     * Human-readable model name for display in the log.
      *
-     * Карта «класс → ключ перевода» — data-driven, в config('audit.subjects')
-     * новые сущности регистрируются там, модель не редактируется.
-     * Незарегистрированный тип откатывается на class_basename.
+     * The "class → translation key" map is data-driven: new entities are
+     * registered in config('audit.subjects'), the model is not edited.
+     * An unregistered type falls back to class_basename.
      */
     public function subjectTypeLabel(): string
     {

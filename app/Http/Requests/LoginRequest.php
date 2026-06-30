@@ -5,12 +5,12 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Form Request для аутентификации пользователя.
+ * Form Request for user authentication.
  *
- * Проверяет только формат входных данных.
- * Проверка корректности учётных данных выполняется в LoginController.
+ * Validates only the format of the input data.
+ * Verification of the credentials is performed in LoginController.
  *
- * Используется в LoginController::login().
+ * Used in LoginController::login().
  */
 class LoginRequest extends FormRequest
 {

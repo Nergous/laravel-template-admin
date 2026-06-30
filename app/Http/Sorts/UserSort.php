@@ -3,9 +3,9 @@
 namespace App\Http\Sorts;
 
 /**
- * Сортировка для списка пользователей.
+ * Sort for the users list.
  *
- * По умолчанию сортирует по id (наследуется от Sort).
+ * By default sorts by id (inherited from Sort).
  */
 class UserSort extends Sort
 {

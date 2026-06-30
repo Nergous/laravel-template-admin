@@ -1,54 +1,53 @@
-# JSON-эндпоинты
+# JSON endpoints
 
-Это серверно-управляемое приложение на **Inertia**: подавляющее большинство
-маршрутов возвращают объекты страниц Inertia (HTML/JSON) или `RedirectResponse`
-с flash и ошибками валидации (см. [response-conventions.md](response-conventions.md)),
-а **не** JSON-API.
+This is a server-driven **Inertia** application: the vast majority of routes return
+Inertia page objects (HTML/JSON) or a `RedirectResponse` with flash and validation
+errors (see [response-conventions.md](response-conventions.md)), **not** a JSON API.
 
-«Настоящих» JSON/XHR-ручек, которые фронт читает напрямую через `fetch`, всего
-**четыре**. Их формы ответов — неявный контракт между контроллером и Vue; этот
-файл фиксирует его в одном месте.
+There are only **four** "real" JSON/XHR endpoints that the frontend reads directly
+via `fetch`. Their response shapes are an implicit contract between the controller
+and Vue; this file pins it down in one place.
 
-## Аутентификация всех JSON-ручек
+## Authentication for all JSON endpoints
 
-Все четыре живут под `/admin/*` и защищены **сессионной cookie + CSRF**, а не
-токеном. Это часть admin-SPA, а не публичный API:
+All four live under `/admin/*` and are protected by a **session cookie + CSRF**, not
+a token. They are part of the admin SPA, not a public API:
 
-- запросы идут с той же сессией, что и страница (cookie `*_session`);
-- мутирующие запросы (`POST`/`PUT`/`PATCH`/`DELETE`) требуют заголовок
-  `X-CSRF-TOKEN` (или `X-XSRF-TOKEN` из cookie). У `media store` это критично —
-  без токена будет `419 Page Expired`;
-- доступ дополнительно гейтится правами (см. таблицу и
+- requests carry the same session as the page (the `*_session` cookie);
+- mutating requests (`POST`/`PUT`/`PATCH`/`DELETE`) require the `X-CSRF-TOKEN` header
+  (or `X-XSRF-TOKEN` from the cookie). For `media store` this is critical — without
+  the token you get `419 Page Expired`;
+- access is additionally gated by permissions (see the table and
   [permissions-matrix.md](permissions-matrix.md)).
 
-> Если позже понадобится внешний API с токен-аутентификацией — выносите его в
-> отдельное пространство `/api/v1` вне `/admin/*` (см.
-> [response-conventions.md](response-conventions.md)). Текущие `/admin/*`-JSON
-> непригодны как публичный API: они завязаны на сессию и CSRF.
+> If you later need an external API with token authentication, move it into a
+> separate `/api/v1` namespace outside `/admin/*` (see
+> [response-conventions.md](response-conventions.md)). The current `/admin/*` JSON
+> endpoints are unsuitable as a public API: they are tied to the session and CSRF.
 
-## Сводка
+## Summary
 
-| Метод | URI                           | Право                           | Форма ответа              |
+| Method | URI                           | Permission                      | Response shape            |
 | ----- | ----------------------------- | ------------------------------- | ------------------------- |
-| GET   | `/admin/search`               | `users.view` и/или `media.view` | `{ results: [...] }`      |
+| GET   | `/admin/search`               | `users.view` and/or `media.view` | `{ results: [...] }`      |
 | GET   | `/admin/notifications/recent` | `activity-log.view`             | `{ count, items: [...] }` |
-| GET   | `/admin/media/poll`           | `media.view`                    | **голый массив** `[...]`  |
+| GET   | `/admin/media/poll`           | `media.view`                    | **bare array** `[...]`    |
 | POST  | `/admin/media`                | `media.upload`                  | `{ queued: <int> }`       |
 
 ---
 
-## GET `/admin/search` — глобальный поиск (Cmd+K)
+## GET `/admin/search` — global search (Cmd+K)
 
-`AdminSearchController@index`. Потребитель — `resources/js/admin/layouts/AdminLayout.vue`.
+`AdminSearchController@index`. Consumer — `resources/js/admin/layouts/AdminLayout.vue`.
 
-**Запрос:** query-параметр `q`. Запросы короче **2 символов** игнорируются (вернётся
-пустой `results`). На каждую сущность — максимум **5** совпадений.
+**Request:** the `q` query parameter. Queries shorter than **2 characters** are
+ignored (an empty `results` is returned). At most **5** matches per entity.
 
-**Право:** ручка под `auth`, но типы результатов фильтруются инлайн через `can()`:
-блок `user` отдаётся только при `users.view`, блок `media` — только при `media.view`.
-Без обоих прав вернётся `{ "results": [] }` (а не 403).
+**Permission:** the endpoint is under `auth`, but result types are filtered inline via
+`can()`: the `user` block is returned only with `users.view`, the `media` block —
+only with `media.view`. Without both permissions you get `{ "results": [] }` (not a 403).
 
-**Ответ** `200 application/json`:
+**Response** `200 application/json`:
 
 ```json
 {
@@ -71,24 +70,24 @@
 }
 ```
 
-Поля каждого результата: `type` (`user`|`media`), `label`, `meta`, `url`, `icon`.
+Fields of each result: `type` (`user`|`media`), `label`, `meta`, `url`, `icon`.
 
-> Добавление новой сущности в поиск — по образцу блока в контроллере (новый
-> `if ($user?->can('xxx.view'))` с `->map(...)` в ту же форму).
+> To add a new entity to search, follow the pattern of the block in the controller (a
+> new `if ($user?->can('xxx.view'))` with `->map(...)` into the same shape).
 
 ---
 
-## GET `/admin/notifications/recent` — фид «колокольчика»
+## GET `/admin/notifications/recent` — the "bell" feed
 
-`AdminActivityLogController@recent`. Потребитель — `AdminLayout.vue` (бейдж в топбаре).
+`AdminActivityLogController@recent`. Consumer — `AdminLayout.vue` (the topbar badge).
 
-Возвращает счётчик и последние **10** записей журнала за **24 часа**.
+Returns a counter and the latest **10** activity-log entries from the past **24 hours**.
 
-**Право:** `activity-log.view` (middleware на маршруте, `routes/web.php`). Фид отдаёт
-ту же ленту аудита, что и страница `/admin/activity-log`, поэтому требует то же
-право, а не просто `auth`.
+**Permission:** `activity-log.view` (route middleware, `routes/web.php`). The feed
+serves the same audit stream as the `/admin/activity-log` page, so it requires the
+same permission, not just `auth`.
 
-**Ответ** `200 application/json`:
+**Response** `200 application/json`:
 
 ```json
 {
@@ -107,29 +106,29 @@
 }
 ```
 
-`count` считается по тому же 24-часовому окну, что и `items` (а не по длине списка —
-`items` обрезан до 10).
+`count` is computed over the same 24-hour window as `items` (not from the list length —
+`items` is truncated to 10).
 
 ---
 
-## GET `/admin/media/poll` — поллинг загрузок
+## GET `/admin/media/poll` — upload polling
 
-`AdminMediaController@poll`. Потребитель — `resources/js/admin/pages/Media/Index.vue`.
-Используется, чтобы подхватывать медиа, дозагруженные асинхронной очередью
-(`UploadMedia`), без перезагрузки страницы.
+`AdminMediaController@poll`. Consumer — `resources/js/admin/pages/Media/Index.vue`.
+Used to pick up media that the asynchronous queue (`UploadMedia`) has finished loading,
+without reloading the page.
 
-**Право:** `media.view`.
+**Permission:** `media.view`.
 
-**Запрос** (валидируется инлайн в контроллере):
+**Request** (validated inline in the controller):
 
-| Параметр   | Правила                            | По умолчанию            |
+| Parameter  | Rules                              | Default                 |
 | ---------- | ---------------------------------- | ----------------------- |
-| `after_id` | `nullable, integer, min:0`         | `0` (вернуть последние) |
+| `after_id` | `nullable, integer, min:0`         | `0` (return the latest) |
 | `limit`    | `nullable, integer, min:1, max:50` | `50`                    |
 
-Возвращает медиа с `id > after_id`, по убыванию `id`, не более `limit`.
+Returns media with `id > after_id`, descending by `id`, at most `limit`.
 
-**⚠️ Ответ — голый массив, НЕ обёрнут в `{ data: ... }`:**
+**⚠️ The response is a bare array, NOT wrapped in `{ data: ... }`:**
 
 ```json
 [
@@ -146,38 +145,38 @@
 ]
 ```
 
-`created_at` — уже отформатированная строка `d.m.Y H:i`, а не ISO. `filename` —
-только базовое имя (без пути).
+`created_at` is an already-formatted `d.m.Y H:i` string, not ISO. `filename` is only
+the base name (no path).
 
 ---
 
-## POST `/admin/media` — постановка файлов в очередь
+## POST `/admin/media` — queue files for upload
 
-`AdminMediaController@store`, валидация — `MediaRequest`. Потребитель — `Media/Index.vue`.
+`AdminMediaController@store`, validation — `MediaRequest`. Consumer — `Media/Index.vue`.
 
-**Право:** `media.upload` (а **не** `media.view`). Это единственная мутирующая JSON-ручка,
-поэтому ей строго нужен `X-CSRF-TOKEN`.
+**Permission:** `media.upload` (**not** `media.view`). This is the only mutating JSON
+endpoint, so it strictly requires an `X-CSRF-TOKEN`.
 
-**Запрос:** `multipart/form-data`, поле `media` — массив файлов.
+**Request:** `multipart/form-data`, the `media` field is an array of files.
 
-| Параметр  | Правила                                                                                        |
+| Parameter | Rules                                                                                          |
 | --------- | ---------------------------------------------------------------------------------------------- |
 | `media`   | `required, array, min:1, max:10`                                                               |
-| `media.*` | `required, file, mimes:<18 расширений>, max:51200` (≈50 МБ) + лимит разрешения для изображений |
+| `media.*` | `required, file, mimes:<18 extensions>, max:51200` (≈50 MB) + a resolution limit for images    |
 
-Допустимые расширения: `jpg jpeg png webp gif mp4 webm mov mp3 wav ogg pdf doc docx
-xls xlsx txt` (`MediaRequest::ALLOWED_EXTENSIONS`). Для изображений дополнительно
-проверяется разрешение в пикселях (защита от decompression bomb).
+Allowed extensions: `jpg jpeg png webp gif mp4 webm mov mp3 wav ogg pdf doc docx
+xls xlsx txt` (`MediaRequest::ALLOWED_EXTENSIONS`). For images, the pixel resolution
+is additionally checked (protection against decompression bombs).
 
-**Ответ** `200 application/json`:
+**Response** `200 application/json`:
 
 ```json
 { "queued": 3 }
 ```
 
-`queued` — сколько файлов поставлено в очередь `UploadMedia`. Сама конвертация в
-WebP и генерация превью происходят **асинхронно** в воркере — фронт затем подтягивает
-готовые записи через `media/poll`.
+`queued` is how many files were queued into `UploadMedia`. The actual WebP conversion
+and thumbnail generation happen **asynchronously** in the worker — the frontend then
+pulls the ready records via `media/poll`.
 
-**Ошибки:** `422` с ошибками валидации (формат/размер/количество), `403` без права
-`media.upload`, `419` без CSRF-токена. См. [permissions-matrix.md](permissions-matrix.md).
+**Errors:** `422` with validation errors (format/size/count), `403` without the
+`media.upload` permission, `419` without a CSRF token. See [permissions-matrix.md](permissions-matrix.md).

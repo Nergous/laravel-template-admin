@@ -13,9 +13,9 @@ use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
- * Модель пользователя административной панели.
+ * Admin panel user model.
  *
- * Роли и разрешения управляются пакетом spatie/laravel-permission.
+ * Roles and permissions are managed by the spatie/laravel-permission package.
  *
  * @property int $id
  * @property string $name
@@ -39,9 +39,9 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
-        // Генерируемая (STORED) колонка только на MySQL/MariaDB — техническая,
-        // обеспечивает UNIQUE активных email. Прячем, чтобы сериализация
-        // (auth.user в Inertia и т.п.) была одинаковой на всех драйверах.
+        // Generated (STORED) column only on MySQL/MariaDB — technical,
+        // enforces UNIQUE on active emails. Hidden so that serialization
+        // (auth.user in Inertia, etc.) is identical across all drivers.
         'email_active',
     ];
 
@@ -54,9 +54,9 @@ class User extends Authenticatable
     }
 
     /**
-     * Поиск по имени и email (подстрока).
+     * Search by name and email (substring).
      *
-     * @param  string|null  $search  Поисковая строка
+     * @param  string|null  $search  Search string
      */
     public function scopeSearch(Builder $query, ?string $search): Builder
     {
@@ -64,9 +64,9 @@ class User extends Authenticatable
     }
 
     /**
-     * Фильтр по имени роли (spatie).
+     * Filter by role name (spatie).
      *
-     * @param  string|null  $role  Имя роли (spatie); пустое — фильтр не применяется
+     * @param  string|null  $role  Role name (spatie); empty — filter is not applied
      */
     public function scopeFilterByRole(Builder $query, ?string $role): Builder
     {

@@ -66,7 +66,7 @@ const densityOpts = [
     { value: "spacious", label: "L" },
 ];
 
-// Счётчики записей для бейджей сайдбара (shared-проп из HandleInertiaRequests).
+// Record counts for the sidebar badges (shared prop from HandleInertiaRequests).
 const counts = computed(() => page.props.counts ?? {});
 
 const notifCount = computed(() => counts.value.recentActivity ?? 0);
@@ -212,8 +212,8 @@ const baseCommands = computed(() => {
     return [...nav, ...actions];
 });
 
-// Поиск дебаунсится: запрос уходит не на каждый символ, а после паузы в наборе.
-const SEARCH_DEBOUNCE = 200; // мс
+// Search is debounced: the request fires after a typing pause, not on every keystroke.
+const SEARCH_DEBOUNCE = 200; // ms
 const SEARCH_MIN_LEN = 2;
 let searchTimer = null;
 
@@ -250,7 +250,7 @@ async function runSearch(q) {
     }
 }
 
-// При открытии палитры сразу показываем базовые команды.
+// When the palette opens, show the base commands right away.
 watch(paletteOpen, (open) => {
     if (open) commands.value = baseCommands.value;
 });
@@ -527,7 +527,7 @@ function openNotifications() {
 .admin__cmd:not(:disabled):hover {
     background: var(--surface-3);
 }
-/* только текстовая подпись растягивается — клавиши ⌘K остаются справа */
+/* only the text label stretches — the ⌘K keys stay on the right */
 .admin__cmd__text {
     flex: 1;
     text-align: left;
@@ -551,7 +551,7 @@ function openNotifications() {
     color: var(--text-2);
 }
 
-/* --- Колокольчик в топбаре: бейдж с числом непросмотренных событий --- */
+/* --- Notification bell in the topbar: badge with the count of unseen events --- */
 .tb-bell {
     position: relative;
     display: inline-flex;
@@ -577,7 +577,7 @@ function openNotifications() {
     border: 2px solid var(--surface);
 }
 
-/* --- Футер сайдбара: переключатель темы + карточка юзера --- */
+/* --- Sidebar footer: theme toggle + user card --- */
 .sbf__theme {
     display: flex;
     align-items: center;

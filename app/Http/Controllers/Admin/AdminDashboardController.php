@@ -12,13 +12,13 @@ use Inertia\Inertia;
 use Spatie\Permission\Models\Permission;
 
 /**
- * Дашборд админ-панели: сводные KPI и последняя активность.
+ * Admin panel dashboard: summary KPIs and recent activity.
  */
 class AdminDashboardController extends Controller
 {
     /**
-     * Собирает сводку (KPI, распределение по ролям, ленту действий)
-     * и отдаёт её на страницу Dashboard.
+     * Assembles the summary (KPIs, distribution by role, activity feed)
+     * and renders it on the Dashboard page.
      */
     public function index(Request $request): \Inertia\Response
     {
@@ -36,9 +36,9 @@ class AdminDashboardController extends Controller
 
         $mediaCategories = Media::query()->distinct()->count('type');
 
-        // KPI-карточки: основное число + вторичная строка с реальной метрикой.
-        // Это демо-метрики шаблона (сущности админки) — замените на показатели
-        // своего домена вместе с разметкой в pages/Dashboard.vue.
+        // KPI cards: a primary number + a secondary line with a real metric.
+        // These are the template's demo metrics (admin entities) — replace them with
+        // your own domain's indicators along with the markup in pages/Dashboard.vue.
         $stats = [
             'users' => [
                 'value' => User::count(),
@@ -58,7 +58,7 @@ class AdminDashboardController extends Controller
             ],
         ];
 
-        // Распределение пользователей по ролям (для горизонтальных баров).
+        // Distribution of users by role (for the horizontal bars).
         $roleDistribution = $roles
             ->map(fn (Role $role) => [
                 'name' => $role->name,
@@ -66,10 +66,10 @@ class AdminDashboardController extends Controller
             ])
             ->all();
 
-        // Лента последних действий — та же аудит-лента, что защищает страницу
-        // журнала. Дашборд открыт всем под auth, поэтому ленту отдаём только
-        // тем, у кого есть activity-log.view (иначе пустой массив — Dashboard.vue
-        // покажет пустое состояние). Согласовано с гейтом фида «колокольчика».
+        // Recent activity feed — the same audit stream that guards the activity
+        // log page. The dashboard is open to anyone under auth, so the feed is
+        // served only to those who have activity-log.view (otherwise an empty array —
+        // Dashboard.vue shows an empty state). Aligned with the "bell" feed gate.
         $recentActivity = $request->user()->can('activity-log.view')
             ? ActivityLog::with('user')
                 ->latest()

@@ -19,8 +19,8 @@ const cards = [
     { key: "media", label: "Медиафайлы", icon: "asset" },
 ];
 
-// Рендерим только те карточки, для которых сервер прислал метрику — чтобы
-// шаблон не падал, если набор stats урежут (например, уберут медиатеку).
+// Render only the cards for which the server sent a metric — so the
+// template doesn't break if the stats set is trimmed (e.g. the media library is removed).
 const visibleCards = computed(() => cards.filter((c) => props.stats[c.key]));
 
 // Domain/locale mapping lives in the page; NActivityRow stays presentational.
@@ -33,7 +33,7 @@ const ACT = {
     force_deleted: { verb: "удалено навсегда", tone: "danger", icon: "trash" },
 };
 
-// Маппинг действия → представление (verb/tone/icon); неизвестное — нейтральный фолбэк.
+// Maps action → presentation (verb/tone/icon); unknown falls back to a neutral default.
 const actOf = (a) => ACT[a.action] || {};
 const actMeta = (a) => (a.changes_count ? `${a.changes_count} изм.` : "");
 

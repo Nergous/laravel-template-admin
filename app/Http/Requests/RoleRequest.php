@@ -8,10 +8,10 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Form Request для создания и редактирования ролей.
+ * Form Request for creating and editing roles.
  *
- * Имя — латиница/цифры/. _ -, уникально. Права назначаются массивом
- * permissions[] (имена существующих разрешений).
+ * The name is Latin letters/digits/. _ -, unique. Permissions are assigned via the
+ * permissions[] array (names of existing permissions).
  */
 class RoleRequest extends FormRequest
 {
@@ -48,10 +48,10 @@ class RoleRequest extends FormRequest
     }
 
     /**
-     * Роли можно назначить только право, которым актор владеет сам (или если
-     * он админ). Иначе держатель roles.create/roles.edit собирал бы роль с правами
-     * выше своих и поднимал бы привилегии. При update это значит,
-     * что не-админ может сохранять лишь роли, чей итоговый набор прав ⊆ его прав.
+     * A role can only be assigned a permission that the actor holds themselves (or if
+     * they are an admin). Otherwise the holder of roles.create/roles.edit could assemble
+     * a role with permissions above their own and escalate privileges. On update this means
+     * that a non-admin can only save roles whose resulting permission set ⊆ their permissions.
      */
     protected function permissionAssignableByActor(string $attribute, mixed $value, \Closure $fail): void
     {

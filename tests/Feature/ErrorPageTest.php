@@ -11,13 +11,13 @@ class ErrorPageTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * Когда отладка выключена (как в production), отказ доступа в SPA должен
-     * отдавать стилизованную Inertia-страницу Error, а не дефолтный Symfony-экран.
+     * When debug is off (as in production), an access denial in the SPA should
+     * return a styled Inertia Error page rather than the default Symfony screen.
      */
     public function test_forbidden_renders_inertia_error_page_when_debug_off(): void
     {
         config(['app.debug' => false]);
-        $this->actingAsUserWith([]); // без прав → 403 на разделе
+        $this->actingAsUserWith([]); // no permissions → 403 on the section
 
         $this->get(route('admin.users.index'))
             ->assertStatus(403)
@@ -27,8 +27,8 @@ class ErrorPageTest extends TestCase
     }
 
     /**
-     * JSON-запросы (например, глобальный поиск/поллинг) НЕ должны подменяться
-     * HTML-страницей ошибки — API-клиент ждёт JSON.
+     * JSON requests (e.g. global search/polling) must NOT be swapped for an
+     * HTML error page — the API client expects JSON.
      */
     public function test_json_request_keeps_json_error_when_debug_off(): void
     {

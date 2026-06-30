@@ -5,9 +5,9 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Массовые операции над пользователями в корзине: восстановление и
- * окончательное удаление. Используется в AdminUserController::bulkRestore()
- * и bulkForceDelete().
+ * Bulk operations on trashed users: restoration and
+ * permanent deletion. Used in AdminUserController::bulkRestore()
+ * and bulkForceDelete().
  */
 class BulkUserActionRequest extends FormRequest
 {

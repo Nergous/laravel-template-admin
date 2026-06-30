@@ -11,19 +11,19 @@ use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 
 /**
- * Доменные операции над разрешениями: тумблер матрицы «роль × право» и CRUD
- * над самими правами, с анти-эскалацией и журналированием.
+ * Domain operations on permissions: the "role x permission" matrix toggle and
+ * CRUD over the permissions themselves, with anti-escalation and logging.
  */
 class PermissionService
 {
     /**
-     * Переключение одной ячейки матрицы: выдать/снять разрешение у роли.
+     * Toggles a single matrix cell: grant/revoke a permission for a role.
      *
-     * @param  int  $roleId  Идентификатор роли
-     * @param  string  $permission  Имя разрешения (модуль.действие)
-     * @param  bool  $granted  true — выдать право роли, false — снять
+     * @param  int  $roleId  Role identifier
+     * @param  string  $permission  Permission name (module.action)
+     * @param  bool  $granted  true — grant the permission to the role, false — revoke it
      *
-     * @throws ValidationException Если роль заблокирована или нарушается анти-эскалация.
+     * @throws ValidationException If the role is locked or anti-escalation is violated.
      */
     public function toggle(int $roleId, string $permission, bool $granted, ?User $actor): void
     {
@@ -62,8 +62,8 @@ class PermissionService
     }
 
     /**
-     * Создаёт новое разрешение (guard web), авто-выдаёт его системной роли admin
-     * и логирует оба действия.
+     * Creates a new permission (guard web), auto-grants it to the system admin role
+     * and logs both actions.
      */
     public function create(string $name): Permission
     {
@@ -88,7 +88,7 @@ class PermissionService
         });
     }
 
-    /** Переименовывает разрешение и логирует изменение имени. */
+    /** Renames a permission and logs the name change. */
     public function update(Permission $permission, string $name): Permission
     {
         $old = $permission->name;
@@ -98,7 +98,7 @@ class PermissionService
         return $permission;
     }
 
-    /** Удаляет разрешение с записью в журнал. */
+    /** Deletes a permission, recording it in the log. */
     public function delete(Permission $permission): void
     {
         ActivityLog::record($permission, 'deleted');

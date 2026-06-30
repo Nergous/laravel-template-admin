@@ -9,20 +9,20 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Оркестрация медиатеки: постановка загрузок в очередь и удаление записей вместе
- * с файлами хранилища.
+ * Media library orchestration: queueing uploads and deleting records along with
+ * their storage files.
  *
- * Вынесено из контроллера, потому что удаление — это многошаговая операция
- * (транзакция БД + нетранзакционная очистка файлов), а не тривиальный CRUD.
- * Граница «когда сервис, когда контроллер» описана в CLAUDE.md.
+ * Extracted from the controller because deletion is a multi-step operation
+ * (a DB transaction + non-transactional file cleanup), not trivial CRUD.
+ * The "when a service, when a controller" boundary is described in CLAUDE.md.
  */
 class MediaService
 {
     /**
-     * Ставит каждый файл в очередь на обработку (Job UploadMedia).
+     * Queues each file for processing (the UploadMedia job).
      *
      * @param  array<int, UploadedFile>  $files
-     * @return int Сколько файлов поставлено в очередь
+     * @return int How many files were queued
      */
     public function queue(array $files, ?int $userId): int
     {
@@ -35,7 +35,7 @@ class MediaService
     }
 
     /**
-     * Удаляет одну запись и связанные файлы (оригинал + превью).
+     * Deletes a single record and its associated files (original + thumbnail).
      */
     public function delete(Media $media): void
     {
@@ -44,11 +44,11 @@ class MediaService
     }
 
     /**
-     * Массовое удаление: записи — в транзакции; файлы убираются после коммита,
-     * best-effort (хранилище не транзакционно, deleteFiles терпим к отсутствию файла).
+     * Bulk delete: records in a transaction; files are removed after commit,
+     * best-effort (storage is not transactional, deleteFiles tolerates a missing file).
      *
      * @param  array<int, int>  $ids
-     * @return int Сколько записей удалено
+     * @return int How many records were deleted
      */
     public function bulkDelete(array $ids): int
     {

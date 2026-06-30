@@ -15,25 +15,25 @@ use Inertia\Inertia;
 use Spatie\Permission\Models\Permission;
 
 /**
- * Управление разрешениями: матрица «роль × разрешение» и CRUD над правами.
+ * Permission management: the "role × permission" matrix and CRUD over permissions.
  *
- * Контроллер занимается HTTP: валидирует вход, собирает пропсы матрицы и
- * редиректит. Оркестрация и инварианты (анти-эскалация, защита роли суперадмина,
- * журналирование, авто-грант при создании) живут в App\Services\PermissionService.
+ * The controller handles HTTP: validates input, assembles the matrix props, and
+ * redirects. Orchestration and invariants (anti-escalation, protecting the superadmin
+ * role, logging, auto-grant on creation) live in App\Services\PermissionService.
  *
- * Права роли суперадмина (config('rbac.superadmin_role')) защищены от изменения.
- * Отдельных страниц create/edit/show нет — всё редактируется в матрице, поэтому эти
- * resource-методы лишь редиректят на index.
+ * The superadmin role's permissions (config('rbac.superadmin_role')) are protected
+ * from changes. There are no separate create/edit/show pages — everything is edited
+ * in the matrix, so these resource methods merely redirect to index.
  */
 class AdminPermissionController extends Controller
 {
     public function __construct(private readonly PermissionService $permissions) {}
 
     /**
-     * Матрица «роль × разрешение».
+     * The "role × permission" matrix.
      *
-     * Отдаёт: roles (колонки), groups (строки, сгруппированные по ресурсу),
-     * matrix (карта role_id → [имена разрешений]).
+     * Returns: roles (columns), groups (rows, grouped by resource),
+     * matrix (a map of role_id → [permission names]).
      */
     public function index(Request $request): \Inertia\Response
     {
@@ -76,8 +76,8 @@ class AdminPermissionController extends Controller
     }
 
     /**
-     * Переключение одной ячейки матрицы: выдать/снять разрешение у роли.
-     * Анти-эскалация и журналирование — в сервисе.
+     * Toggling a single matrix cell: grant/revoke a permission for a role.
+     * Anti-escalation and logging are in the service.
      */
     public function sync(Request $request): RedirectResponse
     {
@@ -102,7 +102,7 @@ class AdminPermissionController extends Controller
         return redirect()->route('admin.permissions.index');
     }
 
-    /** Создаёт новое разрешение (guard web), авто-выдаёт его роли admin и логирует. */
+    /** Creates a new permission (guard web), auto-grants it to the admin role, and logs the action. */
     public function store(PermissionRequest $request): RedirectResponse
     {
         $this->permissions->create($request->name);
@@ -117,7 +117,7 @@ class AdminPermissionController extends Controller
         return redirect()->route('admin.permissions.index');
     }
 
-    /** Переименовывает разрешение и логирует изменение имени. */
+    /** Renames a permission and logs the name change. */
     public function update(PermissionRequest $request, Permission $permission): RedirectResponse
     {
         $this->permissions->update($permission, $request->name);
@@ -127,7 +127,7 @@ class AdminPermissionController extends Controller
             ->with('success', 'Разрешение обновлено');
     }
 
-    /** Удаляет разрешение с записью в журнал. */
+    /** Deletes a permission and writes an entry to the activity log. */
     public function destroy(Permission $permission): RedirectResponse
     {
         $this->permissions->delete($permission);
@@ -143,8 +143,8 @@ class AdminPermissionController extends Controller
     }
 
     /**
-     * Локализованное название ресурса (префикс до точки); строки — в
-     * lang/<locale>/permissions.php. Фолбэк — сам префикс с заглавной.
+     * Localized resource label (the prefix before the dot); strings live in
+     * lang/<locale>/permissions.php. Fallback is the prefix itself, capitalized.
      */
     private function resourceLabel(string $resource): string
     {
@@ -154,8 +154,8 @@ class AdminPermissionController extends Controller
     }
 
     /**
-     * Локализованное название действия (суффикс после точки); строки — в
-     * lang/<locale>/permissions.php. Фолбэк — само действие с заглавной.
+     * Localized action label (the suffix after the dot); strings live in
+     * lang/<locale>/permissions.php. Fallback is the action itself, capitalized.
      */
     private function actionLabel(string $action): string
     {

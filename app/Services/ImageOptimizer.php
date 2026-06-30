@@ -7,39 +7,40 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
- * Оптимизация изображений при загрузке:
- * - Конвертация в WebP (уменьшение размера на 30-50%)
- * - Ресайз по максимальной ширине
- * - Генерация thumbnail для карточек/лент
- * - Настраиваемое качество сжатия
+ * Image optimization on upload:
+ * - Conversion to WebP (30-50% size reduction)
+ * - Resize to a maximum width
+ * - Thumbnail generation for cards/feeds
+ * - Configurable compression quality
  *
- * Если GD недоступен — сохраняет оригинал без обработки.
+ * If GD is unavailable — stores the original without processing.
  */
 class ImageOptimizer
 {
-    /** Ширина thumbnail (хватает для карточек до ~300px c 2x retina). */
+    /** Thumbnail width (enough for cards up to ~300px with 2x retina). */
     public const THUMB_MAX_WIDTH = 600;
 
-    /** Качество WebP для thumbnail. */
+    /** WebP quality for thumbnails. */
     public const THUMB_QUALITY = 78;
 
     /**
-     * Максимальная площадь изображения в пикселях, которую обрабатывает GD.
+     * Maximum image area in pixels that GD will process.
      *
-     * Защита от decompression bomb: файл может быть мал по весу, но огромен по
-     * разрешению (например 30000×30000), и GD развернёт его в RAM (~4 байта/px),
-     * положив воркер по OOM. Свыше порога изображение сохраняется без обработки.
+     * Protection against a decompression bomb: a file can be small in bytes but
+     * huge in resolution (e.g. 30000x30000), and GD would expand it in RAM
+     * (~4 bytes/px), killing the worker with OOM. Above the threshold the image
+     * is stored without processing.
      */
-    public const MAX_PIXELS = 40_000_000; // 40 Мп
+    public const MAX_PIXELS = 40_000_000; // 40 MP
 
     /**
-     * Оптимизирует UploadedFile и сохраняет на диск public.
+     * Optimizes an UploadedFile and stores it on the public disk.
      *
-     * @param  UploadedFile  $file  Загруженный файл
-     * @param  string  $directory  Каталог в storage/public (например 'media' или 'avatars')
-     * @param  int  $maxWidth  Максимальная ширина в px
-     * @param  int  $quality  Качество WebP (0-100)
-     * @return string Путь относительно диска public
+     * @param  UploadedFile  $file  The uploaded file
+     * @param  string  $directory  Directory in storage/public (e.g. 'media' or 'avatars')
+     * @param  int  $maxWidth  Maximum width in px
+     * @param  int  $quality  WebP quality (0-100)
+     * @return string Path relative to the public disk
      */
     public static function store(UploadedFile $file, string $directory, int $maxWidth = 1920, int $quality = 85): string
     {
@@ -57,13 +58,13 @@ class ImageOptimizer
     }
 
     /**
-     * Оптимизирует файл уже находящийся на диске.
-     * Используется в UploadMedia job.
+     * Optimizes a file already present on a disk.
+     * Used in the UploadMedia job.
      *
-     * @param  string  $sourcePath  Путь к файлу на $sourceDisk
-     * @param  string  $sourceDisk  Диск-источник ('local', 'public')
-     * @param  string  $directory  Каталог назначения на диске public
-     * @return string Путь относительно диска public
+     * @param  string  $sourcePath  Path to the file on $sourceDisk
+     * @param  string  $sourceDisk  Source disk ('local', 'public')
+     * @param  string  $directory  Destination directory on the public disk
+     * @return string Path relative to the public disk
      */
     public static function storeFromDisk(
         string $sourcePath,
@@ -89,10 +90,10 @@ class ImageOptimizer
     }
 
     /**
-     * Возвращает путь к thumbnail по пути к оригиналу.
+     * Returns the thumbnail path given the path to the original.
      *
-     * Пример: media/abc.webp → media/abc.thumb.webp
-     * Если расширение не .webp (fallback без GD) — возвращает оригинал.
+     * Example: media/abc.webp → media/abc.thumb.webp
+     * If the extension is not .webp (fallback without GD) — returns the original.
      */
     public static function thumbPath(string $path): string
     {
@@ -104,10 +105,10 @@ class ImageOptimizer
     }
 
     /**
-     * Генерирует thumbnail для уже сохранённого файла.
-     * Используется backfill-командой для старых фото.
+     * Generates a thumbnail for an already-stored file.
+     * Used by the backfill command for old photos.
      *
-     * @return bool true если thumb создан или уже существовал, false если не удалось
+     * @return bool true if the thumb was created or already existed, false if it failed
      */
     public static function generateThumbFor(string $path): bool
     {
@@ -139,7 +140,7 @@ class ImageOptimizer
         $thumb = self::makeThumb($image, self::THUMB_MAX_WIDTH);
         imagedestroy($image);
 
-        // Источник уже ≤ THUMB_MAX_WIDTH — thumb не нужен, fallback вернёт оригинал.
+        // Source is already ≤ THUMB_MAX_WIDTH — no thumb needed, fallback returns the original.
         if (! $thumb) {
             return true;
         }
@@ -151,7 +152,7 @@ class ImageOptimizer
     }
 
     /**
-     * Общий пайплайн: ресайз основной версии, запись WebP, генерация thumbnail.
+     * Shared pipeline: resize the main version, write WebP, generate the thumbnail.
      */
     private static function processAndSave(\GdImage $image, string $directory, int $maxWidth, int $quality): string
     {
@@ -174,10 +175,10 @@ class ImageOptimizer
     }
 
     /**
-     * Фолбэк: копирование файла без обработки (когда GD недоступен или формат неподдерживаем).
+     * Fallback: copying the file without processing (when GD is unavailable or the format is unsupported).
      *
-     * Стримом, а не через ->get(): не тянем весь оригинал в память.
-     * writeStream поток за нами не закрывает — закрываем сами (как Laravel в putFileAs).
+     * Via a stream rather than ->get(): we don't pull the whole original into memory.
+     * writeStream does not close the stream for us — we close it ourselves (as Laravel does in putFileAs).
      */
     private static function copyWithoutProcessing(string $sourcePath, string $sourceDisk, string $directory): string
     {
@@ -195,7 +196,7 @@ class ImageOptimizer
     }
 
     /**
-     * Запись GdImage как WebP в $path на диске public.
+     * Writes a GdImage as WebP to $path on the public disk.
      */
     private static function writeWebp(\GdImage $image, string $path, int $quality): void
     {
@@ -210,8 +211,8 @@ class ImageOptimizer
     }
 
     /**
-     * Доступен ли GD с тем, что реально нужно пайплайну: декодер JPEG и энкодер WebP.
-     * Если чего-то нет — вызывающий уходит на безопасный фолбэк (сохранение оригинала без обработки).
+     * Whether GD is available with what the pipeline actually needs: a JPEG decoder and a WebP encoder.
+     * If something is missing — the caller falls back to the safe path (storing the original without processing).
      */
     private static function gdCanEncodeWebp(): bool
     {
@@ -219,12 +220,12 @@ class ImageOptimizer
     }
 
     /**
-     * Создаёт GdImage из файла по пути.
+     * Creates a GdImage from a file at the given path.
      */
     private static function createFromFile(string $path, string $mime): ?\GdImage
     {
-        // Декодируем только в пределах лимита размерности (см. MAX_PIXELS).
-        // Возврат null уводит вызывающего на безопасный фолбэк (копия без обработки).
+        // Decode only within the dimension limit (see MAX_PIXELS).
+        // Returning null sends the caller to the safe fallback (a copy without processing).
         if (self::exceedsPixelLimit($path)) {
             return null;
         }
@@ -238,24 +239,24 @@ class ImageOptimizer
     }
 
     /**
-     * Превышает ли изображение лимит размерности (MAX_PIXELS).
+     * Whether the image exceeds the dimension limit (MAX_PIXELS).
      *
-     * Читает только заголовок через getimagesize() — без декодирования растра,
-     * поэтому безопасно вызывать до GD даже на «бомбе».
+     * Reads only the header via getimagesize() — without decoding the raster,
+     * so it's safe to call before GD even on a "bomb".
      */
     private static function exceedsPixelLimit(string $path): bool
     {
         $info = @getimagesize($path);
 
         if ($info === false) {
-            return false; // размер не прочитался — пусть решает декодер
+            return false; // size couldn't be read — let the decoder decide
         }
 
         return $info[0] * $info[1] > self::MAX_PIXELS;
     }
 
     /**
-     * PNG с сохранением прозрачности.
+     * PNG with transparency preserved.
      */
     private static function createFromPng(string $path): ?\GdImage
     {
@@ -271,7 +272,7 @@ class ImageOptimizer
     }
 
     /**
-     * Ресайз если шире maxWidth, сохраняя пропорции. Оригинал уничтожается.
+     * Resizes if wider than maxWidth, preserving the aspect ratio. The original is destroyed.
      */
     private static function resize(\GdImage $image, int $maxWidth): \GdImage
     {
@@ -297,8 +298,8 @@ class ImageOptimizer
     }
 
     /**
-     * Создаёт уменьшенную копию БЕЗ уничтожения исходника.
-     * Возвращает null, если исходник уже не шире thumbnail (thumb не нужен).
+     * Creates a downscaled copy WITHOUT destroying the source.
+     * Returns null if the source is already no wider than the thumbnail (no thumb needed).
      */
     private static function makeThumb(\GdImage $source, int $maxWidth): ?\GdImage
     {

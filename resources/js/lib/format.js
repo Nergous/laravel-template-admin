@@ -1,6 +1,6 @@
-// Форматирование приложения — привязка locale-agnostic фабрики DS к локали проекта.
-// Локаль берётся из <html lang> (ставит Blade) — валидный BCP-47 для Intl.
-// Call-sites импортируют именованные функции отсюда как раньше.
+// Application formatting — binds the DS's locale-agnostic factory to the project's locale.
+// The locale is taken from <html lang> (set by Blade) — a valid BCP-47 for Intl.
+// Call sites import the named functions from here as before.
 import { createFormat } from "@/lib/nergous-cit";
 
 const locale =
@@ -15,8 +15,8 @@ export const {
     formatNumber,
 } = createFormat(locale);
 
-// Размер файла (байты) → человекочитаемо, RU-единицы. Презентационное
-// форматирование уровня приложения (вне locale-agnostic фабрики DS).
+// File size (bytes) → human-readable, RU units. Application-level presentational
+// formatting (outside the DS's locale-agnostic factory).
 export function formatBytes(bytes) {
     const n = Number(bytes);
     if (!Number.isFinite(n) || n <= 0) return "0 Б";
@@ -30,7 +30,7 @@ export function formatBytes(bytes) {
     return `${text} ${units[i]}`;
 }
 
-// RU-склонение по числу: pluralize(n, "файл", "файла", "файлов").
+// RU declension by number: pluralize(n, "файл", "файла", "файлов").
 export function pluralize(n, one, few, many) {
     const mod10 = n % 10;
     const mod100 = n % 100;

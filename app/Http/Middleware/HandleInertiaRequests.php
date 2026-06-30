@@ -14,13 +14,13 @@ use Spatie\Permission\Models\Permission;
 class HandleInertiaRequests extends Middleware
 {
     /**
-     * Корневой Blade-шаблон под текущий раздел.
+     * The root Blade template for the current section.
      *
-     * Админка и публичная часть — отдельные Inertia-приложения: у каждого свой
-     * бандл (resources/js/<section>/app.js) и свой root-view. Сейчас реализована
-     * только админка. Когда появится публичная часть — создать
-     * resources/views/public.blade.php + resources/js/public/app.js и
-     * раскомментировать ветку ниже.
+     * The admin panel and the public part are separate Inertia applications: each has its own
+     * bundle (resources/js/<section>/app.js) and its own root-view. Currently only
+     * the admin panel is implemented. When the public part appears — create
+     * resources/views/public.blade.php + resources/js/public/app.js and
+     * uncomment the branch below.
      *
      * @see https://inertiajs.com/server-side-setup#root-template
      */
@@ -31,7 +31,7 @@ class HandleInertiaRequests extends Middleware
     }
 
     /**
-     * Версия ассетов — для инвалидации клиентского кэша Inertia при деплое.
+     * Asset version — for invalidating the Inertia client cache on deploy.
      *
      * @see https://inertiajs.com/asset-versioning
      */
@@ -41,8 +41,8 @@ class HandleInertiaRequests extends Middleware
     }
 
     /**
-     * Пропсы, передаваемые во все Inertia-ответы по умолчанию: пользователь
-     * с ролями и правами, счётчики для бейджей сайдбара и flash-сообщения.
+     * Props passed into all Inertia responses by default: the user
+     * with roles and permissions, counts for the sidebar badges and flash messages.
      *
      * @see https://inertiajs.com/shared-data
      *
@@ -68,15 +68,15 @@ class HandleInertiaRequests extends Middleware
                     'roles' => $user->getRoleNames(),
                 ] : null,
 
-                // Имена всех прав пользователя — для условного рендера во Vue
-                // (can('users.view')). Сервер всё равно проверяет независимо.
+                // Names of all the user's permissions — for conditional rendering in Vue
+                // (can('users.view')). The server still checks independently.
                 'can' => $user ? $user->getAllPermissions()->pluck('name')->all() : [],
             ],
 
-            // Счётчики записей для бейджей в сайдбаре и колокольчике. Сырые
-            // агрегаты глобальны (не зависят от пользователя) и кэшируются на 30с;
-            // отдаём же только разделы, на которые у пользователя есть право
-            // *.view — иначе бейдж раскрыл бы число там, куда нет доступа.
+            // Record counts for the badges in the sidebar and the bell. The raw
+            // aggregates are global (do not depend on the user) and are cached for 30s;
+            // we only return the sections for which the user has the
+            // *.view permission — otherwise a badge would reveal a number where there is no access.
             'counts' => $user ? function () use ($user) {
                 $all = Cache::remember('admin.sidebar-counts', 30, fn () => [
                     'users' => User::count(),

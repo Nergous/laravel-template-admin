@@ -11,23 +11,24 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Модель медиа из библиотеки.
+ * Media model from the library.
  *
- * Файлы лежат на диске public в директории media/.
- * Загрузка выполняется асинхронно через Job UploadMedia.
+ * Files live on the public disk under the media/ directory.
+ * Uploading is performed asynchronously via the UploadMedia job.
  *
- * Авторство: подключён трейт TracksAuthor (связи creator()/editor()). created_by
- * трейт сам не заполнит — строка Media создаётся в очереди (UploadMedia), где
- * Auth::id() пуст; поэтому id загрузившего проставляется в job вручную из
- * uploaderId. updated_by пишет трейт при редактировании медиа авторизованным
- * пользователем (например переименование файла на фронте).
+ * Authorship: the TracksAuthor trait is used (creator()/editor() relations). The
+ * trait will not populate created_by itself — the Media row is created in the
+ * queue (UploadMedia), where Auth::id() is empty; therefore the uploader's id is
+ * set in the job manually from uploaderId. updated_by is written by the trait
+ * when an authorized user edits the media (for example renaming the file on the
+ * frontend).
  *
  * @property int $id
- * @property string $filename Путь к файлу относительно диска public (например: media/abc123.webp)
- * @property string|null $original_name Исходное имя файла при загрузке
- * @property string|null $mime_type MIME-тип (например image/webp, video/mp4)
- * @property string|null $type Категория: image|video|audio|document|other
- * @property int|null $size Размер в байтах
+ * @property string $filename File path relative to the public disk (for example: media/abc123.webp)
+ * @property string|null $original_name Original file name at upload time
+ * @property string|null $mime_type MIME type (for example image/webp, video/mp4)
+ * @property string|null $type Category: image|video|audio|document|other
+ * @property int|null $size Size in bytes
  */
 class Media extends Model
 {
@@ -41,8 +42,8 @@ class Media extends Model
     ];
 
     /**
-     * Публичные URL подмешиваются в сериализацию, чтобы фронт (карточки
-     * медиатеки) сразу получал ссылки на оригинал и превью.
+     * Public URLs are mixed into serialization so the frontend (media library
+     * cards) immediately gets links to the original and the thumbnail.
      */
     protected $appends = ['url', 'thumb_url'];
 
@@ -57,11 +58,11 @@ class Media extends Model
     }
 
     /**
-     * Категоризирует MIME-тип в одну из крупных групп.
-     * Используется при загрузке для заполнения колонки type.
+     * Categorizes a MIME type into one of the broad groups.
+     * Used at upload time to populate the type column.
      *
-     * @param  string|null  $mime  MIME-тип файла (например image/png, video/mp4)
-     * @return string Категория: image|video|audio|document|other
+     * @param  string|null  $mime  File MIME type (for example image/png, video/mp4)
+     * @return string Category: image|video|audio|document|other
      */
     public static function categorize(?string $mime): string
     {
@@ -84,7 +85,7 @@ class Media extends Model
     }
 
     /**
-     * Является ли файл изображением (для него генерируется thumbnail).
+     * Whether the file is an image (a thumbnail is generated for it).
      */
     public function isImage(): bool
     {
@@ -92,7 +93,7 @@ class Media extends Model
     }
 
     /**
-     * Публичный URL оригинального файла.
+     * Public URL of the original file.
      */
     public function url(): string
     {
@@ -100,7 +101,7 @@ class Media extends Model
     }
 
     /**
-     * URL уменьшенной версии (для фото).
+     * URL of the resized version (for photos).
      */
     public function thumbUrl(): string
     {
@@ -112,11 +113,11 @@ class Media extends Model
     }
 
     /**
-     * Удаляет с диска public сам файл и его сгенерированную миниатюру.
+     * Deletes the file itself and its generated thumbnail from the public disk.
      *
-     * Единая точка очистки файлов медиа — вызывайте её из любого пути удаления,
-     * чтобы не оставлять осиротевших файлов. Для не-изображений (и фолбэка без GD)
-     * thumbPath() возвращает сам путь — второй delete тогда пропускаем.
+     * The single cleanup point for media files — call it from any deletion path
+     * so as not to leave orphaned files. For non-images (and the GD-less fallback)
+     * thumbPath() returns the path itself — in that case we skip the second delete.
      */
     public function deleteFiles(): void
     {
@@ -130,9 +131,9 @@ class Media extends Model
     }
 
     /**
-     * Поиск по имени файла (подстрока).
+     * Search by file name (substring).
      *
-     * @param  string|null  $search  Поисковая строка
+     * @param  string|null  $search  Search string
      */
     public function scopeSearch(Builder $query, ?string $search): Builder
     {

@@ -36,7 +36,7 @@ const props = defineProps({
 const search = ref(props.filters.search ?? "");
 const role = ref(props.filters.role ?? "");
 
-// NSelect — варианты через :options, НЕ слотом <option>.
+// NSelect — options via :options, NOT via an <option> slot.
 const roleOptions = computed(() => [
     { value: "", label: "Все роли" },
     ...Object.entries(props.roles).map(([value, label]) => ({ value, label })),
@@ -64,7 +64,7 @@ const columns = [
 /* ---------- drawer (create | edit) ---------- */
 const drawerOpen = ref(false);
 const mode = ref("create"); // create | edit
-const editing = ref(null); // полная строка при edit
+const editing = ref(null); // full row when editing
 const form = useForm({ name: "", email: "", password: "", roles: [] });
 
 const drawerTitle = computed(() =>
@@ -181,7 +181,7 @@ function confirmDelete() {
                 empty-text="Нет данных"
                 @sort-change="onSort"
             >
-                <!-- Пользователь -->
+                <!-- User -->
                 <template #cell-name="{ row }">
                     <div class="ucell">
                         <NAvatar :name="row.name" :size="36" />
@@ -194,7 +194,7 @@ function confirmDelete() {
                     <span class="email-cell">{{ row.email }}</span>
                 </template>
 
-                <!-- Роли -->
+                <!-- Roles -->
                 <template #cell-roles="{ row }">
                     <span class="roles-cell">
                         <NBadge
@@ -209,14 +209,14 @@ function confirmDelete() {
                     </span>
                 </template>
 
-                <!-- Добавлен -->
+                <!-- Added -->
                 <template #cell-created_at="{ row }">
                     <span class="created">{{
                         formatDateShort(row.created_at)
                     }}</span>
                 </template>
 
-                <!-- Действия -->
+                <!-- Actions -->
                 <template #cell-actions="{ row }">
                     <div class="row-actions row-actions--center">
                         <NButton
@@ -303,7 +303,7 @@ function confirmDelete() {
 </template>
 
 <style scoped>
-/* .page / .row-actions* — общие утилиты в resources/js/admin/styles.css */
+/* .page / .row-actions* — shared utilities in resources/js/admin/styles.css */
 
 /* inline toolbar */
 .toolbar {

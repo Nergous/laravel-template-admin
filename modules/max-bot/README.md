@@ -1,147 +1,148 @@
-# max-bot — внешний бот для платформы MAX
+# max-bot — external bot for the MAX platform
 
-Python-бот с long-polling для мессенджер-платформы [MAX](https://platform-api.max.ru),
-построенный на библиотеке `maxapi`. Опциональный модуль шаблона: включается флагом и
-поднимается отдельным Docker-сервисом.
+A Python long-polling bot for the [MAX](https://platform-api.max.ru) messaging platform,
+built on the `maxapi` library. An optional module of the template: enabled by a flag and
+run as a separate Docker service.
 
-`main.py` запускает однопроцессный диспетчер (`dp.start_polling(bot)`) и регистрирует
-обработчики событий. Сейчас активны только `bot_started` и `bot_added`; остальные 14
-типов предобъявлены в реестре и закомментированы в `handlers/__init__.py` — снимите
-комментарий и добавьте обработчик, чтобы включить.
+`main.py` starts a single-process dispatcher (`dp.start_polling(bot)`) and registers
+event handlers. Currently only `bot_started` and `bot_added` are active; the other 14
+types are pre-declared in the registry and commented out in `handlers/__init__.py` —
+uncomment one and add a handler to enable it.
 
 ---
 
-## Граница Python ↔ Laravel — это файл + БД, а не HTTP
+## The Python ↔ Laravel boundary is a file + DB, not HTTP
 
-**Между ботом и админкой нет сетевого API.** Контракт интеграции — два общих ресурса:
+**There is no network API between the bot and the admin panel.** The integration contract
+is two shared resources:
 
 ```
                  ┌──────────────────────────┐
-   читают оба →  │  messages.json (реестр)  │  ← источник правды по кодам/дефолтам
+   read by both →│  messages.json (registry)│  ← source of truth for codes/defaults
                  └──────────────────────────┘
-   Laravel пишет ┌──────────────────────────┐  Python читает
-   override   →  │  таблица bot_messages    │  →  (SELECT … is_active=1)
+   Laravel writes┌──────────────────────────┐  Python reads
+   override   →  │  bot_messages table      │  →  (SELECT … is_active=1)
                  └──────────────────────────┘
 ```
 
-Бот и Laravel **делят одну БД MySQL/MariaDB**. Админка пишет переопределения текстов,
-бот их читает. Никаких HTTP-вызовов между ними.
+The bot and Laravel **share a single MySQL/MariaDB database**. The admin panel writes text
+overrides, the bot reads them. No HTTP calls between them.
 
-### 1. `messages.json` — общий реестр
+### 1. `messages.json` — the shared registry
 
-Единый источник истины для **кодов**, **меток**, **описаний** и **значений по
-умолчанию** сообщений. Массив объектов; схема — в
+The single source of truth for message **codes**, **labels**, **descriptions**, and
+**default values**. An array of objects; the schema is in
 [`messages.schema.json`](messages.schema.json).
 
 ```json
 { "code": "welcome", "label": "Приветствие", "description": "…", "default": "Привет, я бот." }
 ```
 
-Читается **обеими** сторонами:
+Read by **both** sides:
 
-- **PHP:** `App\Support\BotMessageCatalog` через `config('bot.registry')`
+- **PHP:** `App\Support\BotMessageCatalog` via `config('bot.registry')`
   (`config/bot.php` → `base_path('modules/max-bot/messages.json')`).
-- **Python:** `repositories/messages.py:_load_registry()` (путь — относительно модуля).
-  Python дополнительно держит типизированные константы кодов (`WELCOME`, `BOT_ADDED`, …)
-  и **падает на старте**, если требуемый код отсутствует в реестре (`RuntimeError`).
+- **Python:** `repositories/messages.py:_load_registry()` (path relative to the module).
+  Python additionally keeps typed code constants (`WELCOME`, `BOT_ADDED`, …)
+  and **fails on startup** if a required code is missing from the registry (`RuntimeError`).
 
-> При изменении набора кодов правьте `messages.json` — и сверяйте константы в
-> `repositories/messages.py`, иначе они молча разойдутся с файлом.
+> When changing the set of codes, edit `messages.json` — and reconcile the constants in
+> `repositories/messages.py`, otherwise they will silently diverge from the file.
 
-### 2. Таблица `bot_messages` — переопределения
+### 2. The `bot_messages` table — overrides
 
-Миграция `database/migrations/bot/...create_bot_messages_table.php`. Колонки:
+Migration `database/migrations/bot/...create_bot_messages_table.php`. Columns:
 
-| Колонка | Тип | Смысл |
+| Column | Type | Meaning |
 |---|---|---|
 | `id` | PK | — |
-| `code` | string(128), **unique** | код сообщения из реестра |
-| `text` | text | переопределённый текст (инлайн-HTML) |
-| `is_active` | bool, default `true` | применять ли переопределение |
-| `updated_by` | FK users, nullOnDelete | кто правил |
+| `code` | string(128), **unique** | message code from the registry |
+| `text` | text | overridden text (inline HTML) |
+| `is_active` | bool, default `true` | whether to apply the override |
+| `updated_by` | FK users, nullOnDelete | who edited it |
 | `created_at`/`updated_at` | timestamps | — |
 
-Живой контракт:
+The live contract:
 
-- **Laravel пишет:** `AdminBotMessageController@update` делает upsert по `code`;
-  `@destroy` (маршрут `reset`) удаляет переопределение → возврат к дефолту из реестра.
-- **Python читает:** `MessageRepository.get(code)` выполняет
-  `SELECT text FROM bot_messages WHERE code=%s AND is_active=1 LIMIT 1` и откатывается
-  к `default` из реестра, если строки нет, она пустая или `is_active=0`.
+- **Laravel writes:** `AdminBotMessageController@update` does an upsert by `code`;
+  `@destroy` (the `reset` route) deletes the override → reverts to the default from the registry.
+- **Python reads:** `MessageRepository.get(code)` runs
+  `SELECT text FROM bot_messages WHERE code=%s AND is_active=1 LIMIT 1` and falls back
+  to the `default` from the registry if the row is absent, empty, or `is_active=0`.
 
-> Таблица создаётся **только при включённом боте**: `BotServiceProvider` подключает
-> `migrations/bot/` лишь когда `config('bot.enabled')`.
+> The table is created **only when the bot is enabled**: `BotServiceProvider` registers
+> `migrations/bot/` only when `config('bot.enabled')`.
 
-### 3. Контракт формата текста — только инлайн-HTML
+### 3. The text format contract — inline HTML only
 
-Админ редактирует текст в `NRichText` и хранит **инлайн-HTML**. Бот отправляет его с
-`format=ParseMode.HTML` (`handlers/bot_started.py`), а MAX/Telegram понимают только
-инлайн-разметку.
+The admin edits the text in `NRichText` and stores **inline HTML**. The bot sends it with
+`format=ParseMode.HTML` (`handlers/bot_started.py`), and MAX/Telegram understand only
+inline markup.
 
-Поэтому `BotMessageRequest` санитизирует ввод через `App\Support\BotMessageSanitizer`
-(symfony/html-sanitizer, не регулярки). Разрешено:
+That is why `BotMessageRequest` sanitizes input through `App\Support\BotMessageSanitizer`
+(symfony/html-sanitizer, not regexes). Allowed:
 
-- инлайн-теги: `<b> <strong> <i> <em> <s> <strike> <u> <code>`;
-- ссылки `<a href>` со схемами `https`, `http`, `mailto`, `tg`.
+- inline tags: `<b> <strong> <i> <em> <s> <strike> <u> <code>`;
+- links `<a href>` with the schemes `https`, `http`, `mailto`, `tg`.
 
-Всё остальное вырезается (блочные/неизвестные теги — с сохранением текста;
-`<script>`/`<style>` — вместе с содержимым; `on*=`-обработчики и опасные схемы —
-удаляются). При хранении текстов в БД **не закладывайтесь на блочную разметку.**
+Everything else is stripped (block/unknown tags — keeping the text;
+`<script>`/`<style>` — together with their contents; `on*=` handlers and dangerous schemes —
+removed). When storing texts in the DB **do not rely on block markup.**
 
 ---
 
-## Конфигурация (env)
+## Configuration (env)
 
-Бот читает собственное окружение (`config/config.py`, `Config.from_env`). `.env`
-ищется сначала в `modules/max-bot/.env`, затем в корне админки (на уровень выше).
+The bot reads its own environment (`config/config.py`, `Config.from_env`). The `.env`
+is looked up first in `modules/max-bot/.env`, then in the admin panel root (one level up).
 
-| Переменная | Обяз. | Дефолт | Назначение |
+| Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `API_TOKEN` | **да** | — | токен бота MAX |
-| `BOT_ID` | **да** | — | id бота (int) |
-| `DB_DATABASE` | **да** | — | общая с Laravel БД |
-| `DB_USERNAME` | **да** | — | пользователь БД |
-| `DB_PASSWORD` | **да** | — | пароль БД |
-| `API_BASE_URL` | нет | `https://platform-api.max.ru` | базовый URL API MAX |
-| `DB_HOST` | нет | `127.0.0.1` | хост БД |
-| `DB_PORT` | нет | `3306` | порт БД |
-| `MAX_API_RATE_LIMIT_HZ` | нет | `20` | лимит запросов к API MAX, Гц |
+| `API_TOKEN` | **yes** | — | MAX bot token |
+| `BOT_ID` | **yes** | — | bot id (int) |
+| `DB_DATABASE` | **yes** | — | database shared with Laravel |
+| `DB_USERNAME` | **yes** | — | DB user |
+| `DB_PASSWORD` | **yes** | — | DB password |
+| `API_BASE_URL` | no | `https://platform-api.max.ru` | base URL of the MAX API |
+| `DB_HOST` | no | `127.0.0.1` | DB host |
+| `DB_PORT` | no | `3306` | DB port |
+| `MAX_API_RATE_LIMIT_HZ` | no | `20` | MAX API request limit, Hz |
 
-Отсутствие обязательной переменной → `ValueError` на старте.
+A missing required variable → `ValueError` on startup.
 
-## Включение
+## Enabling
 
-Признак на стороне Laravel — `config('bot.enabled')`, включается **любым** из:
+The flag on the Laravel side is `config('bot.enabled')`, turned on by **either** of:
 
-- `BOT_ACTIVE=true` (app-слой; локальный запуск);
-- `COMPOSE_PROFILES` содержит `bot` (Docker — та же переменная поднимает контейнер `bot`).
+- `BOT_ACTIVE=true` (app layer; local run);
+- `COMPOSE_PROFILES` containing `bot` (Docker — the same variable brings up the `bot` container).
 
-Когда выключено: роуты `bot-messages.*` отдают 404 (`EnsureBotEnabled`), миграции
-бота не подключаются, права `bot-messages.*` не сидятся, пункт сайдбара скрыт. См.
-раздел «Сообщения бота» в корневом [README](../../README.md).
+When disabled: the `bot-messages.*` routes return 404 (`EnsureBotEnabled`), the bot's
+migrations are not registered, the `bot-messages.*` permissions are not seeded, the sidebar
+item is hidden. See the "Bot messages" section in the root [README](../../README.md).
 
-## Запуск (локально, вне Docker)
+## Running (locally, outside Docker)
 
 ```bash
 cd modules/max-bot
 python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env        # заполнить API_TOKEN, BOT_ID, DB_*
+cp .env.example .env        # fill in API_TOKEN, BOT_ID, DB_*
 python main.py
 ```
 
-Тесты бота — `pytest` (см. `pytest.ini`, `conftest.py`, `tests/`, `handlers/test_handlers.py`).
+The bot's tests — `pytest` (see `pytest.ini`, `conftest.py`, `tests/`, `handlers/test_handlers.py`).
 
-## Структура
+## Structure
 
 ```
 modules/max-bot/
-├── main.py              # точка входа: long-polling + воркеры + graceful shutdown
-├── messages.json        # общий реестр кодов/дефолтов (источник правды)
-├── messages.schema.json # JSON-схема реестра (валидируется в тестах)
-├── config/config.py     # загрузка env → dataclass Config
-├── handlers/            # обработчики событий (активны bot_started, bot_added)
-├── repositories/        # messages.py (реестр + override), db.py (пул aiomysql)
-├── utils/               # rate_limiter и пр.
-└── log/                 # настройка логирования
+├── main.py              # entry point: long-polling + workers + graceful shutdown
+├── messages.json        # shared registry of codes/defaults (source of truth)
+├── messages.schema.json # JSON schema of the registry (validated in tests)
+├── config/config.py     # loading env → dataclass Config
+├── handlers/            # event handlers (bot_started, bot_added are active)
+├── repositories/        # messages.py (registry + override), db.py (aiomysql pool)
+├── utils/               # rate_limiter etc.
+└── log/                 # logging setup
 ```

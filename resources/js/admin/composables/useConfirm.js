@@ -1,13 +1,13 @@
 /**
- * Состояние модалки подтверждения (ConfirmModal).
- * reactive → на странице доступ без `.value`:
+ * State of the confirmation modal (ConfirmModal).
+ * reactive → access on the page without `.value`:
  *   const del = useConfirm();
- *   del.ask(row);     // открыть с данными строки
- *   del.payload?.id   // данные текущего подтверждения
- *   del.loading       // индикатор на кнопке подтверждения (:loading)
- *   del.close();      // закрыть (сбрасывает и loading)
+ *   del.ask(row);     // open with row data
+ *   del.payload?.id   // data of the current confirmation
+ *   del.loading       // indicator on the confirm button (:loading)
+ *   del.close();      // close (also resets loading)
  *
- * Типичный поток удаления:
+ * Typical deletion flow:
  *   function confirmDelete() {
  *     del.loading = true;
  *     router.delete(url, { onFinish: () => del.close() });

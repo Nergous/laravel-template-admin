@@ -5,10 +5,10 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Таблица activity_log — журнал действий (аудит).
+ * The activity_log table — activity log (audit).
  *
- * Полиморфный субъект (nullableMorphs), JSON-diff изменений и ручной created_at
- * без updated_at. Модель App\Models\ActivityLog, запись через трейт LogsActivity.
+ * Polymorphic subject (nullableMorphs), JSON diff of changes and a manual created_at
+ * without updated_at. Model App\Models\ActivityLog, written via the LogsActivity trait.
  */
 return new class extends Migration
 {
@@ -18,15 +18,15 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->string('action');              // created, updated, deleted, restored, duplicated, ...
-            $table->nullableMorphs('subject');      // subject_type + subject_id (+ их индекс)
-            $table->string('subject_label')->nullable(); // снимок имени сущности на момент действия
-            $table->string('actor_label')->nullable();   // снимок имени автора: переживает force-delete
+            $table->nullableMorphs('subject');      // subject_type + subject_id (+ their index)
+            $table->string('subject_label')->nullable(); // snapshot of the entity name at the time of the action
+            $table->string('actor_label')->nullable();   // snapshot of the author name: survives a force-delete
             $table->json('changes')->nullable();    // {"title": ["old", "new"], ...}
             $table->timestamp('created_at')->useCurrent();
 
-            $table->index('created_at');                   // журнал без фильтра (latest('created_at'))
-            $table->index(['action', 'created_at']);       // фильтр по действию + сортировка
-            $table->index(['subject_type', 'created_at']); // фильтр по типу субъекта + сортировка
+            $table->index('created_at');                   // log without a filter (latest('created_at'))
+            $table->index(['action', 'created_at']);       // filter by action + sort
+            $table->index(['subject_type', 'created_at']); // filter by subject type + sort
         });
 
         if (! $this->innodbAutoIndexesForeignKeys()) {

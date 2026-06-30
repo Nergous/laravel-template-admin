@@ -6,13 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 
 /**
- * Настройки приложения (типизированный key/value).
+ * Application settings (typed key/value).
  *
- * Источник истины по структуре — константа SCHEMA: группа → ключ →
- * [тип, значение по умолчанию]. Она задаёт и дефолты, и приведение типов,
- * и набор валидируемых полей (см. UpdateSettingsRequest). Значения хранятся
- * строками; читаются с приведением к типу. Весь набор кэшируется навсегда
- * и сбрасывается при записи.
+ * The source of truth for the structure is the SCHEMA constant: group → key →
+ * [type, default value]. It defines the defaults, the type casting, and the set
+ * of validated fields (see UpdateSettingsRequest). Values are stored as strings
+ * and read with type casting. The whole set is cached forever and flushed on
+ * write.
  */
 class Setting extends Model
 {
@@ -20,12 +20,13 @@ class Setting extends Model
 
     private const CACHE_KEY = 'settings.all';
 
-    /** Ключ request-scoped мемоизации grouped() в контейнере (см. grouped()). */
+    /** Key for request-scoped memoization of grouped() in the container (see grouped()). */
     private const MEMO_KEY = 'settings.grouped.memo';
 
     /**
-     * Брендинг-дефолты (app_name, meta_title_template, canonical_domain) —
-     * плейсхолдеры шаблона. Замените под свой проект здесь или в UI /admin/settings.
+     * Branding defaults (app_name, meta_title_template, canonical_domain) are
+     * template placeholders. Replace them for your project here or in the
+     * /admin/settings UI.
      *
      * @var array<string, array<string, array{0:string,1:mixed}>>
      */
@@ -33,13 +34,13 @@ class Setting extends Model
         'general' => [
             'app_name' => ['string', 'Admin'],
             'timezone' => ['string', 'Europe/Moscow'],
-            'favicon' => ['string', ''], // URL изображения из медиатеки
+            'favicon' => ['string', ''], // image URL from the media library
         ],
         'seo' => [
             'meta_title_template' => ['string', '%s — Admin'],
             'meta_description' => ['text', 'Панель управления.'],
-            'canonical_domain' => ['string', ''], // напр. https://example.com — для canonical/og
-            'og_image' => ['string', ''], // URL изображения из медиатеки
+            'canonical_domain' => ['string', ''], // e.g. https://example.com — for canonical/og
+            'og_image' => ['string', ''], // image URL from the media library
             'indexable' => ['bool', true],
             'sitemap' => ['bool', true],
         ],
@@ -79,21 +80,21 @@ class Setting extends Model
     }
 
     /**
-     * Полная карта настроек, сгруппированная и приведённая к типам,
-     * с подстановкой дефолтов из SCHEMA для отсутствующих в БД ключей.
+     * The full settings map, grouped and cast to types, substituting defaults
+     * from SCHEMA for keys missing in the DB.
      *
      * @return array<string, array<string, mixed>>
      */
     public static function grouped(): array
     {
-        // Мемоизация в рамках запроса. За один web-запрос grouped() дёргается
-        // неоднократно (AppServiceProvider правит config, blade читает favicon,
-        // лимитер «login» — throttle), а каждый вызов иначе перечитывает
-        // stored() из кэш-store — на дефолтном `database`-кэше это лишний запрос
-        // к БД на каждое чтение. Кэшируем результат в контейнере: он
-        // пересоздаётся на каждый HTTP-запрос, поэтому привязка живёт ровно один
-        // запрос и не протекает ни между запросами, ни между тестами (в отличие
-        // от статического свойства). Сбрасывается из flushCache() при записи.
+        // Request-scoped memoization. Within a single web request grouped() is
+        // called multiple times (AppServiceProvider tweaks config, blade reads
+        // favicon, the "login" limiter — throttle), and each call would otherwise
+        // re-read stored() from the cache store — on the default `database` cache
+        // that is an extra DB query on every read. We cache the result in the
+        // container: it is recreated for every HTTP request, so the binding lives
+        // exactly one request and does not leak between requests or between tests
+        // (unlike a static property). Flushed from flushCache() on write.
         if (app()->bound(self::MEMO_KEY)) {
             return app(self::MEMO_KEY);
         }
@@ -114,15 +115,15 @@ class Setting extends Model
         return $out;
     }
 
-    /** Возвращает одно значение настройки с приведением к типу (или null). */
+    /** Returns a single setting value, cast to its type (or null). */
     public static function value(string $group, string $key): mixed
     {
         return static::grouped()[$group][$key] ?? null;
     }
 
     /**
-     * Строит строку таблицы для одной настройки или null, если ключ
-     * не объявлен в SCHEMA. Общий билдер для set()/setMany().
+     * Builds a table row for a single setting, or null if the key is not
+     * declared in SCHEMA. Shared builder for set()/setMany().
      *
      * @return array{key:string,group:string,type:string,value:string}|null
      */
@@ -142,7 +143,7 @@ class Setting extends Model
         ];
     }
 
-    /** Записывает одно значение (только если ключ объявлен в SCHEMA). */
+    /** Writes a single value (only if the key is declared in SCHEMA). */
     public static function set(string $group, string $key, mixed $value): void
     {
         if ($row = static::row($group, $key, $value)) {
@@ -151,10 +152,10 @@ class Setting extends Model
     }
 
     /**
-     * Массовая запись настроек по группам одним upsert-запросом
-     * (вместо N updateOrCreate). Ключи, отсутствующие в SCHEMA, отбрасываются.
+     * Bulk-writes settings by group in a single upsert query (instead of N
+     * updateOrCreate calls). Keys missing from SCHEMA are discarded.
      *
-     * @param  array<string, array<string, mixed>>  $groups  группа → ключ → значение
+     * @param  array<string, array<string, mixed>>  $groups  group → key → value
      */
     public static function setMany(array $groups): void
     {

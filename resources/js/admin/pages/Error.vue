@@ -3,9 +3,9 @@ import { computed } from "vue";
 import { Head } from "@inertiajs/vue3";
 import { NButton, NIcon } from "@/lib/nergous-cit";
 
-// Серверный обработчик (bootstrap/app.php) рендерит эту страницу при выключенной
-// отладке для 403/404/419/429/500/503. Подписи — здесь (DS локале-агностична),
-// статус приходит пропсом.
+// The server handler (bootstrap/app.php) renders this page when debug is off
+// for 403/404/419/429/500/503. The labels live here (the DS is locale-agnostic),
+// the status arrives as a prop.
 const props = defineProps({
     status: { type: Number, default: 500 },
 });

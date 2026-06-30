@@ -42,11 +42,11 @@ return [
     | Pages
     |--------------------------------------------------------------------------
     |
-    | `paths` определяет, где искать Vue-компоненты страниц. Админка и
-    | публичная часть — отдельные Inertia-приложения со своими каталогами
-    | страниц. Сейчас реализована только админка; когда появится публичная
-    | часть — раскомментировать её путь ниже (имена компонентов разводятся
-    | по подпапкам, чтобы не пересекались).
+    | `paths` defines where to look for Vue page components. The admin panel and
+    | the public part are separate Inertia applications, each with its own pages
+    | directory. Only the admin panel is implemented for now; when the public part
+    | appears, uncomment its path below (component names are separated into
+    | subfolders so they don't collide).
     |
     */
 

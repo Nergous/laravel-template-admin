@@ -1,8 +1,8 @@
 <script setup>
-// DrawerFooter — стандартная пара кнопок футера NDrawer (Отмена / Сохранить).
-// Раскладка 1:2 повторялась дословно на страницах с drawer-формами — собрали сюда.
-// Логику закрытия/сохранения задаёт страница через @cancel / @save (слот #footer
-// у NDrawer отдаёт { close }, его прокидываем в обработчик отмены).
+// DrawerFooter — the standard pair of NDrawer footer buttons (Cancel / Save).
+// The 1:2 layout was repeated verbatim across pages with drawer forms — gathered here.
+// The close/save logic is defined by the page via @cancel / @save (NDrawer's #footer
+// slot exposes { close }, which we pass into the cancel handler).
 import { NButton } from "@/lib/nergous-cit";
 
 defineProps({

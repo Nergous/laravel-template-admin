@@ -18,7 +18,7 @@ import {
 // settings: { general:{app_name,timezone}, seo:{...}, security:{...} }
 const props = defineProps({
     settings: { type: Object, required: true },
-    images: { type: Array, default: () => [] }, // картинки медиатеки для OG-пикера
+    images: { type: Array, default: () => [] }, // media library images for the OG picker
 });
 
 // useForm wraps the whole nested payload — submit shape matches the contract.
@@ -31,8 +31,8 @@ const tabs = [
     { value: "security", label: "Безопасность" },
 ];
 
-// ARIA-связка таб ↔ панель: NTabs с id-base="settings" даёт табам id
-// `settings-${value}`, а панель ссылается на него через aria-labelledby.
+// ARIA link tab ↔ panel: NTabs with id-base="settings" gives tabs the id
+// `settings-${value}`, and the panel references it via aria-labelledby.
 const panelProps = (value) => ({
     id: `settings-panel-${value}`,
     role: "tabpanel",
@@ -57,9 +57,9 @@ function cancel() {
     form.reset();
 }
 
-/* ---------- Выбор изображения из медиатеки (OG + favicon) ---------- */
+/* ---------- Picking an image from the media library (OG + favicon) ---------- */
 const pickerOpen = ref(false);
-// Какое поле настроек сейчас выбираем.
+// Which settings field we are currently picking for.
 const pickerTarget = ref({
     group: "seo",
     key: "og_image",
@@ -382,7 +382,7 @@ const pickedUrl = computed(() => {
             </div>
         </Transition>
 
-        <!-- Пикер изображения из медиатеки (OG / favicon) -->
+        <!-- Image picker from the media library (OG / favicon) -->
         <NModal
             v-model="pickerOpen"
             :title="`Выбор ${pickerTarget.title}`"

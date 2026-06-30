@@ -5,10 +5,10 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Form Request для массового удаления медиа.
+ * Form Request for bulk media deletion.
  *
- * Валидирует массив идентификаторов перед удалением.
- * Используется в AdminMediaController::bulkDestroy().
+ * Validates the array of identifiers before deletion.
+ * Used in AdminMediaController::bulkDestroy().
  */
 class BulkDestroyMediaRequest extends FormRequest
 {
@@ -18,10 +18,10 @@ class BulkDestroyMediaRequest extends FormRequest
     }
 
     /**
-     * Правила валидации:
-     * - ids        — обязательный массив идентификаторов
-     * - ids.*      — каждый элемент должен быть целым числом
-     *               и существовать в таблице media
+     * Validation rules:
+     * - ids        — required array of identifiers
+     * - ids.*      — each element must be an integer
+     *               and exist in the media table
      */
     public function rules(): array
     {

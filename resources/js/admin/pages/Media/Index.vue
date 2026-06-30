@@ -21,19 +21,19 @@ import { can } from "@/lib/can.js";
 import { formatBytes, pluralize } from "@/lib/format.js";
 
 const props = defineProps({
-    // Inertia-пагинатор. Каждая строка: { id, filename, original_name, mime_type,
+    // Inertia paginator. Each row: { id, filename, original_name, mime_type,
     // type ('image'|'video'|'audio'|'document'|'other'), size (bytes), url, thumb_url, created_at }.
     media: { type: Object, required: true },
 });
 
 const toast = useToast();
 
-/* ── Локальный список строк ──────────────────────────────────────────────
-   Стартует с серверной страницы; в него прибавляются медиа, дозагруженные
-   поллингом после загрузки (prepend), и из него удаляются стёртые элементы. */
+/* ── Local row list ──────────────────────────────────────────────────────
+   Starts from the server page; media fetched by polling after upload are
+   prepended to it, and deleted items are removed from it. */
 const rows = ref([...props.media.data]);
 
-/* ── Подписи и иконки по типу ─────────────────────────────────────────── */
+/* ── Labels and icons by type ─────────────────────────────────────────── */
 const TYPE_LABEL = {
     image: "Фото",
     video: "Видео",
@@ -41,7 +41,7 @@ const TYPE_LABEL = {
     document: "Документ",
     other: "Файл",
 };
-// Иконки ограничены набором NIcon — берём ближайшие осмысленные.
+// Icons are limited to the NIcon set — we pick the closest meaningful ones.
 const TYPE_ICON = {
     image: "asset",
     video: "layers",
@@ -55,7 +55,7 @@ function typeLabel(m) {
 function typeIcon(m) {
     return TYPE_ICON[m.type] || TYPE_ICON.other;
 }
-// Бейдж-метка вида JPG / MP4 / PDF — из расширения имени, иначе из subtype MIME.
+// Badge label like JPG / MP4 / PDF — from the name extension, otherwise from the MIME subtype.
 function typeBadge(m) {
     const name = m.original_name || m.filename || "";
     const ext = name.includes(".") ? name.split(".").pop() : "";
@@ -64,7 +64,7 @@ function typeBadge(m) {
     return sub.toUpperCase().slice(0, 5);
 }
 
-/* ── Фильтр по типу + переключатель вида ──────────────────────────────── */
+/* ── Type filter + view toggle ────────────────────────────────────────── */
 const filter = ref("all");
 const filterOpts = [
     { value: "all", label: "Все" },
@@ -84,9 +84,9 @@ const visible = computed(() =>
         ? rows.value
         : rows.value.filter((m) => m.type === filter.value),
 );
-// Лайтбокс работает только по картинкам — индексы считаем внутри их подмножества.
+// The lightbox works only with images — indices are computed within their subset.
 const images = computed(() => visible.value.filter((m) => m.type === "image"));
-// Нейтральная форма элемента для NLightbox: { url, caption }.
+// Neutral item shape for NLightbox: { url, caption }.
 const lbItems = computed(() =>
     images.value.map((m) => ({
         url: m.url,
@@ -94,18 +94,18 @@ const lbItems = computed(() =>
     })),
 );
 
-/* ── Загрузка: две фазы — «Загрузка» (реальные байты XHR) → «Обработка»
-   (индетерминантный индикатор, пока поллинг тянет обработанные очередью
-   файлы). Маленькие файлы заливаются мгновенно, реальная работа (генерация
-   превью) идёт в очереди — поэтому статичные 100% больше не показываем. */
+/* ── Upload: two phases — "Uploading" (real XHR bytes) → "Processing"
+   (indeterminate indicator while polling pulls the files processed by the
+   queue). Small files upload instantly, the real work (thumbnail generation)
+   runs in the queue — so we no longer show a static 100%. */
 const uploading = ref(false);
 const phase = ref("uploading"); // 'uploading' | 'processing'
 const pct = ref(0);
-const expectedCount = ref(0); // сколько файлов поставлено в очередь
-const receivedCount = ref(0); // сколько уже подтянулось поллингом
+const expectedCount = ref(0); // how many files were queued
+const receivedCount = ref(0); // how many have already been pulled by polling
 let pollTimer = null;
 
-// Сколько файлов ещё в обработке (для подписи), но не меньше нуля.
+// How many files are still processing (for the label), but never below zero.
 const processingLeft = computed(() =>
     Math.max(0, expectedCount.value - receivedCount.value),
 );
@@ -121,8 +121,8 @@ function largestId() {
 
 function upload(files) {
     if (!files?.length) return;
-    // Отменяем поллинг прошлой загрузки, иначе быстрый повторный drop оставит
-    // осиротевший таймер, а его счётчики затрутся новой партией.
+    // Cancel the previous upload's polling, otherwise a quick repeat drop leaves
+    // an orphaned timer whose counters get clobbered by the new batch.
     stopPolling();
     const token = document.querySelector('meta[name="csrf-token"]')?.content;
     const fd = new FormData();
@@ -143,21 +143,21 @@ function upload(files) {
             pct.value = Math.round((e.loaded / e.total) * 100);
     };
     xhr.onload = () => {
-        // onload срабатывает на любой завершённый ответ — 4xx/5xx тоже сюда.
+        // onload fires for any completed response — 4xx/5xx land here too.
         if (xhr.status < 200 || xhr.status >= 300) {
             uploadFailed(xhr);
             return;
         }
-        // Байты доставлены — реальная работа теперь в очереди.
+        // Bytes delivered — the real work is now in the queue.
         pct.value = 100;
         let queued = files.length;
         try {
             const json = JSON.parse(xhr.responseText || "{}");
             if (typeof json.queued === "number") queued = json.queued;
         } catch {
-            /* без JSON — используем число выбранных файлов как ожидание */
+            /* no JSON — use the number of selected files as the expectation */
         }
-        // Переходим во вторую фазу: индетерминантная «Обработка…».
+        // Move to the second phase: the indeterminate "Processing…".
         phase.value = "processing";
         startPolling(queued);
     };
@@ -165,22 +165,22 @@ function upload(files) {
     xhr.send(fd);
 }
 
-// Сообщить об ошибке загрузки и сбросить индикатор. Текст берём из JSON-ответа
-// сервера (валидация/лимит), иначе — общее сообщение.
+// Report an upload error and reset the indicator. The text comes from the server's
+// JSON response (validation/limit), otherwise a generic message.
 function uploadFailed(xhr) {
     let msg = "Проверьте размер и формат файлов и попробуйте снова.";
     try {
         const json = JSON.parse(xhr?.responseText || "{}");
         if (json.message) msg = json.message;
     } catch {
-        /* нет JSON — оставляем общее сообщение */
+        /* no JSON — keep the generic message */
     }
     stopPolling();
     toast.error("Не удалось загрузить файлы", msg);
 }
 
-// Опрашиваем /poll до тех пор, пока не подтянутся все ожидаемые медиа
-// или пока не исчерпаем лимит попыток (очередь могла отбраковать файл).
+// Poll /poll until all expected media are pulled in
+// or until we exhaust the attempt limit (the queue may have rejected a file).
 function startPolling(expected) {
     expectedCount.value = expected;
     receivedCount.value = 0;
@@ -196,14 +196,14 @@ function startPolling(expected) {
             });
             const fresh = await res.json(); // newest first
             if (Array.isArray(fresh) && fresh.length) {
-                // poll отдаёт по убыванию id — кладём в начало в порядке возрастания.
+                // poll returns by descending id — we prepend them in ascending order.
                 const known = new Set(rows.value.map((m) => m.id));
                 const add = fresh.filter((m) => !known.has(m.id));
                 for (const m of [...add].reverse()) rows.value.unshift(m);
                 receivedCount.value += add.length;
             }
         } catch {
-            /* временная сетевая ошибка — попробуем на следующем тике */
+            /* transient network error — we'll retry on the next tick */
         }
 
         if (receivedCount.value >= expected) {
@@ -211,7 +211,7 @@ function startPolling(expected) {
             return;
         }
         if (attempts >= MAX_ATTEMPTS) {
-            // Очередь не успела за отведённые попытки — не зависаем, мягко уведомляем.
+            // The queue didn't finish within the allotted attempts — don't hang, notify gently.
             stopPolling();
             toast.info(
                 "Файлы ещё обрабатываются",
@@ -235,18 +235,18 @@ function stopPolling() {
 }
 onBeforeUnmount(stopPolling);
 
-/* ── Лайтбокс ─────────────────────────────────────────────────────────── */
+/* ── Lightbox ─────────────────────────────────────────────────────────── */
 const lbIndex = ref(-1);
 function openItem(m) {
     if (m.type === "image") {
         lbIndex.value = images.value.findIndex((x) => x.id === m.id);
     } else if (m.url) {
-        // Не-изображения открываем/скачиваем в новой вкладке.
+        // Non-images are opened/downloaded in a new tab.
         window.open(m.url, "_blank", "noopener");
     }
 }
 
-/* ── Превью с фолбэком на иконку при битой ссылке ─────────────────────── */
+/* ── Thumbnail with an icon fallback on a broken link ─────────────────── */
 const broken = ref(new Set());
 function onImgError(id) {
     const next = new Set(broken.value);
@@ -257,10 +257,10 @@ function showThumb(m) {
     return m.type === "image" && !!m.thumb_url && !broken.value.has(m.id);
 }
 
-/* ── Выбор файлов (для массовых действий) ─────────────────────────────────
-   Храним id выбранных в Set. Реактивность Set требует переприсваивания —
-   тот же приём, что и у broken выше. Выбор переживает смену фильтра, поэтому
-   «Выбрать все» оперирует только видимым подмножеством. */
+/* ── File selection (for bulk actions) ────────────────────────────────────
+   We keep the selected ids in a Set. Set reactivity requires reassignment —
+   the same trick as broken above. The selection survives a filter change, so
+   "Select all" operates only on the visible subset. */
 const selected = ref(new Set());
 function isSelected(id) {
     return selected.value.has(id);
@@ -295,7 +295,7 @@ function toggleAllVisible() {
 function clearSelection() {
     selected.value = new Set();
 }
-// Убрать ids из выбора (после удаления соответствующих строк).
+// Remove ids from the selection (after deleting the corresponding rows).
 function deselect(ids) {
     if (!selected.value.size) return;
     const drop = new Set(ids);
@@ -303,11 +303,11 @@ function deselect(ids) {
     selected.value = next;
 }
 
-/* ── Удаление одного файла ────────────────────────────────────────────── */
+/* ── Deleting a single file ───────────────────────────────────────────── */
 const delOpen = ref(false);
 const delId = ref(null);
 const delLoading = ref(false);
-// Имя удаляемого файла для подписи в модалке (original_name → filename).
+// Name of the file being deleted, for the modal label (original_name → filename).
 const delName = computed(() => {
     const m = rows.value.find((x) => x.id === delId.value);
     return m ? m.original_name || m.filename : "";
@@ -338,7 +338,7 @@ function confirmDelete() {
     });
 }
 
-/* ── Массовое удаление выбранных файлов ───────────────────────────────── */
+/* ── Bulk deletion of selected files ──────────────────────────────────── */
 const bulkOpen = ref(false);
 const bulkLoading = ref(false);
 const bulkMessage = computed(() => {
@@ -371,7 +371,7 @@ function confirmBulkDelete() {
     });
 }
 
-/* ── Пагинация ────────────────────────────────────────────────────────── */
+/* ── Pagination ───────────────────────────────────────────────────────── */
 function goPage(p) {
     router.get(
         "/admin/media",
@@ -393,14 +393,14 @@ function goPage(p) {
                     @files="upload"
                 />
                 <div v-if="uploading" class="upload-progress">
-                    <!-- Фаза 1: реальная заливка байтов (детерминантный бар). -->
+                    <!-- Phase 1: real byte upload (determinate bar). -->
                     <NProgress
                         v-if="phase === 'uploading'"
                         :value="pct"
                         label="Загрузка"
                         show-value
                     />
-                    <!-- Фаза 2: очередь генерирует превью — индетерминантный статус. -->
+                    <!-- Phase 2: the queue generates thumbnails — indeterminate status. -->
                     <div
                         v-else
                         class="upload-processing"
@@ -415,7 +415,7 @@ function goPage(p) {
                 </div>
             </NCard>
 
-            <!-- Панель управления: выбор всех + фильтр по типу + переключатель вида -->
+            <!-- Control bar: select all + type filter + view toggle -->
             <div v-if="rows.length" class="toolbar">
                 <div class="toolbar__group">
                     <NCheckbox
@@ -439,7 +439,7 @@ function goPage(p) {
                 />
             </div>
 
-            <!-- Панель массовых действий: появляется, когда что-то выбрано -->
+            <!-- Bulk actions bar: appears when something is selected -->
             <div
                 v-if="can('media.delete') && selectedCount"
                 class="selbar"
@@ -465,7 +465,7 @@ function goPage(p) {
                 </div>
             </div>
 
-            <!-- Сетка карточек -->
+            <!-- Card grid -->
             <div
                 v-if="visible.length"
                 class="media"
@@ -504,7 +504,7 @@ function goPage(p) {
                             </span>
                         </button>
 
-                        <!-- Чекбокс выбора: виден при наведении и пока карточка выбрана -->
+                        <!-- Selection checkbox: visible on hover and while the card is selected -->
                         <span
                             v-if="can('media.delete')"
                             class="mcard__check"
@@ -604,12 +604,12 @@ function goPage(p) {
 </template>
 
 <style scoped>
-/* .page / .page__pager — общие утилиты в resources/js/admin/styles.css */
+/* .page / .page__pager — shared utilities in resources/js/admin/styles.css */
 .upload-progress {
     margin-top: 16px;
 }
-/* Фаза «Обработка…» — индетерминантный статус со спиннером (NProgress
-   умеет только детерминантный бар, поэтому показываем спиннер + подпись). */
+/* "Processing…" phase — an indeterminate status with a spinner (NProgress
+   only does a determinate bar, so we show a spinner + label). */
 .upload-processing {
     display: flex;
     align-items: center;
@@ -635,7 +635,7 @@ function goPage(p) {
     flex-wrap: wrap;
 }
 
-/* ── Панель массовых действий ─────────────────────────────────────────── */
+/* ── Bulk actions bar ─────────────────────────────────────────────────── */
 .selbar {
     display: flex;
     align-items: center;
@@ -660,11 +660,11 @@ function goPage(p) {
     flex-wrap: wrap;
 }
 
-/* ── Сетка ────────────────────────────────────────────────────────────── */
+/* ── Grid ─────────────────────────────────────────────────────────────── */
 .media--grid {
     display: grid;
-    /* Минимальная ширина колонки слегка масштабируется плотностью:
-       базовая 200px + поправка от --fs (12.5 / 14 / 16px). */
+    /* The minimum column width scales slightly with density:
+       a 200px base + a correction from --fs (12.5 / 14 / 16px). */
     grid-template-columns: repeat(
         auto-fill,
         minmax(calc(186px + var(--fs)), 1fr)
@@ -677,7 +677,7 @@ function goPage(p) {
     gap: 10px;
 }
 
-/* ── Карточка ─────────────────────────────────────────────────────────── */
+/* ── Card ─────────────────────────────────────────────────────────────── */
 .mcard {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -693,7 +693,7 @@ function goPage(p) {
     box-shadow: var(--shadow-md);
     transform: translateY(-2px);
 }
-/* Выбранная карточка — акцентная рамка-кольцо без сдвига вёрстки. */
+/* Selected card — an accent ring border without shifting the layout. */
 .mcard--selected {
     border-color: var(--accent);
     box-shadow:
@@ -713,8 +713,8 @@ function goPage(p) {
     align-items: center;
     justify-content: center;
 }
-/* Кнопка открытия — заполняет всё превью; оверлеи (выбор/бейдж/удаление)
-   лежат поверх неё с z-index. */
+/* Open button — fills the entire preview; overlays (selection/badge/delete)
+   sit on top of it via z-index. */
 .mcard__open {
     position: absolute;
     inset: 0;
@@ -743,8 +743,8 @@ function goPage(p) {
     color: var(--text-3);
     display: flex;
 }
-/* Чекбокс выбора — верхний левый угол превью. Скрыт, проявляется при
-   наведении на карточку или пока файл выбран; не перехватывает клик-открытие. */
+/* Selection checkbox — top-left corner of the preview. Hidden, revealed on
+   card hover or while the file is selected; doesn't intercept the open click. */
 .mcard__check {
     position: absolute;
     top: 9px;
@@ -789,7 +789,7 @@ function goPage(p) {
     box-shadow: var(--shadow-sm);
 }
 .mcard__foot {
-    /* Плотность (S/M/L) управляет паддингом строки и базовым кеглем. */
+    /* Density (S/M/L) controls the row padding and base font size. */
     padding: var(--row-pad) calc(var(--row-pad) - 1px);
     transition: padding 0.18s ease;
 }
@@ -802,7 +802,7 @@ function goPage(p) {
     text-overflow: ellipsis;
 }
 .mcard__meta {
-    /* Чуть мельче имени, тоже завязано на плотность. */
+    /* Slightly smaller than the name, also tied to density. */
     font-size: calc(var(--fs) - 2px);
     color: var(--text-3);
     display: flex;
@@ -810,7 +810,7 @@ function goPage(p) {
     margin-top: 4px;
 }
 
-/* ── Список ───────────────────────────────────────────────────────────── */
+/* ── List ─────────────────────────────────────────────────────────────── */
 .media--list .mcard {
     display: flex;
     align-items: stretch;
@@ -819,8 +819,8 @@ function goPage(p) {
     transform: none;
 }
 .media--list .mcard__preview {
-    /* Ширина превью строки масштабируется плотностью (S/M/L),
-       как и паддинг/кегль ниже — иначе строка визуально не меняется. */
+    /* The row preview width scales with density (S/M/L),
+       like the padding/font size below — otherwise the row doesn't change visually. */
     width: calc(var(--row-h) * 2.4);
     flex: none;
     aspect-ratio: auto;

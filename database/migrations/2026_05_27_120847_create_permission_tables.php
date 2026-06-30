@@ -5,11 +5,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Таблицы пакета spatie/laravel-permission: permissions, roles и связующие
- * (model_has_permissions, model_has_roles, role_has_permissions).
+ * Tables for the spatie/laravel-permission package: permissions, roles and the
+ * pivot tables (model_has_permissions, model_has_roles, role_has_permissions).
  *
- * Опубликована из пакета — имена таблиц/колонок и поддержка teams берутся
- * из config/permission.php. Внутреннюю логику не меняем.
+ * Published from the package — table/column names and teams support are taken
+ * from config/permission.php. We don't change the internal logic.
  */
 return new class extends Migration
 {

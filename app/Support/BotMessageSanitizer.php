@@ -6,25 +6,25 @@ use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
 
 /**
- * Санитизация HTML текста сообщений бота через symfony/html-sanitizer
+ * Sanitizes the HTML text of bot messages via symfony/html-sanitizer
  *
- * Оставляем только инлайн-разметку, которую понимает MAX (format=HTML):
- * жирный/курсив/зачёркнутый/подчёркнутый/моноширинный и ссылки. Всё остальное
- * (блочные/неизвестные теги, on*-обработчики, style, javascript:/data: схемы)
- * вырезается; текст неразрешённых тегов сохраняется, содержимое script/style —
- * удаляется целиком.
+ * We keep only the inline markup that MAX understands (format=HTML):
+ * bold/italic/strikethrough/underline/monospace and links. Everything else
+ * (block/unknown tags, on*-handlers, style, javascript:/data: schemes)
+ * is stripped; the text of disallowed tags is preserved, while the contents of
+ * script/style are removed entirely.
  */
 class BotMessageSanitizer
 {
-    /** Инлайн-теги, разрешённые в текстах бота (MAX/Telegram HTML). */
+    /** Inline tags allowed in bot texts (MAX/Telegram HTML). */
     private const ALLOWED_INLINE = ['b', 'strong', 'i', 'em', 's', 'strike', 'u', 'code'];
 
-    /** Безопасные схемы для href в ссылках. */
+    /** Safe schemes for href in links. */
     private const ALLOWED_LINK_SCHEMES = ['https', 'http', 'mailto', 'tg'];
 
     /**
-     * @param  string  $html  Исходный HTML (например, из NRichText)
-     * @return string Очищенный HTML — только разрешённая инлайн-разметка
+     * @param  string  $html  Source HTML (e.g. from NRichText)
+     * @return string Sanitized HTML — only the allowed inline markup
      */
     public static function sanitize(string $html): string
     {
@@ -42,7 +42,7 @@ class BotMessageSanitizer
         $config = $config
             ->allowElement('a', ['href'])
             ->allowLinkSchemes(self::ALLOWED_LINK_SCHEMES)
-            // script/style удаляем вместе с содержимым, а не оставляем как текст.
+            // Remove script/style along with their contents, rather than leaving them as text.
             ->dropElement('script')
             ->dropElement('style');
 

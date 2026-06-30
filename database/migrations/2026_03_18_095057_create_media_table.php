@@ -5,8 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Таблица media — файлы медиабиблиотеки (изображения, видео, аудио, документы).
- * Модель App\Models\Media; загрузка идёт асинхронно через UploadMedia.
+ * The media table — media library files (images, video, audio, documents).
+ * Model App\Models\Media; uploads run asynchronously via UploadMedia.
  */
 return new class extends Migration
 {
@@ -18,19 +18,19 @@ return new class extends Migration
             $table->string('original_name')->nullable();
             $table->string('mime_type')->nullable();
             $table->string('type')->nullable(); // image|video|audio|document|other
-            $table->unsignedBigInteger('size')->nullable(); // байты
+            $table->unsignedBigInteger('size')->nullable(); // bytes
             $table->boolean('has_thumb')->default(false);
-            // Авторство через трейт TracksAuthor на модели. created_by трейт сам не
-            // заполнит — строка создаётся в очереди (UploadMedia), где Auth::id() пуст;
-            // поэтому id загрузившего проставляется в job вручную. updated_by пишет
-            // трейт при редактировании медиа из админки (например переименование файла).
+            // Authorship via the TracksAuthor trait on the model. The trait won't fill
+            // created_by itself — the row is created in the queue (UploadMedia), where
+            // Auth::id() is empty; so the uploader id is set in the job manually. updated_by
+            // is written by the trait when media is edited from the admin panel (e.g. renaming a file).
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
             $table->timestamps();
 
-            $table->index('original_name');        // сортировка по человекочитаемому имени
-            $table->index('created_at');           // дефолтная сортировка галереи (created_at desc)
-            $table->index(['type', 'created_at']); // image-пикер: фильтр type + сортировка
+            $table->index('original_name');        // sort by human-readable name
+            $table->index('created_at');           // default gallery sort (created_at desc)
+            $table->index(['type', 'created_at']); // image picker: filter by type + sort
         });
 
         if (! $this->innodbAutoIndexesForeignKeys()) {

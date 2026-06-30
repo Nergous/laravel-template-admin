@@ -8,16 +8,16 @@ use App\Models\User;
 use Illuminate\Http\Request;
 
 /**
- * Глобальный поиск админ-панели (Cmd+K).
+ * Global admin panel search (Cmd+K).
  *
- * По умолчанию ищет по пользователям (для админов) и фото.
- * Чтобы добавить свою сущность в поиск — добавьте блок ниже по образцу.
+ * By default searches across users (for admins) and photos.
+ * To add your own entity to the search, add a block below following the pattern.
  */
 class AdminSearchController extends Controller
 {
     /**
-     * Возвращает результаты поиска (JSON) по пользователям и медиа с учётом прав.
-     * Запросы короче 2 символов игнорируются; на каждую сущность — до 5 совпадений.
+     * Returns search results (JSON) across users and media, respecting permissions.
+     * Queries shorter than 2 characters are ignored; up to 5 matches per entity.
      */
     public function index(Request $request): \Illuminate\Http\JsonResponse
     {

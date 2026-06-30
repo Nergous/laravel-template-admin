@@ -11,9 +11,9 @@ class RoleMassAssignmentTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * `is_system` помечает неудаляемые/непереименовываемые системные роли —
-     * его НЕЛЬЗЯ выставить массовым присваиванием (иначе неосторожный
-     * `Role::create($request->all())` обошёл бы защиту системной роли).
+     * `is_system` marks undeletable/unrenamable system roles —
+     * it MUST NOT be settable via mass assignment (otherwise a careless
+     * `Role::create($request->all())` would bypass the system-role protection).
      */
     public function test_is_system_cannot_be_mass_assigned(): void
     {
@@ -27,7 +27,7 @@ class RoleMassAssignmentTest extends TestCase
     }
 
     /**
-     * Доверенный код (сидер) выставляет флаг явным присваиванием — это работает.
+     * Trusted code (the seeder) sets the flag via explicit assignment — that works.
      */
     public function test_is_system_can_be_set_explicitly(): void
     {

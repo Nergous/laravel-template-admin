@@ -7,11 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Автозаполнение created_by / updated_by из текущего пользователя.
+ * Auto-fills created_by / updated_by from the current user.
  *
- * created_by ставится один раз при создании, updated_by — при каждом изменении.
- * Значения присваиваются напрямую (минуя $fillable). Если запрос неаутентифицирован
- * (фабрики, очередь, сидеры) — поля остаются как есть.
+ * created_by is set once on creation, updated_by — on every change.
+ * Values are assigned directly (bypassing $fillable). If the request is
+ * unauthenticated (factories, queue, seeders) — the fields are left as they are.
  */
 trait TracksAuthor
 {

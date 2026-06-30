@@ -7,29 +7,29 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\UploadedFile;
 
 /**
- * Form Request для загрузки файлов в медиа-библиотеку.
+ * Form Request for uploading files to the media library.
  *
- * Используется в AdminMediaController::store().
- * Файлы после валидации помещаются в очередь через UploadMedia Job.
+ * Used in AdminMediaController::store().
+ * After validation, files are queued via the UploadMedia Job.
  *
- * Принимает изображения, видео, аудио и документы (см. ALLOWED_EXTENSIONS).
- * Thumbnail генерируется только для изображений (в UploadMedia).
+ * Accepts images, video, audio and documents (see ALLOWED_EXTENSIONS).
+ * A thumbnail is generated only for images (in UploadMedia).
  */
 class MediaRequest extends FormRequest
 {
-    /** Допустимые расширения файлов медиа-библиотеки. */
+    /** Allowed file extensions for the media library. */
     public const ALLOWED_EXTENSIONS = [
-        // изображения
+        // images
         'jpg', 'jpeg', 'png', 'webp', 'gif',
-        // видео
+        // video
         'mp4', 'webm', 'mov',
-        // аудио
+        // audio
         'mp3', 'wav', 'ogg',
-        // документы
+        // documents
         'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt',
     ];
 
-    /** Максимальный размер одного файла в килобайтах (~50 МБ). */
+    /** Maximum size of a single file in kilobytes (~50 MB). */
     public const MAX_SIZE_KB = 51200;
 
     public function authorize(): bool
@@ -38,10 +38,10 @@ class MediaRequest extends FormRequest
     }
 
     /**
-     * Правила валидации:
-     * - media     — обязательный массив от 1 до 10 файлов
-     * - media.*   — каждый файл должен быть допустимого формата
-     *               (изображение/видео/аудио/документ) не более 50 МБ
+     * Validation rules:
+     * - media     — required array of 1 to 10 files
+     * - media.*   — each file must be of an allowed format
+     *               (image/video/audio/document) no larger than 50 MB
      */
     public function rules(): array
     {
@@ -60,12 +60,12 @@ class MediaRequest extends FormRequest
     }
 
     /**
-     * Правило: для изображений ограничиваем размерность в пикселях.
+     * Rule: for images, limit the dimensions in pixels.
      *
-     * Лимит по весу (max) не спасает от decompression bomb — файл может быть мал
-     * по весу, но огромен по разрешению и развернуться в гигабайты при
-     * GD-декодировании в воркере (см. ImageOptimizer::MAX_PIXELS). Отклоняем такие
-     * на границе, чтобы они не доходили до очереди. Не-изображения пропускаем.
+     * A size limit (max) does not protect against a decompression bomb — a file can be
+     * small in size but huge in resolution and expand to gigabytes during
+     * GD decoding in the worker (see ImageOptimizer::MAX_PIXELS). We reject such files
+     * at the boundary so they never reach the queue. Non-images are skipped.
      */
     protected function imageWithinPixelLimit(string $attribute, mixed $value, \Closure $fail): void
     {

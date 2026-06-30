@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Таблицы кэша Laravel: cache (key/value) и cache_locks (атомарные блокировки).
+ * Laravel cache tables: cache (key/value) and cache_locks (atomic locks).
  */
 return new class extends Migration
 {

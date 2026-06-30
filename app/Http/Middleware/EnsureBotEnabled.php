@@ -7,8 +7,8 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Закрывает роуты модуля бота, когда он выключен (config('bot.enabled) === false).
- * Отдаём 404, чтобы выключенный модуль был неотличим от несуществующего.
+ * Closes the bot module routes when it is disabled (config('bot.enabled) === false).
+ * We return 404 so a disabled module is indistinguishable from a nonexistent one.
  */
 class EnsureBotEnabled
 {

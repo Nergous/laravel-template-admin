@@ -11,12 +11,12 @@ use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 
 /**
- * Редактирование текстов бота. Коды — из реестра messages.json; в БД хранятся
- * только переопределения (bot_messages).
+ * Editing bot texts. Codes come from the messages.json registry; only overrides
+ * are stored in the DB (bot_messages).
  */
 class AdminBotMessageController extends Controller
 {
-    /** Список кодов из реестра с текущими переопределениями. */
+    /** List of codes from the registry with their current overrides. */
     public function index(): \Inertia\Response
     {
         $overrides = BotMessage::all()->keyBy('code');
@@ -41,9 +41,9 @@ class AdminBotMessageController extends Controller
     }
 
     /**
-     * Создаёт/обновляет переопределение текста (upsert по code).
+     * Creates/updates a text override (upsert by code).
      *
-     * @param  string  $code  Код сообщения из реестра messages.json
+     * @param  string  $code  Message code from the messages.json registry
      */
     public function update(BotMessageRequest $request, string $code): RedirectResponse
     {
@@ -64,9 +64,9 @@ class AdminBotMessageController extends Controller
     }
 
     /**
-     * Сбрасывает текст к дефолту из реестра (удаляет переопределение).
+     * Resets the text to the registry default (deletes the override).
      *
-     * @param  string  $code  Код сообщения из реестра messages.json
+     * @param  string  $code  Message code from the messages.json registry
      */
     public function destroy(string $code): RedirectResponse
     {

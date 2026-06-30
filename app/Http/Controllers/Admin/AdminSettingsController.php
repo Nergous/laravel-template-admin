@@ -11,19 +11,19 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 /**
- * Настройки приложения: чтение и сохранение значений по группам (key-value).
+ * Application settings: reading and saving values by group (key-value).
  */
 class AdminSettingsController extends Controller
 {
     /**
-     * Отдаёт настройки (сгруппированно) и список картинок медиатеки
-     * для выбора OG-изображения.
+     * Returns the settings (grouped) and a list of media library images
+     * for choosing the OG image.
      */
     public function index(): \Inertia\Response
     {
         return Inertia::render('Settings/Index', [
             'settings' => Setting::grouped(),
-            // Изображения медиатеки для выбора OG-картинки (id, url, thumb_url).
+            // Media library images for choosing the OG image (id, url, thumb_url).
             'images' => Media::where('type', 'image')
                 ->latest()
                 ->limit(100)
@@ -31,7 +31,7 @@ class AdminSettingsController extends Controller
         ]);
     }
 
-    /** Сохраняет настройки по группам (Setting::setMany) и сбрасывает кэш. */
+    /** Saves the settings by group (Setting::setMany) and flushes the cache. */
     public function update(UpdateSettingsRequest $request): RedirectResponse
     {
         /** @var array<string, array<string, mixed>> $settings */
@@ -39,7 +39,7 @@ class AdminSettingsController extends Controller
 
         DB::transaction(fn () => Setting::setMany($settings));
 
-        // Кэш не транзакционен — сбрасываем только после успешного коммита.
+        // The cache is not transactional — flush it only after a successful commit.
         Setting::flushCache();
 
         return back()->with('success', 'Настройки сохранены');

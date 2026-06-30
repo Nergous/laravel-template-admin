@@ -1,10 +1,10 @@
 <?php
 
 /**
- * Локализованные подписи матрицы разрешений (AdminPermissionController).
+ * Localized labels for the permissions matrix (AdminPermissionController).
  *
- * resources — префикс имени права до точки (users.view → users),
- * actions — суффикс после точки (users.view → view).
+ * resources — the permission-name prefix before the dot (users.view → users),
+ * actions — the suffix after the dot (users.view → view).
  */
 return [
     'resources' => [

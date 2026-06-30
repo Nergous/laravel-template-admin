@@ -5,8 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Таблица bot_messages — переопределения текстов бота из админки.
- * Коды и дефолты живут в modules/max-bot/messages.json; здесь только override.
+ * The bot_messages table — overrides of bot texts from the admin panel.
+ * Codes and defaults live in modules/max-bot/messages.json; only overrides here.
  */
 return new class extends Migration
 {

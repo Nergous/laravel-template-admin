@@ -25,21 +25,21 @@ return Application::configure(basePath: dirname(__DIR__))
             'bot.enabled' => EnsureBotEnabled::class,
         ]);
 
-        // Security-заголовки (X-Frame-Options, nosniff, HSTS, CSP с nonce) на все web-ответы.
-        // HandleInertiaRequests — обработка Inertia-запросов и shared props.
+        // Security headers (X-Frame-Options, nosniff, HSTS, CSP with nonce) on all web responses.
+        // HandleInertiaRequests — handling of Inertia requests and shared props.
         $middleware->web(append: [
             SecurityHeaders::class,
             HandleInertiaRequests::class,
         ]);
 
-        // Каким прокси доверять заголовки X-Forwarded-* — берём из TRUSTED_PROXIES
-        // (CIDR/IP через запятую). Дефолт — ПУСТО = не доверять никому: тогда
-        // $request->ip()/схема берутся из прямого подключения и клиент НЕ может
-        // подделать X-Forwarded-For. Это важно: иначе подделкой XFF подменяется IP в
-        // ключах rate-limit (обход login-throttle, S4) и в аудит-логах. За доверенным
-        // reverse-proxy/ingress пропишите его подсеть: TRUSTED_PROXIES=10.0.0.0/8,...
-        // Значение '*' (доверять всем) допустимо ТОЛЬКО когда приложение недоступно
-        // напрямую, а лишь через доверенный прокси.
+        // Which proxies to trust X-Forwarded-* headers from — taken from TRUSTED_PROXIES
+        // (CIDR/IP, comma-separated). The default is EMPTY = trust no one: then
+        // $request->ip()/scheme are taken from the direct connection and the client CANNOT
+        // forge X-Forwarded-For. This matters: otherwise forging XFF spoofs the IP in
+        // rate-limit keys (bypassing login-throttle, S4) and in audit logs. Behind a trusted
+        // reverse-proxy/ingress, list its subnet: TRUSTED_PROXIES=10.0.0.0/8,...
+        // The value '*' (trust everyone) is acceptable ONLY when the application is not
+        // reachable directly, but only through a trusted proxy.
         $trustedProxies = (string) env('TRUSTED_PROXIES', '');
         $middleware->trustProxies(
             at: $trustedProxies === '*'
@@ -61,12 +61,12 @@ return Application::configure(basePath: dirname(__DIR__))
             return redirect('/admin');
         });
 
-        // Дружелюбные Inertia-страницы ошибок для SPA: при выключенной отладке
-        // (как в production) отдаём стилизованную страницу Error вместо дефолтного
-        // Symfony-экрана. В local/dev (APP_DEBUG=true) ничего не подменяем — нужен
-        // реальный стектрейс. Чистые JSON/API-ответы (поиск, поллинг) оставляем как
-        // есть: Inertia-страница вместо JSON сломала бы клиента. Inertia-XHR
-        // (X-Inertia) при этом обслуживаем — клиент сам переключит страницу.
+        // Friendly Inertia error pages for the SPA: when debugging is off
+        // (as in production) we serve a styled Error page instead of the default
+        // Symfony screen. In local/dev (APP_DEBUG=true) we substitute nothing — a real
+        // stack trace is needed. Pure JSON/API responses (search, polling) are left as
+        // is: an Inertia page instead of JSON would break the client. Inertia XHR
+        // (X-Inertia) is still served here — the client switches the page itself.
         $exceptions->respond(function (Response $response, Throwable $e, Request $request) {
             if (config('app.debug')) {
                 return $response;

@@ -6,43 +6,44 @@ use App\Models\Role;
 use App\Models\User;
 
 /**
- * Общие проверки анти-эскалации привилегий для RBAC.
+ * Shared privilege anti-escalation checks for RBAC.
  *
- * Принципы:
- *  - полный админ обходит проверки (держит все права явно — см. RolePermissionSeeder);
- *  - «нельзя выдать больше, чем имеешь сам»: право выдаётся, только если оно есть
- *    у актора;
- *  - системные роли (is_system: admin/operator) меняет/назначает только админ.
+ * Principles:
+ *  - a full admin bypasses the checks (holds all permissions explicitly — see RolePermissionSeeder);
+ *  - "you can't grant more than you have yourself": a permission is granted only if the
+ *    actor has it;
+ *  - system roles (is_system: admin/operator) can only be changed/assigned by an admin.
  */
 class RbacGuard
 {
     /**
-     * Имя роли суперадмина — единый источник правды,
-     * берётся из config('rbac.superadmin_role'). Это роль с полным доступом:
-     * её права заблокированы в матрице и её нельзя снять у себя. Отличается от
-     * «защищённой» роли (is_system: нельзя удалить/переименовать), которой могут
-     * быть несколько ролей.
+     * The superadmin role name — the single source of truth,
+     * taken from config('rbac.superadmin_role'). This is the role with full access:
+     * its permissions are locked in the matrix and it cannot be removed from yourself.
+     * It differs from a "protected" role (is_system: cannot be deleted/renamed), of which
+     * there can be several.
      */
     public static function superadminRole(): string
     {
         return config('rbac.superadmin_role', 'admin');
     }
 
-    /** Является ли роль суперадмином (по имени из config('rbac.superadmin_role')). */
+    /** Whether the role is the superadmin (by name from config('rbac.superadmin_role')). */
     public static function isSuperadminRole(Role $role): bool
     {
         return $role->name === self::superadminRole();
     }
 
-    /** Полный администратор обходит проверки анти-эскалации. */
+    /** A full administrator bypasses the anti-escalation checks. */
     public static function isAdmin(?User $actor): bool
     {
         return $actor?->hasRole(self::superadminRole()) === true;
     }
 
     /**
-     * Может ли актор выдать данное право: только если владеет им сам
-     * (или он админ). Защищает от выдачи прав выше собственного уровня.
+     * Whether the actor can grant the given permission: only if they hold it
+     * themselves (or they're an admin). Protects against granting permissions above
+     * one's own level.
      */
     public static function canGrantPermission(?User $actor, ?string $permission): bool
     {
@@ -54,8 +55,8 @@ class RbacGuard
     }
 
     /**
-     * Может ли актор назначать/изменять данную роль: системные роли —
-     * только админу, кастомные — всем (с учётом остальных проверок).
+     * Whether the actor can assign/change the given role: system roles —
+     * admins only, custom roles — everyone (subject to the other checks).
      */
     public static function canManageRole(?User $actor, Role $role): bool
     {

@@ -11,15 +11,15 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 /**
- * Контроллер аутентификации.
+ * Authentication controller.
  *
- * Обрабатывает вход и выход пользователей из административной панели.
- * Использует стандартный механизм Auth Laravel.
+ * Handles user login and logout for the admin panel.
+ * Uses Laravel's standard Auth mechanism.
  */
 class LoginController extends Controller
 {
     /**
-     * Форма входа в административную панель.
+     * Admin panel login form.
      */
     public function show(): \Inertia\Response
     {
@@ -27,15 +27,15 @@ class LoginController extends Controller
     }
 
     /**
-     * Обработка попытки входа.
+     * Handle a login attempt.
      *
-     * При успешной аутентификации регенерирует сессию
-     * и перенаправляет на запрошенный URL или на главную.
+     * On successful authentication, regenerates the session
+     * and redirects to the requested URL or to the home page.
      *
-     * При неверных данных выбрасывает ValidationException
-     * с ошибкой на поле email.
+     * On invalid credentials, throws a ValidationException
+     * with an error on the email field.
      *
-     * @throws ValidationException Если email или пароль неверны
+     * @throws ValidationException If the email or password is incorrect
      */
     public function login(LoginRequest $request): RedirectResponse
     {
@@ -53,10 +53,10 @@ class LoginController extends Controller
     }
 
     /**
-     * Выход из административной панели.
+     * Log out of the admin panel.
      *
-     * Инвалидирует текущую сессию и регенерирует CSRF-токен
-     * для защиты от атак после выхода.
+     * Invalidates the current session and regenerates the CSRF token
+     * to protect against post-logout attacks.
      */
     public function logout(Request $request): RedirectResponse
     {

@@ -1,10 +1,10 @@
 <?php
 
 /**
- * Локализованные подписи журнала действий (ActivityLog).
+ * Localized labels for the activity log (ActivityLog).
  *
- * Ключи action соответствуют значениям колонки activity_log.action,
- * subjects — короткие ключи типов субъектов (см. ActivityLog::subjectTypeLabel).
+ * action keys correspond to the values of the activity_log.action column,
+ * subjects — short keys for subject types (see ActivityLog::subjectTypeLabel).
  */
 return [
     'actions' => [

@@ -1,10 +1,10 @@
-// Регистрация глобальных хоткеев. Слушает keydown на window, снимает обработчик
-// при размонтировании компонента.
+// Registration of global hotkeys. Listens for keydown on window, removes the handler
+// when the component unmounts.
 import { onMounted, onUnmounted } from "vue";
 
-// Имя клавиши, независимое от раскладки: буквы/цифры берём из физического code
-// (KeyK → "k", Digit1 → "1"), иначе семантический e.key (escape, enter, …).
-// Без этого mod+k не ловится под кириллицей (e.key === "л").
+// Layout-independent key name: letters/digits are taken from the physical code
+// (KeyK → "k", Digit1 → "1"), otherwise the semantic e.key (escape, enter, …).
+// Without this, mod+k isn't caught under Cyrillic (e.key === "л").
 function keyName(e) {
     if (/^Key[A-Z]$/.test(e.code)) return e.code.slice(3).toLowerCase();
     if (/^Digit[0-9]$/.test(e.code)) return e.code.slice(5);

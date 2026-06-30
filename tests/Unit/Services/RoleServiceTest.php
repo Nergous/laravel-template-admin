@@ -48,8 +48,8 @@ class RoleServiceTest extends TestCase
     }
 
     /**
-     * Создаёт системную роль: is_system защищён от mass-assignment (App\Models\Role),
-     * поэтому выставляем флаг явно (как это делает RolePermissionSeeder).
+     * Creates a system role: is_system is protected from mass assignment (App\Models\Role),
+     * so we set the flag explicitly (the way RolePermissionSeeder does).
      */
     private function systemRole(string $name): Role
     {

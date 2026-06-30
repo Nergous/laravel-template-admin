@@ -11,12 +11,12 @@ class SidebarCountsTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * Счётчики-бейджи не должны раскрывать числа разделов, на которые у
-     * пользователя нет права *.view (утечка структуры/объёма данных).
+     * Count badges must not reveal the numbers for sections the user has no
+     * *.view permission for (a leak of data structure/volume).
      */
     public function test_counts_are_gated_by_view_permission(): void
     {
-        $this->actingAsUserWith(['users.view']); // только просмотр пользователей
+        $this->actingAsUserWith(['users.view']); // view users only
 
         $this->get(route('admin.users.index'))
             ->assertOk()

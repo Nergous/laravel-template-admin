@@ -9,9 +9,9 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 /**
- * Form Request для создания и редактирования пользователей.
+ * Form Request for creating and editing users.
  *
- * Роли назначаются массивом roles[] (имена ролей spatie/laravel-permission).
+ * Roles are assigned via the roles[] array (spatie/laravel-permission role names).
  */
 class UserRequest extends FormRequest
 {
@@ -28,8 +28,8 @@ class UserRequest extends FormRequest
 
         $rules = [
             'name' => ['required', 'string', 'min:2', 'max:255'],
-            // Уникальность только среди активных: email из корзины можно занять заново
-            // (совпадает с частичным/составным UNIQUE из миграции soft-delete).
+            // Uniqueness only among active users: an email from the trash can be reused
+            // (matches the partial/composite UNIQUE from the soft-delete migration).
             'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($userId)->whereNull('deleted_at')],
             'roles' => ['nullable', 'array'],
             'roles.*' => ['string', Rule::exists('roles', 'name'), $this->roleAssignableByActor(...)],

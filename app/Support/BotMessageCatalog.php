@@ -3,8 +3,8 @@
 namespace App\Support;
 
 /**
- * Читает общий JSON-реестр сообщений бота (config('bot.registry')).
- * Источник правды для кодов/меток/дефолтов; шарится с Python-ботом.
+ * Reads the shared JSON registry of bot messages (config('bot.registry')).
+ * The source of truth for codes/labels/defaults; shared with the Python bot.
  */
 class BotMessageCatalog
 {
@@ -32,7 +32,7 @@ class BotMessageCatalog
     }
 
     /**
-     * @param  string  $code  Код сообщения из реестра
+     * @param  string  $code  Message code from the registry
      * @return array{code:string,label:string,description:string,default:string}|null
      */
     public static function find(string $code): ?array

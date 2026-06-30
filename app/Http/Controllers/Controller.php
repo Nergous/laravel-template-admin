@@ -3,6 +3,6 @@
 namespace App\Http\Controllers;
 
 /**
- * Базовый контроллер приложения — общий предок всех контроллеров.
+ * Base application controller — common ancestor of all controllers.
  */
 abstract class Controller {}

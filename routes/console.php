@@ -9,16 +9,16 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// Периодические задачи планировщика. Их гоняет сервис `scheduler`
-// (docker-compose.yml, `php artisan schedule:work`). Добавляйте новые через
-// Schedule::command(...)->daily() и т.п. прямо здесь.
+// Periodic scheduler tasks. They are run by the `scheduler` service
+// (docker-compose.yml, `php artisan schedule:work`). Add new ones via
+// Schedule::command(...)->daily() and so on right here.
 
-// Ежедневная чистка журнала действий: удаляет записи старше
-// config('audit.retention_days') (см. config/audit.php). Явный --model вместо
-// авто-дискавери. MassPrunable → один DELETE без событий модели.
+// Daily activity log cleanup: deletes records older than
+// config('audit.retention_days') (see config/audit.php). An explicit --model instead
+// of auto-discovery. MassPrunable → a single DELETE without model events.
 Schedule::command('model:prune', ['--model' => [ActivityLog::class]])->daily();
 
-// Ежедневный дамп БД в storage/app/backups (с ротацией, см. app:db-backup).
-// storage в prod-стеке — это том, поэтому дампы переживают пересборку образа.
-// Снимать их с хоста/отгружать в S3 — на усмотрение эксплуатации.
+// Daily DB dump into storage/app/backups (with rotation, see app:db-backup).
+// In the prod stack, storage is a volume, so the dumps survive image rebuilds.
+// Pulling them off the host / shipping to S3 is left to operations' discretion.
 Schedule::command('app:db-backup')->daily();

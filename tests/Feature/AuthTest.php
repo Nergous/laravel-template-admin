@@ -27,7 +27,7 @@ class AuthTest extends TestCase
 
     public function test_user_can_login_with_valid_credentials(): void
     {
-        // Пароль фабрики по умолчанию — 'password'.
+        // The factory's default password is 'password'.
         $user = User::factory()->create();
 
         $response = $this->post(route('admin.login'), [

@@ -6,8 +6,8 @@ use App\Support\BotMessageSanitizer;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
- * Валидация правки текста сообщения бота. Код берётся из роута (проверяется в
- * контроллере по реестру); здесь — только полезная нагрузка формы.
+ * Validates editing the bot message text. The code is taken from the route
+ * (checked in the controller against the registry); here — only the form payload.
  */
 class BotMessageRequest extends FormRequest
 {
@@ -17,10 +17,10 @@ class BotMessageRequest extends FormRequest
     }
 
     /**
-     * Текст приходит из NRichText как HTML. MAX (format=html) понимает только
-     * инлайн-разметку — оставляем её, остальное вырезаем. Санитизация делается
-     * парсером (symfony/html-sanitizer): устойчиво к обходам
-     * (разорванные теги, лишние атрибуты вроде style, опасные схемы).
+     * The text comes from NRichText as HTML. MAX (format=html) understands only
+     * inline markup — we keep it and strip the rest. Sanitization is done by a
+     * parser (symfony/html-sanitizer): resilient to bypasses
+     * (broken tags, stray attributes like style, dangerous schemes).
      */
     protected function prepareForValidation(): void
     {

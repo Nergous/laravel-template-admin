@@ -11,20 +11,20 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 
 /**
- * Создаёт или обновляет администратора.
+ * Creates or updates an administrator.
  *
- * Сначала засевает базовый каталог прав (RolePermissionSeeder, идемпотентно) —
- * иначе на свежей БД (после `migrate` без сидов, как в Docker-проде с
- * RUN_SEEDS=false или ручной установке) роль суперадмина создалась бы без единого
- * права, и админ получал бы 403 во всех разделах. Затем назначает роль суперадмина
- * из config('rbac.superadmin_role').
+ * First seeds the base permission catalog (RolePermissionSeeder, idempotent) —
+ * otherwise on a fresh DB (after `migrate` without seeds, as in Docker prod with
+ * RUN_SEEDS=false or a manual install) the superadmin role would be created
+ * without a single permission, and the admin would get 403 in every section. Then
+ * assigns the superadmin role from config('rbac.superadmin_role').
  *
- * Недостающие аргументы (email, name) и пароль запрашиваются интерактивно.
- * Возвращает SUCCESS при успешном создании / обновлении и FAILURE при
- * несовпадении паролей или ошибке валидации.
+ * Missing arguments (email, name) and the password are requested interactively.
+ * Returns SUCCESS on a successful create / update and FAILURE on a password
+ * mismatch or a validation error.
  *
- * Использование:
- *   php artisan app:create-admin admin@example.com "Имя"
+ * Usage:
+ *   php artisan app:create-admin admin@example.com "Name"
  *   php artisan app:create-admin
  */
 class CreateAdmin extends Command
@@ -34,10 +34,10 @@ class CreateAdmin extends Command
     protected $description = 'Создать или обновить пользователя с ролью администратора';
 
     /**
-     * Запрашивает недостающие данные, валидирует их и сохраняет администратора.
+     * Requests the missing data, validates it and saves the administrator.
      *
-     * @return int self::SUCCESS — успех; self::FAILURE — пароли не совпали
-     *             или не прошла валидация.
+     * @return int self::SUCCESS — success; self::FAILURE — passwords did not match
+     *             or validation failed.
      */
     public function handle(): int
     {
@@ -70,8 +70,8 @@ class CreateAdmin extends Command
             return self::FAILURE;
         }
 
-        // Гарантируем, что базовый RBAC (каталог прав + выдача суперадмину) существует
-        // ДО назначения роли. Идемпотентно, поэтому безопасно при каждом запуске.
+        // Ensure the base RBAC (permission catalog + granting to the superadmin)
+        // exists BEFORE assigning the role. Idempotent, so safe on every run.
         $this->callSilent('db:seed', ['--class' => RolePermissionSeeder::class, '--force' => true]);
 
         $user = User::updateOrCreate(

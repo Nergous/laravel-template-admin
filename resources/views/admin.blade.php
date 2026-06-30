@@ -7,12 +7,12 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title inertia>{{ config('app.name') }}</title>
 
-    {{-- Favicon: из настроек (медиатека), иначе статический файл --}}
+    {{-- Favicon: from settings (media library), otherwise a static file --}}
     @php($favicon = \App\Models\Setting::value('general', 'favicon'))
     <link rel="icon" href="{{ $favicon ?: '/favicon.ico' }}">
 
 
-    {{-- анти-флэш темы и плотности — до CSS, с nonce (CSP) --}}
+    {{-- theme and density anti-flash — before CSS, with a nonce (CSP) --}}
     <script nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}">
         try {
             var t = localStorage.getItem('nergouscit-theme');

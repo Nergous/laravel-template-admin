@@ -170,7 +170,7 @@ function confirmForce() {
 </template>
 
 <style scoped>
-/* .page / .page__pager / .row-actions* — общие утилиты в resources/js/admin/styles.css */
+/* .page / .page__pager / .row-actions* — shared utilities in resources/js/admin/styles.css */
 .page__head {
     display: flex;
     align-items: center;

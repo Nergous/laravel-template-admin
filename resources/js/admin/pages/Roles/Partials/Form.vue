@@ -2,12 +2,12 @@
 import { NInput, NTextarea, NCheckbox, NFormField } from "@/lib/nergous-cit";
 import { formatDateTime } from "@/lib/format.js";
 
-// Презентационная форма роли для дровера на странице Index. Кнопки сохранения/
-// отмены живёт в футере NDrawer (DrawerFooter), сабмит — на родительской странице.
+// Presentational role form for the drawer on the Index page. The save/cancel
+// buttons live in the NDrawer footer (DrawerFooter), submit is on the parent page.
 const props = defineProps({
     form: { type: Object, required: true }, // useForm({ name, description, permissions: [names] })
     allPermissions: { type: Object, required: true }, // { users:[{id,name}], media:[...], ... }
-    // Метаданные роли — только на edit. { created_by, updated_by, created_at, updated_at }.
+    // Role metadata — only on edit. { created_by, updated_by, created_at, updated_at }.
     meta: { type: Object, default: null },
 });
 
@@ -87,7 +87,7 @@ function toggle(name, checked) {
             </div>
         </NFormField>
 
-        <!-- Edit: панель «Сведения» -->
+        <!-- Edit: "Details" panel -->
         <div v-if="meta" class="rform__panel">
             <h2 class="rform__panel-title">Сведения</h2>
             <dl class="rform__panel-list">
@@ -151,7 +151,7 @@ function toggle(name, checked) {
     gap: 8px;
 }
 
-/* --- панель «Сведения» (edit) --- */
+/* --- "Details" panel (edit) --- */
 .rform__panel {
     padding: 14px;
     border: 1px solid var(--border);

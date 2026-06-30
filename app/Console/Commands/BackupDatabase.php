@@ -8,15 +8,15 @@ use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
 /**
- * Дамп БД в storage/app/backups с ротацией старых файлов.
+ * Dumps the DB to storage/app/backups with rotation of old files.
  *
- * Драйвер берётся из дефолтного соединения (config('database.default')):
- *   - sqlite        — копия файла БД;
- *   - mysql/mariadb — mysqldump (пароль через env MYSQL_PWD, не светится в argv);
- *   - pgsql         — pg_dump (пароль через env PGPASSWORD).
+ * The driver is taken from the default connection (config('database.default')):
+ *   - sqlite        — a copy of the DB file;
+ *   - mysql/mariadb — mysqldump (password via the MYSQL_PWD env, not exposed in argv);
+ *   - pgsql         — pg_dump (password via the PGPASSWORD env).
  *
- * Для mysql/pgsql в PATH должны быть mysqldump/pg_dump (в Docker-образе они есть).
- * Запускается планировщиком (routes/console.php, сервис scheduler) и вручную:
+ * For mysql/pgsql, mysqldump/pg_dump must be on the PATH (they are in the Docker image).
+ * Run by the scheduler (routes/console.php, the scheduler service) and manually:
  *   php artisan app:db-backup [--keep=7]
  */
 class BackupDatabase extends Command
@@ -142,8 +142,8 @@ class BackupDatabase extends Command
     }
 
     /**
-     * Стримит stdout процесса в файл; на ненулевом коде выхода удаляет огрызок
-     * и бросает ProcessFailedException (stderr попадёт в сообщение об ошибке).
+     * Streams the process stdout to a file; on a non-zero exit code it deletes the
+     * partial file and throws ProcessFailedException (stderr ends up in the error message).
      */
     private function runToFile(Process $process, string $target): void
     {
@@ -168,7 +168,7 @@ class BackupDatabase extends Command
         }
     }
 
-    /** Оставляет $keep самых свежих дампов, остальные удаляет. */
+    /** Keeps the $keep most recent dumps and deletes the rest. */
     private function rotate(string $dir, int $keep): void
     {
         if ($keep <= 0) {

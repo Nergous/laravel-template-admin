@@ -5,9 +5,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Доменные расширения ролей. Таблицу roles создаёт пакет spatie/laravel-permission
- * (create_permission_tables), поэтому здесь ALTER, а не create — vendor-миграцию
- * не правим.
+ * Domain extensions for roles. The roles table is created by the spatie/laravel-permission
+ * package (create_permission_tables), so this is an ALTER, not a create — we don't touch
+ * the vendor migration.
  */
 return new class extends Migration
 {
@@ -19,11 +19,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table($this->table(), function (Blueprint $table) {
-            // Человеко-читаемое описание роли (показывается на карточке роли).
+            // Human-readable role description (shown on the role card).
             $table->string('description')->nullable()->after('guard_name');
-            // Системные роли (admin/operator) — нельзя удалять/переименовывать.
+            // System roles (admin/operator) — cannot be deleted/renamed.
             $table->boolean('is_system')->default(false)->after('description');
-            // Авторство.
+            // Authorship.
             $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
             $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
         });

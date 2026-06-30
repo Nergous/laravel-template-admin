@@ -1,8 +1,8 @@
 <script setup>
-// Permissions/Index — матрица «роль × разрешение».
-// Колонки — роли, строки — разрешения, сгруппированные по ресурсу.
-// Переключение ячейки шлёт PATCH /admin/permissions/matrix; локальное состояние
-// обновляется оптимистично и синхронизируется при перезагрузке пропсов.
+// Permissions/Index — "role × permission" matrix.
+// Columns are roles, rows are permissions grouped by resource.
+// Toggling a cell sends PATCH /admin/permissions/matrix; local state
+// updates optimistically and syncs when props are reloaded.
 import { reactive, ref, watch, computed } from "vue";
 import { router, useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
@@ -14,16 +14,16 @@ import { can } from "@/lib/can.js";
 import { swatchColor } from "@/lib/swatch.js";
 
 const props = defineProps({
-    // Колонки: [{ id, name, label, is_system, locked }]
+    // Columns: [{ id, name, label, is_system, locked }]
     roles: { type: Array, default: () => [] },
-    // Строки: [{ resource, label, permissions: [{ id, name, action, label }] }]
+    // Rows: [{ resource, label, permissions: [{ id, name, action, label }] }]
     groups: { type: Array, default: () => [] },
-    // { roleId: ["users.view", ...] } — какие имена прав есть у роли.
+    // { roleId: ["users.view", ...] } — which permission names the role has.
     matrix: { type: Object, default: () => ({}) },
 });
 
-// Локальное зеркало матрицы: Set имён разрешений по role.id.
-// Оптимистично обновляем при клике; пересобираем при приходе свежих пропсов.
+// Local mirror of the matrix: a Set of permission names per role.id.
+// Update optimistically on click; rebuild when fresh props arrive.
 const state = reactive({ grants: {} });
 function rebuild() {
     const next = {};
@@ -33,9 +33,9 @@ function rebuild() {
     state.grants = next;
 }
 rebuild();
-// Inertia заменяет props.matrix новым объектом на каждом ответе, поэтому хватает
-// поверхностного watch по ссылке — глубокий обход не нужен. Оптимистичные правки
-// мутируют локальные Set'ы (state.grants), а не props, и сюда не попадают.
+// Inertia replaces props.matrix with a new object on every response, so a shallow
+// watch by reference is enough — no deep traversal needed. Optimistic edits
+// mutate the local Sets (state.grants), not props, and never land here.
 watch(() => props.matrix, rebuild);
 
 function isGranted(roleId, name) {
@@ -43,10 +43,10 @@ function isGranted(roleId, name) {
 }
 
 function toggle(role, permission) {
-    if (role.locked) return; // системная роль admin — не редактируется
+    if (role.locked) return; // system admin role — not editable
     const set = state.grants[role.id];
     const granted = !set.has(permission.name);
-    // оптимистично
+    // optimistic
     if (granted) set.add(permission.name);
     else set.delete(permission.name);
     router.patch(
@@ -55,7 +55,7 @@ function toggle(role, permission) {
         {
             preserveScroll: true,
             preserveState: true,
-            // при ошибке сервера пропсы не меняются — откатываем вручную
+            // on a server error props don't change — roll back manually
             onError: () => {
                 if (granted) set.delete(permission.name);
                 else set.add(permission.name);
@@ -64,14 +64,14 @@ function toggle(role, permission) {
     );
 }
 
-// grid-template-columns: первая колонка под код права + N равных колонок под роли.
+// grid-template-columns: first column for the permission code + N equal columns for roles.
 const gridCols = computed(
     () => `minmax(180px, 1.6fr) repeat(${props.roles.length}, 1fr)`,
 );
 
-// --- Создание разрешения ---
-// Контроллер делает redirect back на index, поэтому матрица перерисуется
-// со свежей строкой после успешного submit.
+// --- Creating a permission ---
+// The controller redirects back to index, so the matrix re-renders
+// with the fresh row after a successful submit.
 const createOpen = ref(false);
 const form = useForm({ name: "" });
 
@@ -90,7 +90,7 @@ function submitCreate() {
     });
 }
 
-// --- Удаление разрешения ---
+// --- Deleting a permission ---
 const del = useConfirm();
 function confirmDelete() {
     del.loading = true;
@@ -107,7 +107,7 @@ function confirmDelete() {
         subtitle="Матрица доступа · ресурс.действие"
     >
         <div class="page">
-            <!-- Вводный баннер -->
+            <!-- Intro banner -->
             <div class="intro">
                 <span class="intro__ico"><NIcon name="bolt" :size="18" /></span>
                 <p class="intro__text">
@@ -118,7 +118,7 @@ function confirmDelete() {
                 </p>
             </div>
 
-            <!-- Тулбар над матрицей -->
+            <!-- Toolbar above the matrix -->
             <div v-if="can('permissions.create')" class="toolbar">
                 <NButton
                     variant="primary"
@@ -129,7 +129,7 @@ function confirmDelete() {
                 >
             </div>
 
-            <!-- Карта-матрица -->
+            <!-- Matrix card -->
             <div class="matrix-card">
                 <div class="matrix-scroll">
                     <div
@@ -138,7 +138,7 @@ function confirmDelete() {
                         aria-label="Матрица доступа: роли и разрешения"
                         :style="{ '--cols': gridCols }"
                     >
-                        <!-- Шапка: «Разрешение» + роли-колонки -->
+                        <!-- Header: "Permission" + role columns -->
                         <div class="row row--head" role="row">
                             <div class="cell cell--corner" role="columnheader">
                                 Разрешение
@@ -160,7 +160,7 @@ function confirmDelete() {
                             </div>
                         </div>
 
-                        <!-- Группы по ресурсу -->
+                        <!-- Groups by resource -->
                         <template v-for="group in groups" :key="group.resource">
                             <div class="row row--group" role="row">
                                 <div class="cell cell--group" role="rowheader">
@@ -236,14 +236,14 @@ function confirmDelete() {
                 </div>
             </div>
 
-            <!-- Примечание под матрицей -->
+            <!-- Note below the matrix -->
             <p class="note">
                 Полупрозрачная колонка «admin» — системная роль: её права всегда
                 включены и не редактируются.
             </p>
         </div>
 
-        <!-- Drawer создания разрешения (единый паттерн с Пользователями) -->
+        <!-- Permission creation drawer (same pattern as Users) -->
         <NDrawer
             v-model="createOpen"
             title="Новое разрешение"
@@ -294,9 +294,9 @@ function confirmDelete() {
 </template>
 
 <style scoped>
-/* .page — общая утилита в resources/js/admin/styles.css */
+/* .page — shared utility in resources/js/admin/styles.css */
 
-/* --- Тулбар над матрицей --- */
+/* --- Toolbar above the matrix --- */
 .toolbar {
     display: flex;
     align-items: center;
@@ -307,7 +307,7 @@ function confirmDelete() {
     margin-left: auto;
 }
 
-/* --- Вводный баннер --- */
+/* --- Intro banner --- */
 .intro {
     display: flex;
     align-items: center;
@@ -344,7 +344,7 @@ function confirmDelete() {
     color: var(--accent);
 }
 
-/* --- Карта-матрица --- */
+/* --- Matrix card --- */
 .matrix-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -419,7 +419,7 @@ function confirmDelete() {
     text-overflow: ellipsis;
 }
 
-/* группа занимает всю ширину строки */
+/* the group spans the full row width */
 .cell--group {
     grid-column: 1 / -1;
     display: flex;
@@ -453,7 +453,7 @@ function confirmDelete() {
     flex-direction: column;
     min-width: 0;
 }
-/* Кнопка удаления — появляется при наведении на строку. */
+/* Delete button — appears on row hover. */
 .perm-del {
     flex: none;
     opacity: 0;
@@ -486,7 +486,7 @@ function confirmDelete() {
     justify-content: center;
 }
 
-/* --- Чекбокс ячейки (тот же визуал, что NCheckbox) --- */
+/* --- Cell checkbox (same visual as NCheckbox) --- */
 .cbx {
     position: relative;
     width: 20px;
@@ -531,14 +531,14 @@ function confirmDelete() {
     cursor: not-allowed;
 }
 
-/* --- Примечание --- */
+/* --- Note --- */
 .note {
     margin: 0;
     font-size: 12.5px;
     color: var(--text-3);
 }
 
-/* --- Drawer создания разрешения --- */
+/* --- Permission creation drawer --- */
 .create-form {
     display: flex;
     flex-direction: column;

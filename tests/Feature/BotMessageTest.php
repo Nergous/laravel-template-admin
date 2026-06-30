@@ -58,7 +58,7 @@ class BotMessageTest extends TestCase
 
         $stored = BotMessage::where('code', 'welcome')->value('text');
 
-        // Инлайн-теги остаются, блочные/опасные — вырезаны.
+        // Inline tags remain, block/dangerous ones are stripped out.
         $this->assertStringContainsString('<b>Привет</b>', $stored);
         $this->assertStringContainsString('ссылка</a>', $stored);
         $this->assertStringNotContainsString('<h2>', $stored);

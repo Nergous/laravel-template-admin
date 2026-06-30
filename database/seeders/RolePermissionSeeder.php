@@ -11,13 +11,13 @@ use Spatie\Permission\PermissionRegistrar;
 class RolePermissionSeeder extends Seeder
 {
     /**
-     * Базовые роли и разрешения шаблона.
+     * Base roles and permissions of the template.
      *
-     * - admin     — все разрешения.
-     * - operator  — медиатека.
+     * - admin     — all permissions.
+     * - operator  — media library.
      *
-     * Добавляйте свои разрешения по схеме "модуль.действие" и группируйте по префиксу
-     * (модуль) — UI ролей рисует чекбоксы группированно по этому префиксу.
+     * Add your own permissions following the "module.action" scheme and group them by prefix
+     * (module) — the roles UI draws checkboxes grouped by this prefix.
      */
     public function run(): void
     {
@@ -30,12 +30,12 @@ class RolePermissionSeeder extends Seeder
             'settings.view', 'settings.edit',
         ];
 
-        // Права бота сидятся только при включённом боте. Если включаете
-        // бот ПОЗЖЕ (BOT_ACTIVE=true / COMPOSE_PROFILES=bot) — пересоздать права:
+        // Bot permissions are seeded only when the bot is enabled. If you enable
+        // the bot LATER (BOT_ACTIVE=true / COMPOSE_PROFILES=bot) — re-create the permissions:
         //   php artisan db:seed --class=Database\\Seeders\\RolePermissionSeeder
-        // (firstOrCreate идемпотентен). Иначе bot-messages.* не появятся и роуты бота
-        // (гейт permission:bot-messages.view) будут недостижимы. Намеренно НЕ сидим их
-        // всегда: иначе права «мёртвой» фичи болтались бы в матрице при выключенном боте.
+        // (firstOrCreate is idempotent). Otherwise bot-messages.* won't appear and the bot routes
+        // (gated by permission:bot-messages.view) will be unreachable. We deliberately do NOT seed
+        // them always: otherwise a "dead" feature's permissions would dangle in the matrix while the bot is off.
         if (config('bot.enabled')) {
             $permissions[] = 'bot-messages.view';
             $permissions[] = 'bot-messages.edit';
@@ -45,10 +45,10 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
         }
 
-        // Имя суперадмина — из config('rbac.superadmin_role'),
-        // чтобы переименование суперадмина задавалось в одном месте.
+        // The superadmin name comes from config('rbac.superadmin_role'),
+        // so renaming the superadmin is set in one place.
         $admin = Role::firstOrCreate(['name' => RbacGuard::superadminRole(), 'guard_name' => 'web']);
-        // is_system защищён от mass-assignment (App\Models\Role) — выставляем явно.
+        // is_system is protected from mass-assignment (App\Models\Role) — set it explicitly.
         $admin->description = 'Полный доступ ко всем разделам панели.';
         $admin->is_system = true;
         $admin->save();

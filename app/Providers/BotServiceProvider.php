@@ -5,9 +5,9 @@ namespace App\Providers;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Провайдер опционального модуля бота. Активен только при config('bot.enabled').
- * Подключает миграции бота из отдельной папки, чтобы при выключенном модуле
- * `php artisan migrate` их не видел.
+ * Provider for the optional bot module. Active only when config('bot.enabled').
+ * Loads the bot migrations from a separate folder so that `php artisan migrate`
+ * does not see them when the module is disabled.
  */
 class BotServiceProvider extends ServiceProvider
 {

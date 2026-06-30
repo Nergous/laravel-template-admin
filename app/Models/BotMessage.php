@@ -5,8 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Переопределение текста бота. Код (code) — из реестра messages.json;
- * text — что реально отправит бот (если is_active). Метка для журнала — code.
+ * Bot text override. The code is from the messages.json registry;
+ * text is what the bot will actually send (if is_active). The activity log label is code.
  *
  * @property int $id
  * @property string $code
@@ -22,7 +22,7 @@ class BotMessage extends Model
         'is_active' => 'boolean',
     ];
 
-    /** Метка субъекта для ActivityLog::record (labelFor читает ->name). */
+    /** Subject label for ActivityLog::record (labelFor reads ->name). */
     public function getNameAttribute(): string
     {
         return $this->code;

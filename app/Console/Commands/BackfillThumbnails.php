@@ -8,13 +8,13 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Генерирует thumbnail-версии для уже загруженных WebP-изображений.
+ * Generates thumbnail versions for already uploaded WebP images.
  *
- * Проходит по указанным папкам на диске public (по умолчанию — media) и для каждого
- * файла вида *.webp, у которого ещё нет соответствующего *.thumb.webp,
- * создаёт уменьшенную копию.
+ * Walks the specified folders on the public disk (media by default) and, for each
+ * *.webp file that does not yet have a corresponding *.thumb.webp, creates a
+ * resized copy.
  *
- * Использование:
+ * Usage:
  *   php artisan media:backfill-thumbs
  *   php artisan media:backfill-thumbs --dir=media --dir=avatars
  */
@@ -26,10 +26,10 @@ class BackfillThumbnails extends Command
     protected $description = 'Генерирует thumbnail для уже существующих WebP-изображений';
 
     /**
-     * Обходит каталоги (--dir, по умолчанию media) и создаёт миниатюры для *.webp,
-     * у которых их ещё нет. Повторный запуск безопасен.
+     * Walks the directories (--dir, media by default) and creates thumbnails for
+     * *.webp files that do not yet have one. Re-running is safe.
      *
-     * @return int self::SUCCESS, если ошибок не было; self::FAILURE при failed > 0.
+     * @return int self::SUCCESS if there were no errors; self::FAILURE when failed > 0.
      */
     public function handle(): int
     {
@@ -55,7 +55,7 @@ class BackfillThumbnails extends Command
                 $thumb = ImageOptimizer::thumbPath($file);
 
                 if ($disk->exists($thumb)) {
-                    $this->markHasThumb($file); // легаси-строки без флага
+                    $this->markHasThumb($file); // legacy rows without the flag
                     $skipped++;
 
                     continue;
@@ -84,13 +84,14 @@ class BackfillThumbnails extends Command
     }
 
     /**
-     * Помечает строки media с данным файлом как имеющие превью (has_thumb=true).
+     * Marks media rows with the given file as having a thumbnail (has_thumb=true).
      *
-     * Нужно для легаси-строк, созданных до введения колонки has_thumb: после
-     * бэкофилла превью существуют на диске, но флаг ещё false, и список их не отдаёт.
-     * Файлы без записи в БД (например, аватары) просто не находятся — это ожидаемо.
+     * Needed for legacy rows created before the has_thumb column was introduced:
+     * after backfill the thumbnails exist on disk, but the flag is still false and
+     * the listing does not return them. Files without a DB row (for example,
+     * avatars) are simply not found — this is expected.
      *
-     * @param  string  $file  Путь к WebP-файлу относительно диска public (значение колонки filename)
+     * @param  string  $file  Path to the WebP file relative to the public disk (the filename column value)
      */
     private function markHasThumb(string $file): void
     {

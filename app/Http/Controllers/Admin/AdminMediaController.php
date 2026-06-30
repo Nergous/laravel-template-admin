@@ -14,22 +14,22 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 /**
- * Контроллер для управления медиа в административной панели.
+ * Controller for managing media in the admin panel.
  *
- * Занимается HTTP: валидирует вход, собирает пропсы Inertia и редиректит.
- * Оркестрация (постановка в очередь, транзакционное удаление + очистка файлов)
- * живёт в App\Services\MediaService. Read-методы (index/poll) остаются здесь.
+ * Handles HTTP: validates input, assembles Inertia props, and redirects.
+ * Orchestration (queueing, transactional deletion + file cleanup)
+ * lives in App\Services\MediaService. Read methods (index/poll) stay here.
  */
 class AdminMediaController extends Controller
 {
     public function __construct(private readonly MediaService $media) {}
 
     /**
-     * Список медиа с сортировкой и поиском.
+     * List of media with sorting and search.
      *
-     * Поддерживаемые параметры сортировки (GET):
-     * - sort (id|original_name|created_at) — поле сортировки
-     * - direction (asc|desc)               — направление сортировки
+     * Supported sort parameters (GET):
+     * - sort (id|original_name|created_at) — the sort field
+     * - direction (asc|desc)               — the sort direction
      */
     public function index(Request $request, MediaSort $sort): \Inertia\Response
     {
@@ -46,32 +46,32 @@ class AdminMediaController extends Controller
 
         return Inertia::render('Media/Index', [
             'media' => $media,
-            ...$sort->toArray(), // currentSort + currentDirection из валидированного Sort
+            ...$sort->toArray(), // currentSort + currentDirection from the validated Sort
         ]);
     }
 
     /**
-     * Постановка файлов в очередь на загрузку.
+     * Queues files for upload.
      *
-     * Файлы временно сохраняются в storage/app/temp,
-     * затем Job перемещает их в storage/public/media.
+     * Files are temporarily saved to storage/app/temp,
+     * then a Job moves them to storage/public/media.
      *
-     * @return JsonResponse Количество файлов поставленных в очередь:
+     * @return JsonResponse The number of files queued:
      *                      { "queued": 3 }
      */
     public function store(MediaRequest $request): JsonResponse
     {
-        // Q4: берём файлы один раз с дефолтом [] — не полагаемся на присутствие
-        // ключа (count(null) был бы TypeError, если правила формы изменят).
+        // Q4: take the files once with a default of [] — don't rely on the key
+        // being present (count(null) would be a TypeError if the form rules change).
         $queued = $this->media->queue($request->file('media', []), $request->user()?->id);
 
         return response()->json(['queued' => $queued]);
     }
 
     /**
-     * Удаление одного файла.
+     * Delete a single file.
      *
-     * Удаляет файл из storage и запись из базы данных.
+     * Removes the file from storage and the record from the database.
      */
     public function destroy(Media $media): RedirectResponse
     {
@@ -83,12 +83,12 @@ class AdminMediaController extends Controller
     }
 
     /**
-     * Массовое удаление файлов.
+     * Bulk deletion of files.
      *
-     * Принимает массив ids[] и удаляет все указанные файлы
-     * вместе с файлами из storage.
+     * Accepts an ids[] array and deletes all specified files
+     * along with their files from storage.
      *
-     * @param  BulkDestroyMediaRequest  $request  ids (int[]) — идентификаторы медиа
+     * @param  BulkDestroyMediaRequest  $request  ids (int[]) — media identifiers
      */
     public function bulkDestroy(BulkDestroyMediaRequest $request): RedirectResponse
     {
@@ -100,9 +100,9 @@ class AdminMediaController extends Controller
     }
 
     /**
-     * Поллинг для фронтенда: возвращает JSON-массив медиа новее after_id
-     * (по убыванию id, не более limit). Служит для отслеживания прогресса
-     * асинхронной загрузки.
+     * Polling for the frontend: returns a JSON array of media newer than after_id
+     * (by descending id, no more than limit). Used to track the progress of
+     * asynchronous uploads.
      */
     public function poll(Request $request): JsonResponse
     {

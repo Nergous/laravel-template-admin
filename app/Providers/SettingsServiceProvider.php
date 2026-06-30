@@ -7,12 +7,13 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Накат динамических настроек (Setting) на конфигурацию приложения.
+ * Applies dynamic settings (Setting) onto the application configuration.
  *
- * Вынесен из AppServiceProvider в отдельный провайдер, чтобы ответственность
- * «настройки из БД переопределяют config» была названа явно, а не пряталась в
- * общем boot(). На каждом web-запросе читает Setting::grouped() (кэшируется на
- * запрос) и накатывает app.name / app.timezone / session.lifetime на config.
+ * Extracted from AppServiceProvider into a separate provider so that the
+ * responsibility "settings from the DB override config" is named explicitly
+ * rather than hidden in a generic boot(). On every web request it reads
+ * Setting::grouped() (cached per request) and applies app.name / app.timezone /
+ * session.lifetime onto config.
  */
 class SettingsServiceProvider extends ServiceProvider
 {
@@ -27,8 +28,8 @@ class SettingsServiceProvider extends ServiceProvider
                 return;
             }
 
-            // Один вызов grouped() на обе группы (он же мемоизируется на запрос —
-            // blade-favicon и лимитер логина переиспользуют его).
+            // A single grouped() call for both groups (it is also memoized per
+            // request — the blade favicon and the login limiter reuse it).
             $settings = Setting::grouped();
             $general = $settings['general'];
             $security = $settings['security'];

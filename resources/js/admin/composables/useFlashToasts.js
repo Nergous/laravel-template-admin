@@ -1,9 +1,9 @@
-// Следит за shared-флэшем Inertia (page.props.flash) и показывает его тостами.
+// Watches Inertia's shared flash (page.props.flash) and shows it as toasts.
 import { watch } from "vue";
 import { usePage } from "@inertiajs/vue3";
 import { useToast } from "@/lib/nergous-cit/index.js";
 
-// Ключи флэша совпадают с именами методов useToast (success/error/warning/info).
+// The flash keys match the useToast method names (success/error/warning/info).
 const TONES = ["success", "error", "warning", "info"];
 
 export function useFlashToasts() {

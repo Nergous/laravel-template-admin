@@ -5,10 +5,10 @@ import { formatDateShort, formatDateTime } from "@/lib/format.js";
 const props = defineProps({
     // useForm({ name, email, password, roles:[names] })
     form: { type: Object, required: true },
-    // [{ name, description }] — полный список назначаемых ролей.
+    // [{ name, description }] — full list of assignable roles.
     allRoles: { type: Array, required: true },
     isEdit: { type: Boolean, default: false },
-    // На edit показываем шапку профиля + панель «Сведения».
+    // On edit we show the profile header + the "Details" panel.
     user: { type: Object, default: null },
 });
 
@@ -24,7 +24,7 @@ function isSelected(name) {
 
 <template>
     <form class="uform" @submit.prevent>
-        <!-- Edit: шапка профиля -->
+        <!-- Edit: profile header -->
         <div v-if="isEdit && user" class="uform__profile">
             <NAvatar :name="user.name" :size="52" />
             <div class="uform__profile-meta">
@@ -113,7 +113,7 @@ function isSelected(name) {
             </div>
         </NFormField>
 
-        <!-- Edit: панель «Сведения» -->
+        <!-- Edit: "Details" panel -->
         <div v-if="isEdit && user" class="uform__panel">
             <h4 class="uform__panel-title">Сведения</h4>
             <div class="uform__panel-row">
@@ -157,7 +157,7 @@ function isSelected(name) {
     gap: 16px;
 }
 
-/* --- профиль (edit) --- */
+/* --- profile (edit) --- */
 .uform__profile {
     display: flex;
     align-items: center;
@@ -180,7 +180,7 @@ function isSelected(name) {
     margin-top: 2px;
 }
 
-/* --- роли как карточки-опции --- */
+/* --- roles as option cards --- */
 .uform__roles {
     display: flex;
     flex-direction: column;
@@ -257,7 +257,7 @@ function isSelected(name) {
     margin-top: 1px;
 }
 
-/* --- панель «Сведения» (edit) --- */
+/* --- "Details" panel (edit) --- */
 .uform__panel {
     padding: 14px;
     border: 1px solid var(--border);

@@ -12,10 +12,10 @@ class CreateAdminCommandTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * На свежей БД (только миграции, без сидов — как при `composer setup` без сидов
-     * или Docker-проде с RUN_SEEDS=false) команда обязана выдать РАБОЧЕГО админа:
-     * с ролью суперадмина И полным набором прав, а не пустую роль. Иначе админ
-     * получает 403 во всех разделах (B1).
+     * On a fresh DB (migrations only, no seeds — as with `composer setup` without seeds
+     * or a Docker prod with RUN_SEEDS=false) the command must produce a WORKING admin:
+     * with the superadmin role AND the full set of permissions, not an empty role. Otherwise
+     * the admin gets a 403 in every section (B1).
      */
     public function test_creates_admin_with_full_permissions_on_fresh_database(): void
     {
@@ -30,7 +30,7 @@ class CreateAdminCommandTest extends TestCase
         $this->assertTrue($user->can('users.view'));
         $this->assertTrue($user->can('settings.edit'));
 
-        // Реальная проверка: админ заходит в раздел, а не ловит 403.
+        // Real check: the admin opens the section instead of hitting a 403.
         $this->actingAs($user);
         $this->get(route('admin.users.index'))->assertOk();
     }

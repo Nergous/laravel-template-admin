@@ -21,7 +21,7 @@ Route::prefix('/admin')->group(function () {
             ->name('login');
 
         Route::post('/login', [LoginController::class, 'login'])
-            ->middleware('throttle:login') // лимит из настройки security.login_throttle
+            ->middleware('throttle:login') // limit from the security.login_throttle setting
             ->name('admin.login');
     });
 
@@ -33,16 +33,16 @@ Route::prefix('/admin')->group(function () {
         Route::post('/logout', [LoginController::class, 'logout'])
             ->name('logout');
 
-        // Глобальный поиск (Cmd+K)
+        // Global search (Cmd+K)
         Route::get('search', [AdminSearchController::class, 'index'])
             ->name('admin.search');
 
-        // Уведомления — последние действия за 24 часа (фид журнала для колокольчика).
+        // Notifications — the latest actions over the past 24 hours (activity log feed for the bell).
         Route::middleware('permission:activity-log.view')
             ->get('notifications/recent', [AdminActivityLogController::class, 'recent'])
             ->name('admin.notifications.recent');
 
-        // Удаление пользователей
+        // User deletion
         Route::middleware('permission:users.delete')->group(function () {
             Route::get('users/trashed', [AdminUserController::class, 'trashed'])
                 ->name('admin.users.trashed');
@@ -63,12 +63,12 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.users.destroy');
         });
 
-        // Просмотр/создание/редактирование пользователей.
+        // Viewing/creating/editing users.
         Route::middleware('permission:users.view')->group(function () {
             Route::name('admin')->resource('users', AdminUserController::class)->except('destroy');
         });
 
-        // Роли
+        // Roles
         Route::middleware('permission:roles.view')->group(function () {
             Route::name('admin')->resource('roles', AdminRoleController::class)->except('destroy');
         });
@@ -77,13 +77,13 @@ Route::prefix('/admin')->group(function () {
             Route::name('admin')->resource('roles', AdminRoleController::class)->only('destroy');
         });
 
-        // Разрешения. Матрица доступа (переключение прав у ролей)
+        // Permissions. Access matrix (toggling permissions for roles)
         Route::middleware('permission:permissions.edit')->group(function () {
             Route::patch('permissions/matrix', [AdminPermissionController::class, 'sync'])
                 ->name('admin.permissions.sync');
         });
 
-        // Разрешения
+        // Permissions
         Route::middleware('permission:permissions.view')->group(function () {
             Route::name('admin')->resource('permissions', AdminPermissionController::class)->except('destroy');
         });
@@ -91,8 +91,8 @@ Route::prefix('/admin')->group(function () {
             Route::name('admin')->resource('permissions', AdminPermissionController::class)->only('destroy');
         });
 
-        // Медиа-библиотека: просмотр под media.view, загрузка под media.upload,
-        // удаление (одиночное и массовое) под media.delete.
+        // Media library: viewing under media.view, uploading under media.upload,
+        // deletion (single and bulk) under media.delete.
         Route::middleware('permission:media.view')->group(function () {
             Route::get('media/poll', [AdminMediaController::class, 'poll'])
                 ->name('admin.media.poll');
@@ -113,19 +113,19 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.media.destroy');
         });
 
-        // Журнал действий
+        // Activity log
         Route::middleware('permission:activity-log.view')->group(function () {
             Route::get('activity-log', [AdminActivityLogController::class, 'index'])
                 ->name('admin.activity-log.index');
         });
 
-        // Очистка журнала до выбранной даты — под отдельным правом.
+        // Clearing the log up to a chosen date — under a separate permission.
         Route::middleware('permission:activity-log.delete')->group(function () {
             Route::delete('activity-log', [AdminActivityLogController::class, 'clear'])
                 ->name('admin.activity-log.clear');
         });
 
-        // Настройки
+        // Settings
         Route::middleware('permission:settings.view')->group(function () {
             Route::get('settings', [AdminSettingsController::class, 'index'])
                 ->name('admin.settings.index');
@@ -136,7 +136,7 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.settings.update');
         });
 
-        // Сообщения бота (опциональный модуль; роуты закрыты middleware bot.enabled).
+        // Bot messages (optional module; routes guarded by the bot.enabled middleware).
         Route::middleware('bot.enabled')->group(function () {
             Route::middleware('permission:bot-messages.view')
                 ->get('bot-messages', [AdminBotMessageController::class, 'index'])

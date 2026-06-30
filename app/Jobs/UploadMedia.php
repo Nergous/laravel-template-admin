@@ -13,23 +13,23 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 /**
- * Job для асинхронной загрузки файла в медиа-библиотеку.
+ * Job for asynchronously uploading a file to the media library.
  *
- * Принимает путь к временному файлу, перемещает его в storage/public/media
- * и создаёт запись Media с метаданными (mime, тип, размер, исходное имя).
+ * Takes the path to a temporary file, moves it to storage/public/media
+ * and creates a Media record with metadata (mime, type, size, original name).
  *
- * Изображения оптимизируются через ImageOptimizer (WebP + thumbnail).
- * Остальные типы (видео/аудио/документы) сохраняются как есть, без thumbnail.
+ * Images are optimized via ImageOptimizer (WebP + thumbnail).
+ * Other types (video/audio/documents) are stored as-is, without a thumbnail.
  *
- * Временный файл сохраняется в storage/app/temp при обработке запроса
- * в AdminMediaController::store(), затем этот Job ставится в очередь.
+ * The temporary file is saved to storage/app/temp while handling the request
+ * in AdminMediaController::store(), then this job is queued.
  *
- * Надёжность: задача закалена для очереди ($tries/$timeout/$backoff ниже). Temp
- * удаляется только после успеха — повтор переобработает файл заново; создание
- * строки идемпотентно (если temp уже убран — задача делает no-op, без дубликата).
- * Прод-воркер: queue:work с супервизированием (см. docker-compose.yml).
+ * Reliability: the job is hardened for the queue ($tries/$timeout/$backoff below).
+ * Temp is deleted only after success — a retry reprocesses the file from scratch;
+ * row creation is idempotent (if temp is already removed — the job is a no-op, no
+ * duplicate). Production worker: queue:work with supervision (see docker-compose.yml).
  *
- * Использование:
+ * Usage:
  *   $tempPath = $file->store('temp', 'local');
  *   UploadMedia::dispatch($tempPath, $file->getClientOriginalName());
  */
@@ -37,23 +37,23 @@ class UploadMedia implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /** Каталог назначения на диске public. */
+    /** Destination directory on the public disk. */
     private const DIRECTORY = 'media';
 
     /**
-     * Жёсткий лимит на одну попытку (сек). Должен быть строго меньше
-     * queue retry_after (90с, config/queue.php).
+     * Hard limit per attempt (sec). Must be strictly less than the queue
+     * retry_after (90s, config/queue.php).
      */
     public int $timeout = 60;
 
     /**
-     * Сколько раз пытаться обработать файл перед уходом в failed_jobs.
+     * How many times to try processing the file before going to failed_jobs.
      */
     public int $tries = 3;
 
     /**
-     * Возрастающая пауза между повторами (сек) — на случай временного сбоя
-     * (недоступность диска/БД).
+     * Increasing pause between retries (sec) — in case of a transient failure
+     * (disk/DB unavailability).
      *
      * @return array<int, int>
      */
@@ -63,10 +63,10 @@ class UploadMedia implements ShouldQueue
     }
 
     /**
-     * @param  string  $tempPath  Путь к временному файлу относительно диска local
-     *                            (например: temp/randomname.jpg)
-     * @param  string|null  $originalName  Исходное имя файла при загрузке
-     * @param  int|null  $uploaderId  ID загрузившего пользователя (для created_by; null из CLI/вне сессии)
+     * @param  string  $tempPath  Path to the temporary file relative to the local disk
+     *                            (e.g.: temp/randomname.jpg)
+     * @param  string|null  $originalName  The file's original name at upload time
+     * @param  int|null  $uploaderId  ID of the uploading user (for created_by; null from CLI/outside a session)
      */
     public function __construct(
         protected string $tempPath,
@@ -75,18 +75,18 @@ class UploadMedia implements ShouldQueue
     ) {}
 
     /**
-     * Выполнение задачи.
+     * Job execution.
      *
-     * 1. Определяет MIME-тип временного файла
-     * 2. Изображение → оптимизирует (WebP + thumbnail); иначе → копирует как есть
-     * 3. Создаёт запись Media с метаданными
-     * 4. Удаляет временный файл (только после успеха — см. ниже)
+     * 1. Determines the MIME type of the temporary file
+     * 2. Image → optimizes it (WebP + thumbnail); otherwise → copies it as-is
+     * 3. Creates a Media record with metadata
+     * 4. Deletes the temporary file (only after success — see below)
      *
-     * temp удаляется последним шагом, только при
-     * успехе. На сбое temp остаётся, и повтор переобрабатывает его заново. Если
-     * temp уже нет (обработан предыдущей попыткой) — задача делает no-op, не
-     * создавая дублирующую строку. Создание строки — последняя операция, способная
-     * бросить исключение, поэтому повтор после её успеха невозможен.
+     * temp is deleted as the last step, only on success. On failure temp remains,
+     * and a retry reprocesses it from scratch. If temp is already gone (processed
+     * by a previous attempt) — the job is a no-op, not creating a duplicate row.
+     * Row creation is the last operation that can throw an exception, so a retry
+     * after its success is impossible.
      */
     public function handle(): void
     {
@@ -94,7 +94,7 @@ class UploadMedia implements ShouldQueue
         $fullSource = $localDisk->path($this->tempPath);
 
         if (! file_exists($fullSource)) {
-            return; // temp уже обработан/убран — идемпотентный no-op
+            return; // temp already processed/removed — idempotent no-op
         }
 
         $mime = mime_content_type($fullSource) ?: null;
@@ -135,9 +135,9 @@ class UploadMedia implements ShouldQueue
     }
 
     /**
-     * Копирует файл на диск public без обработки, сохраняя расширение.
+     * Copies the file to the public disk without processing, preserving the extension.
      *
-     * @return string Имя нового файла относительно диска public
+     * @return string The new file's name relative to the public disk
      */
     private function copyAsIs(): string
     {
@@ -156,7 +156,7 @@ class UploadMedia implements ShouldQueue
     }
 
     /**
-     * Финальная чистка temp-файла после того, как все retry закончились неудачей.
+     * Final cleanup of the temp file after all retries have failed.
      */
     public function failed(?\Throwable $e = null): void
     {

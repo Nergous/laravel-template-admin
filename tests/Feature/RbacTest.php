@@ -182,7 +182,7 @@ class RbacTest extends TestCase
         $elevated = Role::create(['name' => 'eraser', 'guard_name' => 'web']);
         $elevated->syncPermissions(['users.delete']);
 
-        $this->actingAsUserWith(['users.view', 'users.edit']); // нет users.delete
+        $this->actingAsUserWith(['users.view', 'users.edit']); // no users.delete
         $target = User::factory()->create();
 
         $this->put(route('admin.users.update', $target), [
@@ -214,7 +214,7 @@ class RbacTest extends TestCase
 
     public function test_role_store_requires_create_not_just_edit(): void
     {
-        $this->actingAsUserWith(['roles.view', 'roles.edit']); // нет roles.create
+        $this->actingAsUserWith(['roles.view', 'roles.edit']); // no roles.create
 
         $this->post(route('admin.roles.store'), [
             'name' => 'editor',
@@ -226,7 +226,7 @@ class RbacTest extends TestCase
 
     public function test_role_update_requires_edit_not_just_create(): void
     {
-        $this->actingAsUserWith(['roles.view', 'roles.create']); // нет roles.edit
+        $this->actingAsUserWith(['roles.view', 'roles.create']); // no roles.edit
         $role = Role::create(['name' => 'editor', 'guard_name' => 'web']);
 
         $this->put(route('admin.roles.update', $role), [
@@ -239,7 +239,7 @@ class RbacTest extends TestCase
 
     public function test_permission_store_requires_create_not_just_edit(): void
     {
-        $this->actingAsUserWith(['permissions.view', 'permissions.edit']); // нет create
+        $this->actingAsUserWith(['permissions.view', 'permissions.edit']); // no create
 
         $this->post(route('admin.permissions.store'), [
             'name' => 'demo.new',
@@ -250,7 +250,7 @@ class RbacTest extends TestCase
 
     public function test_permission_update_requires_edit_not_just_create(): void
     {
-        $this->actingAsUserWith(['permissions.view', 'permissions.create']); // нет edit
+        $this->actingAsUserWith(['permissions.view', 'permissions.create']); // no edit
         $perm = Permission::findOrCreate('demo.old', 'web');
 
         $this->put(route('admin.permissions.update', $perm), [

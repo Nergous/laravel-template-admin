@@ -3,9 +3,9 @@
 namespace App\Http\Sorts;
 
 /**
- * Сортировка для списка медиа.
+ * Sort for the media list.
  *
- * По умолчанию сортирует по дате загрузки (created_at).
+ * By default sorts by upload date (created_at).
  */
 class MediaSort extends Sort
 {

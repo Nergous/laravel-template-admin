@@ -11,7 +11,7 @@ use Spatie\Permission\PermissionRegistrar;
 abstract class TestCase extends BaseTestCase
 {
     /**
-     * Сидит базовые роли и права (admin/operator + все permissions).
+     * Seeds base roles and permissions (admin/operator + all permissions).
      */
     protected function seedRolesAndPermissions(): void
     {
@@ -19,7 +19,7 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Создаёт и логинит пользователя с ролью admin (все права).
+     * Creates and logs in a user with the admin role (all permissions).
      */
     protected function actingAsAdmin(): User
     {
@@ -34,7 +34,7 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Создаёт и логинит пользователя ровно с указанными прямыми правами.
+     * Creates and logs in a user with exactly the given direct permissions.
      *
      * @param  list<string>  $permissions
      */

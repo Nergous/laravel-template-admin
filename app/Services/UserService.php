@@ -9,16 +9,16 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Доменные операции над пользователями: создание/обновление с ролями, мягкое
- * удаление и операции корзины.
+ * Domain operations on users: create/update with roles, soft delete and trash
+ * operations.
  */
 class UserService
 {
     /**
-     * Создаёт пользователя и назначает ему роли (в транзакции).
+     * Creates a user and assigns them roles (in a transaction).
      *
      * @param  array{name: string, email: string, password: string}  $data
-     * @param  array<int, string>  $roles  Имена ролей spatie.
+     * @param  array<int, string>  $roles  Spatie role names.
      */
     public function create(array $data, array $roles): User
     {
@@ -36,13 +36,13 @@ class UserService
     }
 
     /**
-     * Обновляет пользователя и его роли. Пароль меняется только если передан;
-     * админ не может снять роль admin с самого себя.
+     * Updates a user and their roles. The password changes only if provided;
+     * an admin cannot remove the admin role from themselves.
      *
      * @param  array{name: string, email: string, password?: string|null}  $data
      * @param  array<int, string>  $roles
      *
-     * @throws ValidationException Если актор снимает у себя роль admin.
+     * @throws ValidationException If the actor removes the admin role from themselves.
      */
     public function update(User $user, array $data, array $roles, ?User $actor): User
     {
@@ -68,9 +68,9 @@ class UserService
     }
 
     /**
-     * Мягко удаляет пользователя (себя удалить нельзя).
+     * Soft-deletes a user (you cannot delete yourself).
      *
-     * @throws ValidationException Если актор пытается удалить самого себя.
+     * @throws ValidationException If the actor tries to delete themselves.
      */
     public function delete(User $user, ?User $actor): void
     {
@@ -84,9 +84,9 @@ class UserService
     }
 
     /**
-     * Восстанавливает пользователя из корзины.
+     * Restores a user from the trash.
      *
-     * @param  int  $id  Идентификатор пользователя в корзине
+     * @param  int  $id  Identifier of the user in the trash
      */
     public function restore(int $id): void
     {
@@ -94,9 +94,9 @@ class UserService
     }
 
     /**
-     * Удаляет пользователя из корзины окончательно (вместе с файлами/связями).
+     * Permanently deletes a user from the trash (along with files/relations).
      *
-     * @param  int  $id  Идентификатор пользователя в корзине
+     * @param  int  $id  Identifier of the user in the trash
      */
     public function forceDelete(int $id): void
     {
@@ -104,10 +104,10 @@ class UserService
     }
 
     /**
-     * Массовое восстановление из корзины.
+     * Bulk restore from the trash.
      *
      * @param  array<int, int>  $ids
-     * @return int Сколько пользователей обработано.
+     * @return int How many users were processed.
      */
     public function bulkRestore(array $ids): int
     {
@@ -115,10 +115,10 @@ class UserService
     }
 
     /**
-     * Массовое окончательное удаление из корзины.
+     * Bulk permanent delete from the trash.
      *
      * @param  array<int, int>  $ids
-     * @return int Сколько пользователей обработано.
+     * @return int How many users were processed.
      */
     public function bulkForceDelete(array $ids): int
     {
@@ -126,13 +126,13 @@ class UserService
     }
 
     /**
-     * Применяет действие к каждому пользователю из корзины с указанными id.
-     * Идёт по моделям (не mass-update), чтобы restore/forceDelete бросали
-     * события и попадали в журнал (LogsActivity).
+     * Applies an action to each trashed user with the given ids.
+     * Iterates over models (not a mass-update) so that restore/forceDelete
+     * fire events and end up in the activity log (LogsActivity).
      *
      * @param  array<int, int>  $ids
      * @param  callable(User): void  $action
-     * @return int Сколько пользователей обработано.
+     * @return int How many users were processed.
      */
     private function applyToTrashed(array $ids, callable $action): int
     {
@@ -144,7 +144,7 @@ class UserService
     }
 
     /**
-     * Защита от того, чтобы суперадмин снял с себя роль суперадмина
+     * Guards against a superadmin removing the superadmin role from themselves
      * (config('rbac.superadmin_role')).
      *
      * @param  array<int, string>  $newRoles

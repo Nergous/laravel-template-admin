@@ -8,7 +8,7 @@ export default defineConfig({
         laravel({
             input: [
                 "resources/js/admin/app.js",
-                // Публичная часть (отдельный бандл) — добавить, когда появится:
+                // Public section (separate bundle) — add when it appears:
                 // "resources/js/public/app.js",
             ],
             refresh: true,
@@ -25,9 +25,9 @@ export default defineConfig({
         },
     },
     server: {
-        // host:true нужен, когда Vite крутится в Docker-контейнере (compose.dev.yaml):
-        // сервер слушает 0.0.0.0, а HMR-клиент в браузере стучится на localhost:5173.
-        // В нативном запуске (npm run dev) переменные не заданы — поведение прежнее.
+        // host:true is needed when Vite runs inside a Docker container (compose.dev.yaml):
+        // the server listens on 0.0.0.0, while the browser's HMR client connects to localhost:5173.
+        // In a native run (npm run dev) the variables are unset — behavior stays as before.
         host: process.env.VITE_HOST || "localhost",
         hmr: process.env.VITE_HMR_HOST
             ? { host: process.env.VITE_HMR_HOST, clientPort: 5173 }

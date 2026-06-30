@@ -13,24 +13,25 @@ use Inertia\Inertia;
 use Spatie\Permission\Models\Permission;
 
 /**
- * Управление ролями: список, CRUD и набор прав роли.
+ * Role management: list, CRUD, and a role's permission set.
  *
- * Контроллер занимается HTTP: валидирует вход (RoleRequest), собирает пропсы
- * Inertia (включая сгруппированные права и метаданные авторства) и редиректит.
- * Оркестрация и инварианты (транзакции, syncPermissions, журналирование дельты,
- * защита системных ролей) живут в App\Services\RoleService.
+ * The controller handles HTTP: validates input (RoleRequest), assembles Inertia
+ * props (including grouped permissions and authorship metadata), and redirects.
+ * Orchestration and invariants (transactions, syncPermissions, logging the delta,
+ * protecting system roles) live in App\Services\RoleService.
  *
- * Системные роли (is_system) защищены: имя менять нельзя, удаление запрещено.
- * Действия над ролями пишутся в журнал (ActivityLog). Создание и редактирование
- * живут в дровере на странице Index, поэтому resource-методы create/edit/show
- * лишь редиректят, а index отдаёт всё нужное для дровера (права + метаданные).
+ * System roles (is_system) are protected: their name cannot be changed and deletion
+ * is forbidden. Actions on roles are written to the activity log (ActivityLog).
+ * Creation and editing live in a drawer on the Index page, so the resource methods
+ * create/edit/show merely redirect, while index returns everything the drawer needs
+ * (permissions + metadata).
  */
 class AdminRoleController extends Controller
 {
     public function __construct(private readonly RoleService $roles) {}
 
     /**
-     * Список ролей со счётчиками прав и пользователей, с поиском по имени.
+     * List of roles with permission and user counts, with search by name.
      */
     public function index(Request $request): \Inertia\Response
     {
@@ -44,7 +45,7 @@ class AdminRoleController extends Controller
 
         $roles = $query->orderBy('name')->paginate(15)->withQueryString();
 
-        // Имена авторов для всех ролей страницы — одним запросом (для дровера).
+        // Author names for all roles on the page — in a single query (for the drawer).
         $authorNames = User::whereIn(
             'id',
             collect($roles->items())
@@ -52,8 +53,8 @@ class AdminRoleController extends Controller
                 ->filter()->unique()
         )->pluck('name', 'id');
 
-        // Каждую строку обогащаем тем, что нужно дроверу создания/редактирования:
-        // список прав (имена) и метаданные авторства.
+        // Enrich each row with what the create/edit drawer needs:
+        // the permission list (names) and authorship metadata.
         $roles->setCollection($roles->getCollection()->map(fn (Role $role) => [
             'id' => $role->id,
             'name' => $role->name,
@@ -78,11 +79,11 @@ class AdminRoleController extends Controller
 
     public function create(): RedirectResponse
     {
-        // Создание живёт в дровере на странице Index.
+        // Creation lives in a drawer on the Index page.
         return redirect()->route('admin.roles.index');
     }
 
-    /** Создаёт роль, назначает права и логирует. */
+    /** Creates a role, assigns permissions, and logs the action. */
     public function store(RoleRequest $request): RedirectResponse
     {
         $this->roles->create(
@@ -98,11 +99,11 @@ class AdminRoleController extends Controller
 
     public function edit(Role $role): RedirectResponse
     {
-        // Редактирование живёт в дровере на странице Index.
+        // Editing lives in a drawer on the Index page.
         return redirect()->route('admin.roles.index');
     }
 
-    /** Обновляет роль и её права (имя системной роли менять нельзя — правило в сервисе), логирует. */
+    /** Updates a role and its permissions (a system role's name cannot be changed — rule in the service), and logs the action. */
     public function update(RoleRequest $request, Role $role): RedirectResponse
     {
         $this->roles->update(
@@ -117,7 +118,7 @@ class AdminRoleController extends Controller
             ->with('success', 'Роль обновлена');
     }
 
-    /** Удаляет роль (нельзя системную и назначенную пользователям — правила в сервисе), логирует. */
+    /** Deletes a role (system roles and roles assigned to users are not allowed — rules in the service), and logs the action. */
     public function destroy(Role $role): RedirectResponse
     {
         $this->roles->delete($role);
@@ -133,7 +134,7 @@ class AdminRoleController extends Controller
     }
 
     /**
-     * Группирует все permissions по префиксу до первой точки.
+     * Groups all permissions by the prefix up to the first dot.
      * `users.view`, `users.edit` → ['users' => [...]]
      *
      * @return array<string, \Illuminate\Support\Collection<int, Permission>>

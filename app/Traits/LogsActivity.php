@@ -5,10 +5,10 @@ namespace App\Traits;
 use App\Models\ActivityLog;
 
 /**
- * Автоматическое логирование создания, обновления и удаления модели.
+ * Automatic logging of model creation, update and deletion.
  *
- * Подключается к Eloquent-событиям created, updated, deleted.
- * Для ручного лога (duplicate, restore) — вызывайте self::logManual().
+ * Hooks into the Eloquent events created, updated, deleted.
+ * For a manual log entry (duplicate, restore) — call self::logManual().
  */
 trait LogsActivity
 {
@@ -20,7 +20,7 @@ trait LogsActivity
 
         static::updated(function ($model) {
             $dirty = $model->getDirty();
-            unset($dirty['updated_at']); // шум
+            unset($dirty['updated_at']); // noise
 
             if (empty($dirty)) {
                 return;
@@ -38,7 +38,7 @@ trait LogsActivity
         });
 
         static::deleted(function ($model) {
-            // forceDelete у soft-delete модели тоже бросает deleted — различаем.
+            // forceDelete on a soft-delete model also fires deleted — we distinguish them.
             $action = (method_exists($model, 'isForceDeleting') && $model->isForceDeleting())
                 ? 'force_deleted'
                 : 'deleted';
@@ -55,11 +55,11 @@ trait LogsActivity
     }
 
     /**
-     * Ручная запись лога (для дублирования и прочих действий).
+     * Manual log entry (for duplication and other actions).
      *
-     * @param  \Illuminate\Database\Eloquent\Model  $model  Логируемая модель (субъект)
-     * @param  string  $action  Действие (например, duplicated)
-     * @param  array<string, array{0: mixed, 1: mixed}>|null  $changes  Diff полей: [старое, новое]
+     * @param  \Illuminate\Database\Eloquent\Model  $model  The logged model (subject)
+     * @param  string  $action  The action (e.g. duplicated)
+     * @param  array<string, array{0: mixed, 1: mixed}>|null  $changes  Field diff: [old, new]
      */
     public static function logManual($model, string $action, ?array $changes = null): void
     {
@@ -68,7 +68,7 @@ trait LogsActivity
 
     private static function writeLog($model, string $action, ?array $changes = null): void
     {
-        // Единая точка записи (метка субъекта/автора, проглатывание ошибок) — в модели.
+        // The single write point (subject/author label, error swallowing) lives in the model.
         ActivityLog::record($model, $action, $changes);
     }
 }

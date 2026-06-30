@@ -64,7 +64,7 @@ class MediaTest extends TestCase
 
     private function pngWithDimensions(int $width, int $height): string
     {
-        $ihdrData = pack('N2', $width, $height)."\x08\x06\x00\x00\x00"; // 8 бит, RGBA
+        $ihdrData = pack('N2', $width, $height)."\x08\x06\x00\x00\x00"; // 8 bits, RGBA
         $ihdr = pack('N', strlen($ihdrData)).'IHDR'.$ihdrData.pack('N', crc32('IHDR'.$ihdrData));
         $iend = pack('N', 0).'IEND'.pack('N', crc32('IEND'));
 
@@ -166,7 +166,7 @@ class MediaTest extends TestCase
         try {
             $this->delete(route('admin.media.bulk-destroy'), ['ids' => $ids]);
         } catch (\Throwable) {
-            // ожидаемо
+            // expected
         }
 
         $this->assertDatabaseCount('media', 2);

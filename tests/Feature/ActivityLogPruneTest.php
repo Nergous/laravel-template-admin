@@ -8,15 +8,15 @@ use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 /**
- * Регрессия на находку M3: ежедневный model:prune обрезает журнал действий
- * (activity_log) по сроку хранения config('audit.retention_days'), а нулевой
- * срок полностью отключает чистку.
+ * Regression for finding M3: the daily model:prune trims the activity log
+ * (activity_log) by the config('audit.retention_days') retention period, while a
+ * zero retention fully disables pruning.
  */
 class ActivityLogPruneTest extends TestCase
 {
     use RefreshDatabase;
 
-    /** Хелпер: запись журнала с явным created_at ($timestamps = false). */
+    /** Helper: an activity log record with an explicit created_at ($timestamps = false). */
     private function makeLog(string $action, \DateTimeInterface $createdAt): ActivityLog
     {
         return ActivityLog::create([
@@ -34,21 +34,21 @@ class ActivityLogPruneTest extends TestCase
 
         Artisan::call('model:prune', ['--model' => [ActivityLog::class]]);
 
-        // Старая запись удалена, свежая осталась.
+        // The old record is removed, the fresh one remains.
         $this->assertDatabaseMissing('activity_log', ['id' => $old->id]);
         $this->assertDatabaseHas('activity_log', ['id' => $fresh->id]);
     }
 
     public function test_prune_disabled_when_retention_is_zero(): void
     {
-        // Конфиг должен быть установлен ДО вызова команды — prunable() читает его.
+        // The config must be set BEFORE calling the command — prunable() reads it.
         config(['audit.retention_days' => 0]);
 
         $old = $this->makeLog('old', now()->subDays(200));
 
         Artisan::call('model:prune', ['--model' => [ActivityLog::class]]);
 
-        // Чистка отключена — даже очень старая запись остаётся на месте.
+        // Pruning is disabled — even a very old record stays in place.
         $this->assertDatabaseHas('activity_log', ['id' => $old->id]);
     }
 }

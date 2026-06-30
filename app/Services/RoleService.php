@@ -9,16 +9,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Доменные операции над ролями: создание/обновление с набором прав и удаление,
- * с журналированием и защитой системных ролей.
+ * Domain operations on roles: create/update with a set of permissions and
+ * deletion, with logging and protection of system roles.
  */
 class RoleService
 {
     /**
-     * Создаёт роль, назначает права и логирует (в транзакции).
+     * Creates a role, assigns permissions and logs it (in a transaction).
      *
      * @param  array{name: string, description?: string|null}  $data
-     * @param  array<int, string>  $permissions  Имена разрешений.
+     * @param  array<int, string>  $permissions  Permission names.
      */
     public function create(array $data, array $permissions, ?User $actor): Role
     {
@@ -39,12 +39,13 @@ class RoleService
     }
 
     /**
-     * Обновляет роль и её права (имя системной роли менять нельзя), логирует дельту.
+     * Updates a role and its permissions (a system role's name cannot be changed),
+     * logs the delta.
      *
      * @param  array{name: string, description?: string|null}  $data
      * @param  array<int, string>  $permissions
      *
-     * @throws ValidationException Если меняется имя системной роли.
+     * @throws ValidationException If a system role's name is changed.
      */
     public function update(Role $role, array $data, array $permissions, ?User $actor): Role
     {
@@ -91,9 +92,9 @@ class RoleService
     }
 
     /**
-     * Удаляет роль (нельзя системную и назначенную пользователям), логирует.
+     * Deletes a role (a system role or one assigned to users cannot be deleted), logs it.
      *
-     * @throws ValidationException Если роль системная или назначена пользователям.
+     * @throws ValidationException If the role is a system role or is assigned to users.
      */
     public function delete(Role $role): void
     {

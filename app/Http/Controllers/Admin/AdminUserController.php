@@ -14,23 +14,23 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 /**
- * Управление пользователями: список, CRUD и корзина (мягкое удаление).
+ * User management: list, CRUD, and the trash (soft deletion).
  *
- * Контроллер занимается HTTP: валидирует вход (UserRequest), собирает пропсы
- * Inertia и редиректит. Доменные правила и оркестрация (транзакции, syncRoles,
- * запрет само-понижения/само-удаления) живут в App\Services\UserService.
+ * The controller handles HTTP: validates input (UserRequest), assembles Inertia
+ * props, and redirects. Domain rules and orchestration (transactions, syncRoles,
+ * preventing self-demotion/self-deletion) live in App\Services\UserService.
  *
- * Роли назначаются массивом roles[] (имена spatie-ролей). Создание и
- * редактирование живут в дровере на странице Index, поэтому resource-методы
- * create/edit/show лишь редиректят.
+ * Roles are assigned via a roles[] array (spatie role names). Creation and
+ * editing live in a drawer on the Index page, so the resource methods
+ * create/edit/show merely redirect.
  */
 class AdminUserController extends Controller
 {
     public function __construct(private readonly UserService $users) {}
 
     /**
-     * Список пользователей с поиском, фильтром по роли, сортировкой,
-     * списком ролей для фильтра и счётчиком корзины.
+     * List of users with search, role filter, sorting,
+     * a list of roles for the filter, and a trash counter.
      */
     public function index(Request $request, UserSort $sort): \Inertia\Response
     {
@@ -52,22 +52,22 @@ class AdminUserController extends Controller
 
         return Inertia::render('Users/Index', [
             'users' => $users,
-            'roles' => $roles, // ['admin'=>'admin', ...] — для фильтра
-            // Полный список ролей с описанием — для карточек-опций в дровере.
+            'roles' => $roles, // ['admin'=>'admin', ...] — for the filter
+            // Full list of roles with descriptions — for the option cards in the drawer.
             'allRoles' => $allRoles,
             'trashedCount' => $trashedCount,
-            ...$sort->toArray(), // currentSort + currentDirection из валидированного Sort
+            ...$sort->toArray(), // currentSort + currentDirection from the validated Sort
             'filters' => $request->only('search', 'role'),
         ]);
     }
 
     public function create(): RedirectResponse
     {
-        // Создание живёт в дровере на странице Index.
+        // Creation lives in a drawer on the Index page.
         return redirect()->route('admin.users.index');
     }
 
-    /** Создаёт пользователя и назначает ему роли (roles[]). */
+    /** Creates a user and assigns roles to them (roles[]). */
     public function store(UserRequest $request): RedirectResponse
     {
         $this->users->create(
@@ -82,13 +82,13 @@ class AdminUserController extends Controller
 
     public function edit(User $user): RedirectResponse
     {
-        // Редактирование живёт в дровере на странице Index.
+        // Editing lives in a drawer on the Index page.
         return redirect()->route('admin.users.index');
     }
 
     /**
-     * Обновляет пользователя и его роли. Пароль меняется только если передан;
-     * не позволяет администратору снять роль admin с самого себя (правило в сервисе).
+     * Updates a user and their roles. The password is changed only if provided;
+     * does not allow an admin to remove the admin role from themselves (rule in the service).
      */
     public function update(UserRequest $request, User $user): RedirectResponse
     {
@@ -108,7 +108,7 @@ class AdminUserController extends Controller
             ->with('success', 'Пользователь успешно обновлён');
     }
 
-    /** Мягко удаляет пользователя (себя удалить нельзя — правило в сервисе). */
+    /** Soft-deletes a user (you cannot delete yourself — rule in the service). */
     public function destroy(Request $request, User $user): RedirectResponse
     {
         $this->users->delete($user, $request->user());
@@ -124,7 +124,7 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Корзина — список мягко удалённых пользователей.
+     * Trash — a list of soft-deleted users.
      */
     public function trashed(Request $request, UserSort $sort): \Inertia\Response
     {
@@ -141,15 +141,15 @@ class AdminUserController extends Controller
 
         return Inertia::render('Users/Trashed', [
             'users' => $users,
-            ...$sort->toArray(), // currentSort + currentDirection из валидированного Sort
+            ...$sort->toArray(), // currentSort + currentDirection from the validated Sort
             'filters' => $request->only('search'),
         ]);
     }
 
     /**
-     * Восстановить пользователя из корзины.
+     * Restore a user from the trash.
      *
-     * @param  int  $id  Идентификатор пользователя в корзине
+     * @param  int  $id  The identifier of the user in the trash
      */
     public function restore(int $id): RedirectResponse
     {
@@ -161,9 +161,9 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Удалить пользователя из корзины окончательно (вместе с файлами/связями).
+     * Permanently delete a user from the trash (along with their files/relations).
      *
-     * @param  int  $id  Идентификатор пользователя в корзине
+     * @param  int  $id  The identifier of the user in the trash
      */
     public function forceDelete(int $id): RedirectResponse
     {
@@ -175,9 +175,9 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Массовое восстановление из корзины.
+     * Bulk restore from the trash.
      *
-     * @param  BulkUserActionRequest  $request  ids (int[]) — идентификаторы пользователей
+     * @param  BulkUserActionRequest  $request  ids (int[]) — user identifiers
      */
     public function bulkRestore(BulkUserActionRequest $request): RedirectResponse
     {
@@ -189,9 +189,9 @@ class AdminUserController extends Controller
     }
 
     /**
-     * Массовое окончательное удаление из корзины.
+     * Bulk permanent deletion from the trash.
      *
-     * @param  BulkUserActionRequest  $request  ids (int[]) — идентификаторы пользователей
+     * @param  BulkUserActionRequest  $request  ids (int[]) — user identifiers
      */
     public function bulkForceDelete(BulkUserActionRequest $request): RedirectResponse
     {

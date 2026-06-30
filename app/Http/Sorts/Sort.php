@@ -5,22 +5,22 @@ namespace App\Http\Sorts;
 use Illuminate\Http\Request;
 
 /**
- * Базовый класс сортировки для списков.
+ * Base sort class for lists.
  *
- * Читает параметры sort и direction из GET-запроса и валидирует их
- * против списка допустимых полей. Если переданное значение недопустимо —
- * используется значение по умолчанию.
+ * Reads the sort and direction parameters from the GET request and validates them
+ * against the list of allowed fields. If the passed value is invalid —
+ * the default value is used.
  *
- * Наследники переопределяют $allowedSorts и при необходимости $defaultSort.
+ * Subclasses override $allowedSorts and, if needed, $defaultSort.
  *
- * Использование в контроллере (Inertia):
+ * Usage in a controller (Inertia):
  *   public function index(Request $request, UserSort $sort)
  *   {
  *       $query->orderBy($sort->getSort(), $sort->getDirection());
  *       return Inertia::render('Users/Index', [...$sort->toArray()]);
  *   }
  *
- * Параметры приходят query-строкой:
+ * Parameters arrive in the query string:
  *   ?sort=title&direction=asc
  */
 class Sort
@@ -30,8 +30,8 @@ class Sort
     protected string $defaultSort = 'id';
 
     /**
-     * Направление по умолчанию (asc|desc) — единственный источник истины.
-     * Наследники переопределяют при необходимости.
+     * Default direction (asc|desc) — the single source of truth.
+     * Subclasses override it when needed.
      */
     protected string $defaultDirection = 'desc';
 
@@ -51,7 +51,7 @@ class Sort
     }
 
     /**
-     * Текущее поле сортировки.
+     * The current sort field.
      */
     public function getSort(): string
     {
@@ -59,7 +59,7 @@ class Sort
     }
 
     /**
-     * Текущее направление сортировки (asc|desc).
+     * The current sort direction (asc|desc).
      */
     public function getDirection(): string
     {
@@ -67,7 +67,7 @@ class Sort
     }
 
     /**
-     * Возвращает текущие параметры сортировки для передачи в Inertia-ответ (props).
+     * Returns the current sort parameters to pass into the Inertia response (props).
      *
      * @return array{currentSort: string, currentDirection: string}
      */

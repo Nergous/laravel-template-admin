@@ -5,35 +5,35 @@ namespace App\Traits;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Простой подстрочный (substring) поиск по нескольким колонкам через LIKE.
+ * Simple substring search across several columns via LIKE.
  *
- * Семантика — «колонка содержит подстроку». Регистрозависимость определяется
- * коллацией СУБД (MySQL/SQLite обычно case-insensitive для ASCII, Postgres —
- * case-sensitive). Wildcard'ы в запросе экранируются, поэтому "50%" ищется
- * буквально, а не как шаблон.
+ * The semantics are "the column contains the substring". Case sensitivity is
+ * determined by the DBMS collation (MySQL/SQLite are usually case-insensitive
+ * for ASCII, Postgres is case-sensitive). Wildcards in the query are escaped, so
+ * "50%" is searched literally, not as a pattern.
  *
- * Подключается к моделям через use HasSearch; модель задаёт колонки в своём
- * scopeSearch(). Используется в моделях: User, Media.
+ * Attached to models via use HasSearch; the model declares the columns in its
+ * scopeSearch(). Used in the models: User, Media.
  *
- * Масштаб: LIKE '%...%' не использует B-tree индекс. Если поиск станет узким
- * местом — на PostgreSQL включите расширение pg_trgm + GIN-индекс
- * (gin_trgm_ops) под ILIKE; на MySQL — FULLTEXT-индекс (MATCH … AGAINST).
+ * Scale: LIKE '%...%' does not use a B-tree index. If search becomes a
+ * bottleneck — on PostgreSQL enable the pg_trgm extension + a GIN index
+ * (gin_trgm_ops) for ILIKE; on MySQL — a FULLTEXT index (MATCH … AGAINST).
  *
- * ВНИМАНИЕ: это не drop-in замена. Только pg_trgm сохраняет семантику
- * «содержит подстроку». FULLTEXT/MATCH AGAINST ищет по словным токенам, а не
- * по подстроке: не находит середину строки, имеет минимальную длину токена
- * (InnoDB innodb_ft_min_token_size = 3, т.е. 2-символьные запросы вернут
- * пустоту) и ломает поиск по email (@ и . — разделители токенов). SQLite не
- * поддерживает ни то, ни другое — там поиск обязан остаться на LIKE. Включать
- * только под конкретный одиночный драйвер и с пересмотром UX поиска.
+ * WARNING: this is not a drop-in replacement. Only pg_trgm preserves the
+ * "contains substring" semantics. FULLTEXT/MATCH AGAINST searches by word tokens,
+ * not by substring: it doesn't find the middle of a string, has a minimum token
+ * length (InnoDB innodb_ft_min_token_size = 3, i.e. 2-character queries return
+ * nothing) and breaks email search (@ and . are token separators). SQLite
+ * supports neither — there search must stay on LIKE. Enable only for a specific
+ * single driver and with a rethink of the search UX.
  */
 trait HasSearch
 {
     /**
-     * Фильтрует записи по подстроке в любой из указанных колонок.
+     * Filters records by a substring in any of the given columns.
      *
-     * @param  string|null  $search  Поисковая строка (пустая — запрос без изменений)
-     * @param  string[]  $columns  Колонки для поиска
+     * @param  string|null  $search  Search string (empty — query unchanged)
+     * @param  string[]  $columns  Columns to search
      */
     public function scopeSearchLike(Builder $query, ?string $search, array $columns): Builder
     {
@@ -41,7 +41,7 @@ trait HasSearch
             return $query;
         }
 
-        // Экранируем спецсимволы LIKE, чтобы "%" и "_" искались буквально.
+        // Escape LIKE special characters so that "%" and "_" are searched literally.
         $term = '%'.addcslashes(trim($search), '%_\\').'%';
 
         return $query->where(function (Builder $q) use ($term, $columns) {

@@ -10,21 +10,22 @@ use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 
 /**
- * Просмотр и очистка журнала действий (аудита) в админ-панели.
+ * Viewing and clearing the activity (audit) log in the admin panel.
  *
- * Чтение (index/recent) гейтится правом activity-log.view; очистка журнала до
- * выбранной даты (clear) — отдельным правом activity-log.delete. Записи в журнал
- * пишутся отдельно (см. трейт LogsActivity), здесь они читаются и массово чистятся.
+ * Reads (index/recent) are gated by the activity-log.view permission; clearing the
+ * log up to a selected date (clear) is gated by a separate activity-log.delete
+ * permission. Log entries are written elsewhere (see the LogsActivity trait); here
+ * they are read and bulk-cleared.
  */
 class AdminActivityLogController extends Controller
 {
     /**
-     * Отдаёт постраничный (по 30) журнал действий на страницу ActivityLog/Index.
+     * Renders the paginated (30 per page) activity log on the ActivityLog/Index page.
      *
-     * Поддерживает необязательные фильтры action и subject_type; записи
-     * сортируются по дате создания (новые сверху).
+     * Supports optional action and subject_type filters; entries are sorted by
+     * creation date (newest first).
      *
-     * @param  Request  $request  Учитываются параметры action и subject_type.
+     * @param  Request  $request  The action and subject_type parameters are taken into account.
      */
     public function index(Request $request): \Inertia\Response
     {
@@ -44,7 +45,7 @@ class AdminActivityLogController extends Controller
                 'id' => $log->id,
                 'action' => $log->action,
                 'actionLabel' => $log->actionLabel(),
-                // Живое имя автора → снимок actor_label (переживает force-delete) → «Система».
+                // Live author name → actor_label snapshot (survives force-delete) → "Система".
                 'actor' => $log->user?->name ?? $log->actor_label ?? 'Система',
                 'subject' => $log->subject_label ?: $log->subjectTypeLabel(),
                 'subjectType' => $log->subjectTypeLabel(),
@@ -60,13 +61,13 @@ class AdminActivityLogController extends Controller
     }
 
     /**
-     * Очищает журнал: удаляет все записи раньше выбранной даты (начало дня).
+     * Clears the log: deletes all entries older than the selected date (start of day).
      *
-     * Дата `before` обязательна — это «очистить события до …». Удаление —
-     * одним массовым DELETE без гидрации/событий (у аудит-лога событий на
-     * удаление нет, чистка должна быть дешёвой; ср. ActivityLog::prunable()).
+     * The `before` date is required — it means "clear events up to …". Deletion is
+     * a single bulk DELETE without hydration/events (the audit log has no delete
+     * events, and clearing should be cheap; cf. ActivityLog::prunable()).
      *
-     * @param  Request  $request  before (date) — дата-отсечка.
+     * @param  Request  $request  before (date) — the cutoff date.
      */
     public function clear(Request $request): RedirectResponse
     {
@@ -86,10 +87,10 @@ class AdminActivityLogController extends Controller
     }
 
     /**
-     * JSON-фид для «колокольчика» в сайдбаре: счётчик и последние 10 действий
-     * за 24 часа. Закрыт гейтом activity-log.view (см. routes/web.php) — фид
-     * отдаёт ту же ленту аудита, что и страница index(), поэтому требует то же
-     * право, а не только аутентификацию.
+     * JSON feed for the sidebar "bell": a counter and the last 10 actions over
+     * the past 24 hours. Gated by activity-log.view (see routes/web.php) — the feed
+     * serves the same audit stream as the index() page, so it requires the same
+     * permission, not just authentication.
      */
     public function recent(): \Illuminate\Http\JsonResponse
     {

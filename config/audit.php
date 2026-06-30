@@ -3,28 +3,28 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Срок хранения журнала действий (activity_log)
+    | Activity log retention (activity_log)
     |--------------------------------------------------------------------------
     |
-    | Записи старше указанного числа дней удаляются ежедневной задачей
-    | model:prune (см. routes/console.php). Значение <= 0 отключает чистку —
-    | журнал растёт неограниченно (осознанный opt-out).
+    | Records older than the given number of days are deleted by the daily
+    | model:prune task (see routes/console.php). A value <= 0 disables the
+    | cleanup — the log grows without bound (a deliberate opt-out).
     |
     */
     'retention_days' => (int) env('ACTIVITY_LOG_RETENTION_DAYS', 180),
 
     /*
     |--------------------------------------------------------------------------
-    | Метки типов субъектов журнала (находка A4)
+    | Log subject type labels (finding A4)
     |--------------------------------------------------------------------------
     |
-    | Карта «класс модели → короткий ключ перевода» (строки — в
-    | lang/<locale>/activity.php, секция subjects). Data-driven реестр вместо
-    | хардкод-match в модели: чтобы добавить свою сущность в журнал, зарегистрируйте
-    | её здесь и добавьте перевод — модель ActivityLog трогать не нужно.
+    | A map of "model class → short translation key" (the strings live in
+    | lang/<locale>/activity.php, the subjects section). A data-driven registry
+    | instead of a hardcoded match in the model: to add your own entity to the log,
+    | register it here and add a translation — no need to touch the ActivityLog model.
     |
-    | subject_type в БД хранится как FQCN (getMorphClass без morph-map), поэтому
-    | ключи карты — полные имена классов.
+    | subject_type is stored in the DB as an FQCN (getMorphClass without a morph-map),
+    | so the map keys are fully qualified class names.
     |
     */
     'subjects' => [

@@ -16,7 +16,7 @@ class SoftDeleteAndAuditTest extends TestCase
     {
         $this->actingAsAdmin();
         $existing = User::factory()->create(['email' => 'reuse@example.com']);
-        $existing->delete(); // в корзину
+        $existing->delete(); // to trash
 
         $this->post(route('admin.users.store'), [
             'name' => 'Reuser',

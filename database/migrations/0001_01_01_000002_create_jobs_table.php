@@ -5,8 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Таблицы очередей Laravel: jobs (ожидающие задания), job_batches (пакеты)
- * и failed_jobs (упавшие задания). Используются для асинхронной загрузки медиа.
+ * Laravel queue tables: jobs (pending jobs), job_batches (batches)
+ * and failed_jobs (failed jobs). Used for asynchronous media uploads.
  */
 return new class extends Migration
 {

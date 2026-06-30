@@ -23,7 +23,7 @@ import { swatchColor } from "@/lib/swatch.js";
 const props = defineProps({
     roles: { type: Object, required: true },
     permissionsTotal: { type: Number, default: 0 },
-    // Сгруппированные права для матрицы в дровере: { users:[{id,name}], ... }
+    // Grouped permissions for the matrix in the drawer: { users:[{id,name}], ... }
     allPermissions: { type: Object, default: () => ({}) },
     filters: { type: Object, default: () => ({}) },
 });
@@ -36,7 +36,7 @@ const { reload, onSearch } = useIndexFilters("/admin/roles", () => ({
 /* ---------- drawer (create | edit) ---------- */
 const drawerOpen = ref(false);
 const mode = ref("create"); // create | edit
-const editing = ref(null); // полная строка роли при edit
+const editing = ref(null); // full role row when editing
 const form = useForm({ name: "", description: "", permissions: [] });
 
 const drawerTitle = computed(() =>
@@ -47,7 +47,7 @@ const drawerSubtitle = computed(() =>
         ? editing.value.description || "Роль"
         : "Набор прав доступа",
 );
-// Панель «Сведения» в форме — только на edit.
+// The "Details" panel in the form — only on edit.
 const drawerMeta = computed(() =>
     mode.value === "edit" && editing.value
         ? {
@@ -277,7 +277,7 @@ function confirmDelete() {
 </template>
 
 <style scoped>
-/* .page / .page__pager — общие утилиты в resources/js/admin/styles.css */
+/* .page / .page__pager — shared utilities in resources/js/admin/styles.css */
 .page__toolbar {
     display: flex;
     align-items: center;
@@ -345,7 +345,7 @@ button.role__name-link {
     text-align: left;
     cursor: pointer;
 }
-/* Растянутая кнопка: кликабельна вся карточка, но в DOM одна кнопка. */
+/* Stretched button: the whole card is clickable, but there's a single button in the DOM. */
 button.role__name-link::after {
     content: "";
     position: absolute;
@@ -364,7 +364,7 @@ button.role__name-link:focus-visible::after {
     align-items: center;
     gap: 2px;
     flex: none;
-    /* Поверх растянутой ссылки, иначе оверлей перехватит клик по «Удалить». */
+    /* Above the stretched link, otherwise the overlay would intercept the "Delete" click. */
     position: relative;
     z-index: 1;
     opacity: 0;
@@ -404,7 +404,7 @@ button.role__name-link:focus-visible::after {
     color: var(--text-3);
 }
 
-/* На сенсорных экранах нет hover — показываем действия постоянно. */
+/* Touch screens have no hover — show the actions permanently. */
 @media (hover: none) {
     .role__actions {
         opacity: 1;

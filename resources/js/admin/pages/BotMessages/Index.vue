@@ -1,6 +1,6 @@
 <script setup>
-// BotMessages/Index — тексты бота: список кодов из реестра + правка в drawer.
-// Код и дефолт приходят с сервера (реестр messages.json); правим только text/is_active.
+// BotMessages/Index — bot messages: list of codes from the registry + editing in a drawer.
+// Code and default come from the server (messages.json registry); we only edit text/is_active.
 import { ref, computed } from "vue";
 import { router, useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
@@ -31,8 +31,8 @@ const subtitle = computed(
         `${props.messages.length} ${pluralize(props.messages.length, "сообщение", "сообщения", "сообщений")}`,
 );
 
-// Текст хранится как HTML (NRichText). В таблице показываем плоский вид —
-// теги вырезаем, пробелы схлопываем. Полный текст виден в drawer при правке.
+// Text is stored as HTML (NRichText). In the table we show a plain view —
+// strip tags, collapse whitespace. The full text is visible in the drawer when editing.
 function plain(html) {
     if (!html) return "";
     if (typeof document === "undefined") return html;
@@ -41,8 +41,8 @@ function plain(html) {
     return (el.textContent || "").replace(/\s+/g, " ").trim();
 }
 
-// Подписи тулбара NRichText на русском. Тулбар ограничен инлайн-форматированием,
-// которое понимает MAX (format=html): жирный/курсив/зачёркнутый/код/ссылка.
+// NRichText toolbar labels in Russian. The toolbar is limited to inline formatting
+// that MAX understands (format=html): bold/italic/strikethrough/code/link.
 const rteTools = ["bold", "italic", "strike", "code", "link"];
 const rteLabels = {
     toolbar: "Форматирование",
@@ -119,7 +119,7 @@ function confirmReset() {
                 :page-size="0"
                 :hover="false"
             >
-                <!-- Сообщение: название + код + описание -->
+                <!-- Message: label + code + description -->
                 <template #cell-message="{ row }">
                     <div class="mcell">
                         <div class="mcell__top">
@@ -130,14 +130,14 @@ function confirmReset() {
                     </div>
                 </template>
 
-                <!-- Текст: текущий эффективный (в одну строку, полный — в title) -->
+                <!-- Text: current effective value (single line, full text in title) -->
                 <template #cell-text="{ row }">
                     <span class="text-cell" :title="plain(row.text)">{{
                         plain(row.text)
                     }}</span>
                 </template>
 
-                <!-- Статус -->
+                <!-- Status -->
                 <template #cell-status="{ row }">
                     <span class="status-cell">
                         <NBadge
@@ -156,7 +156,7 @@ function confirmReset() {
                     </span>
                 </template>
 
-                <!-- Действия -->
+                <!-- Actions -->
                 <template #cell-actions="{ row }">
                     <div
                         v-if="can('bot-messages.edit')"
@@ -254,7 +254,7 @@ function confirmReset() {
 </template>
 
 <style scoped>
-/* .page / .row-actions* — общие утилиты в resources/js/admin/styles.css */
+/* .page / .row-actions* — shared utilities in resources/js/admin/styles.css */
 
 /* message cell: label + code (one line) + description below */
 .mcell {

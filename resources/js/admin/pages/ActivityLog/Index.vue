@@ -21,11 +21,11 @@ const props = defineProps({
     filters: { type: Object, default: () => ({}) },
 });
 
-// Сегодня (ISO) — верхняя граница даты-отсечки: чистим события строго раньше
-// выбранного дня, поэтому очистить «будущее» нельзя.
-const todayIso = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD, локальная дата
+// Today (ISO) — upper bound of the cutoff date: we clear events strictly earlier
+// than the selected day, so the "future" cannot be cleared.
+const todayIso = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD, local date
 
-// Chip filter bar. Each chip maps to an `action` enum value; «Все» clears it.
+// Chip filter bar. Each chip maps to an `action` enum value; "Все" clears it.
 const CHIPS = [
     { value: "", label: "Все" },
     { value: "created", label: "Создано" },
@@ -283,8 +283,8 @@ function submitClear() {
             @update:model-value="clearOpen = $event"
         >
             <p class="clear__msg">
-                Удалит все события раньше выбранной даты. События за выбранный день
-                и позже останутся. Действие необратимо.
+                Удалит все события раньше выбранной даты. События за выбранный
+                день и позже останутся. Действие необратимо.
             </p>
             <NFormField
                 label="Удалить события до даты"
@@ -300,7 +300,9 @@ function submitClear() {
             </NFormField>
 
             <template #footer="{ close }">
-                <NButton variant="secondary" block @click="close">Отмена</NButton>
+                <NButton variant="secondary" block @click="close"
+                    >Отмена</NButton
+                >
                 <NButton
                     variant="danger"
                     block
@@ -314,7 +316,7 @@ function submitClear() {
 </template>
 
 <style scoped>
-/* .page / .page__pager — общие утилиты в resources/js/admin/styles.css */
+/* .page / .page__pager — shared utilities in resources/js/admin/styles.css */
 .toolbar {
     display: flex;
     align-items: flex-start;

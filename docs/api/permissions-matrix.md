@@ -1,153 +1,153 @@
-# Матрица разрешений и каталог ошибок
+# Permissions matrix and error catalog
 
-Помаршрутная карта авторизации и возможных ответов об ошибках.
+A per-route authorization map and the possible error responses.
 
-## Двухуровневая модель авторизации
+## Two-level authorization model
 
-Механизм один (`spatie/laravel-permission`, имена прав `модуль.действие`), но
-**точка проверки зависит от типа действия**:
+The mechanism is single (`spatie/laravel-permission`, permission names `module.action`),
+but **the check point depends on the type of action**:
 
-1. **Просмотр раздела** — middleware `permission:*.view` на группе маршрутов.
-2. **Удаление** — middleware `permission:*.delete` (для медиа — `media.delete`),
-   часто в отдельной группе.
-3. **Создание / редактирование** — тонкий гейт в `FormRequest::authorize()` **по
-   HTTP-методу**: `POST → *.create`, `PUT/PATCH → *.edit`. Поэтому resource-методы
-   `store`/`update` физически висят в группе `*.view`, но реально гейтятся правом
-   `*.create` / `*.edit`.
-4. **Кросс-сущностный JSON** (`/admin/search`) — инлайн `can()` на каждую сущность
-   внутри контроллера (одна ручка отдаёт несколько типов).
+1. **Viewing a section** — middleware `permission:*.view` on the route group.
+2. **Deletion** — middleware `permission:*.delete` (for media — `media.delete`),
+   often in a separate group.
+3. **Create / edit** — a thin gate in `FormRequest::authorize()` **by HTTP method**:
+   `POST → *.create`, `PUT/PATCH → *.edit`. That's why the resource methods
+   `store`/`update` physically sit in the `*.view` group but are actually gated by
+   the `*.create` / `*.edit` permission.
+4. **Cross-entity JSON** (`/admin/search`) — inline `can()` per entity inside the
+   controller (one endpoint serves several types).
 
-**Следствие, которое легко упустить:** роль с `users.view`, но без `users.create`
-**пройдёт** middleware маршрута `POST /admin/users` (он под `users.view`) и будет
-отклонена уже в `UserRequest::authorize()` → **403**. Это by design.
+**An easily missed consequence:** a role with `users.view` but without `users.create`
+**will pass** the route middleware for `POST /admin/users` (it's under `users.view`)
+and will be rejected only in `UserRequest::authorize()` → **403**. This is by design.
 
-Дублирование во Vue (`can(perm)`, `resources/js/lib/can.js`) — **только для условного
-рендера** (скрыть кнопку). Сервер остаётся источником правды: если право скрыто в UI,
-но запрос всё равно отправлен — вернётся 403.
+The duplication in Vue (`can(perm)`, `resources/js/lib/can.js`) is **only for
+conditional rendering** (hiding a button). The server remains the source of truth: if
+a permission is hidden in the UI but the request is sent anyway, a 403 is returned.
 
-> Политики Laravel (`app/Policies`, `Gate::define`) намеренно не используются —
-> для шаблона такого размера достаточно связки middleware + `FormRequest::authorize()`.
+> Laravel policies (`app/Policies`, `Gate::define`) are deliberately not used — for a
+> template this size the combination of middleware + `FormRequest::authorize()` is enough.
 
-## Условные обозначения
+## Notation
 
-- **Право маршрута** — middleware `permission:*` (или `auth` / `guest` / `bot.enabled`).
-- **Право действия** — что реально проверяет `FormRequest::authorize()` (если оно
-  отличается от права маршрута).
-- Все маршруты — под префиксом `/admin`.
+- **Route permission** — middleware `permission:*` (or `auth` / `guest` / `bot.enabled`).
+- **Action permission** — what `FormRequest::authorize()` actually checks (when it
+  differs from the route permission).
+- All routes are under the `/admin` prefix.
 
 ---
 
-## Карта маршрут → право
+## Route → permission map
 
 ### Auth
 
-| Метод | URI       | Право маршрута            | Право действия | Примечания                            |
-| ----- | --------- | ------------------------- | -------------- | ------------------------------------- |
-| GET   | `/login`  | `guest`                   | —              | форма входа                           |
-| POST  | `/login`  | `guest`, `throttle:login` | —              | `LoginRequest`; неверные данные → 422 |
-| POST  | `/logout` | `auth`                    | —              | инвалидирует сессию                   |
+| Method | URI       | Route permission          | Action permission | Notes                                  |
+| ----- | --------- | ------------------------- | -------------- | -------------------------------------- |
+| GET   | `/login`  | `guest`                   | —              | login form                             |
+| POST  | `/login`  | `guest`, `throttle:login` | —              | `LoginRequest`; invalid credentials → 422 |
+| POST  | `/logout` | `auth`                    | —              | invalidates the session                |
 
 ### Dashboard / Search / Notifications
 
-| Метод | URI                     | Право маршрута      | Право действия | Примечания                                       |
+| Method | URI                     | Route permission    | Action permission | Notes                                            |
 | ----- | ----------------------- | ------------------- | -------------- | ------------------------------------------------ |
-| GET   | `/` (`/admin`)          | `auth`              | —              | дашборд                                          |
-| GET   | `/search`               | `auth`              | инлайн `can()` | результаты фильтруются `users.view`/`media.view` |
-| GET   | `/notifications/recent` | `activity-log.view` | —              | JSON-фид «колокольчика»                          |
+| GET   | `/` (`/admin`)          | `auth`              | —              | dashboard                                        |
+| GET   | `/search`               | `auth`              | inline `can()` | results filtered by `users.view`/`media.view`    |
+| GET   | `/notifications/recent` | `activity-log.view` | —              | JSON "bell" feed                                 |
 
 ### Users
 
-| Метод     | URI                                                  | Право маршрута | Право действия     | Примечания                                         |
+| Method    | URI                                                  | Route permission | Action permission  | Notes                                              |
 | --------- | ---------------------------------------------------- | -------------- | ------------------ | -------------------------------------------------- |
-| GET       | `/users`                                             | `users.view`   | —                  | список                                             |
+| GET       | `/users`                                             | `users.view`   | —                  | list                                               |
 | POST      | `/users`                                             | `users.view`   | **`users.create`** | `UserRequest`                                      |
 | PUT/PATCH | `/users/{user}`                                      | `users.view`   | **`users.edit`**   | `UserRequest`                                      |
-| GET       | `/users/create`,`/users/{user}`,`/users/{user}/edit` | `users.view`   | —                  | заглушки-редиректы на index/edit (формы — дроверы) |
-| DELETE    | `/users/{user}`                                      | `users.delete` | —                  | нельзя удалить себя → 422                          |
-| GET       | `/users/trashed`                                     | `users.delete` | —                  | корзина                                            |
-| PATCH     | `/users/restore/{id}`                                | `users.delete` | —                  | 404, если не в корзине                             |
-| DELETE    | `/users/force/{id}`                                  | `users.delete` | —                  | 404, если не в корзине                             |
+| GET       | `/users/create`,`/users/{user}`,`/users/{user}/edit` | `users.view`   | —                  | stub redirects to index/edit (forms are drawers)   |
+| DELETE    | `/users/{user}`                                      | `users.delete` | —                  | you can't delete yourself → 422                    |
+| GET       | `/users/trashed`                                     | `users.delete` | —                  | trash                                              |
+| PATCH     | `/users/restore/{id}`                                | `users.delete` | —                  | 404 if not in trash                                |
+| DELETE    | `/users/force/{id}`                                  | `users.delete` | —                  | 404 if not in trash                                |
 | POST      | `/users/trashed/bulk-restore`                        | `users.delete` | —                  | `BulkUserActionRequest`                            |
 | DELETE    | `/users/trashed/bulk-force`                          | `users.delete` | —                  | `BulkUserActionRequest`                            |
 
 ### Roles
 
-| Метод     | URI                                             | Право маршрута | Право действия                                       | Примечания                                |
+| Method    | URI                                             | Route permission | Action permission                                    | Notes                                     |
 | --------- | ----------------------------------------------- | -------------- | ---------------------------------------------------- | ----------------------------------------- |
-| GET       | `/roles`                                        | `roles.view`   | —                                                    | список                                    |
-| GET       | `/roles/create`, `/roles/{role}`, `/roles/{role}/edit` | `roles.view`   | —                                             | заглушки-редиректы на index (формы — дровер) |
+| GET       | `/roles`                                        | `roles.view`   | —                                                    | list                                      |
+| GET       | `/roles/create`, `/roles/{role}`, `/roles/{role}/edit` | `roles.view`   | —                                             | stub redirects to index (forms are a drawer) |
 | POST      | `/roles`                                        | `roles.view`   | **`roles.create`**                                   | `RoleRequest`                             |
-| PUT/PATCH | `/roles/{role}`                                 | `roles.view`   | **`roles.edit`** (+ только админ для системной роли) | `RoleRequest`                             |
-| DELETE    | `/roles/{role}`                                 | `roles.delete` | —                                                    | нельзя системную / назначенную роль → 422 |
+| PUT/PATCH | `/roles/{role}`                                 | `roles.view`   | **`roles.edit`** (+ admin-only for a system role)    | `RoleRequest`                             |
+| DELETE    | `/roles/{role}`                                 | `roles.delete` | —                                                    | can't delete a system / assigned role → 422 |
 
 ### Permissions
 
-| Метод     | URI                                                                     | Право маршрута       | Право действия           | Примечания                                       |
+| Method    | URI                                                                     | Route permission     | Action permission        | Notes                                            |
 | --------- | ----------------------------------------------------------------------- | -------------------- | ------------------------ | ------------------------------------------------ |
-| GET       | `/permissions`, `/permissions/create`, `/permissions/{permission}/edit` | `permissions.view`   | —                        | матрица / заглушки                               |
-| PATCH     | `/permissions/matrix`                                                   | `permissions.edit`   | — (инлайн-валидация)     | тумблер ячейки; роль `admin` заблокирована → 422 |
-| POST      | `/permissions`                                                          | `permissions.view`   | **`permissions.create`** | `PermissionRequest`; авто-грант роли `admin`     |
+| GET       | `/permissions`, `/permissions/create`, `/permissions/{permission}/edit` | `permissions.view`   | —                        | matrix / stubs                                   |
+| PATCH     | `/permissions/matrix`                                                   | `permissions.edit`   | — (inline validation)    | cell toggle; the `admin` role is locked → 422    |
+| POST      | `/permissions`                                                          | `permissions.view`   | **`permissions.create`** | `PermissionRequest`; auto-grant to the `admin` role |
 | PUT/PATCH | `/permissions/{permission}`                                             | `permissions.view`   | **`permissions.edit`**   | `PermissionRequest`                              |
 | DELETE    | `/permissions/{permission}`                                             | `permissions.delete` | —                        | —                                                |
 
 ### Media
 
-| Метод  | URI              | Право маршрута | Право действия        | Примечания                       |
+| Method | URI              | Route permission | Action permission     | Notes                            |
 | ------ | ---------------- | -------------- | --------------------- | -------------------------------- |
-| GET    | `/media`         | `media.view`   | —                     | список                           |
-| GET    | `/media/poll`    | `media.view`   | — (инлайн-валидация)  | JSON-поллинг                     |
-| POST   | `/media`         | `media.upload` | (тоже `media.upload`) | `MediaRequest`, JSON, нужен CSRF |
+| GET    | `/media`         | `media.view`   | —                     | list                             |
+| GET    | `/media/poll`    | `media.view`   | — (inline validation) | JSON polling                     |
+| POST   | `/media`         | `media.upload` | (also `media.upload`) | `MediaRequest`, JSON, needs CSRF |
 | DELETE | `/media/{media}` | `media.delete` | —                     | —                                |
 | DELETE | `/media/bulk`    | `media.delete` | —                     | `BulkDestroyMediaRequest`        |
 
 ### Activity Log / Settings
 
-| Метод  | URI             | Право маршрута        | Право действия | Примечания                                             |
+| Method | URI             | Route permission      | Action permission | Notes                                                  |
 | ------ | --------------- | --------------------- | -------------- | ------------------------------------------------------ |
-| GET    | `/activity-log` | `activity-log.view`   | —              | журнал                                                 |
-| DELETE | `/activity-log` | `activity-log.delete` | —              | очистка журнала до даты `before` (события раньше — удаляются) |
+| GET    | `/activity-log` | `activity-log.view`   | —              | the log                                                |
+| DELETE | `/activity-log` | `activity-log.delete` | —              | clears the log up to the `before` date (earlier events are deleted) |
 | GET    | `/settings`     | `settings.view`       | —              | —                                                      |
-| PUT   | `/settings`     | `settings.edit`     | —              | `UpdateSettingsRequest` (правила из `Setting::SCHEMA`) |
+| PUT    | `/settings`     | `settings.edit`       | —              | `UpdateSettingsRequest` (rules from `Setting::SCHEMA`) |
 
-### Bot Messages (модуль под `bot.enabled`)
+### Bot Messages (module under `bot.enabled`)
 
-| Метод  | URI                    | Право маршрута                      | Право действия | Примечания                                         |
+| Method | URI                    | Route permission                    | Action permission | Notes                                              |
 | ------ | ---------------------- | ----------------------------------- | -------------- | -------------------------------------------------- |
 | GET    | `/bot-messages`        | `bot.enabled` + `bot-messages.view` | —              | —                                                  |
-| PUT    | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | `BotMessageRequest`; `{code}` ∈ реестре, иначе 404 |
-| DELETE | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | сброс к дефолту (имя маршрута `reset`)             |
+| PUT    | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | `BotMessageRequest`; `{code}` ∈ registry, else 404 |
+| DELETE | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | reset to default (route name `reset`)              |
 
-> При `config('bot.enabled') === false` middleware `EnsureBotEnabled` отдаёт **404**
-> на всех трёх (модуль неотличим от несуществующего).
+> When `config('bot.enabled') === false`, the `EnsureBotEnabled` middleware returns
+> **404** on all three (the module is indistinguishable from a non-existent one).
 
 ---
 
-## Каталог ошибок
+## Error catalog
 
-### Коды фреймворка
+### Framework codes
 
-| Код                            | Когда                                                                                                                                  |
+| Code                           | When                                                                                                                                  |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **401 / редирект на `/login`** | неаутентифицированный запрос к маршруту под `auth`                                                                                     |
-| **403**                        | нет нужного права (middleware маршрута **или** `FormRequest::authorize()`)                                                             |
-| **404**                        | модель не найдена (`{user}`/`{role}`/…), пользователь/медиа не в корзине, выключенный модуль бота, неизвестный `{code}` сообщения бота |
-| **419**                        | мутация без валидного CSRF-токена (актуально для `POST /media`)                                                                        |
-| **422**                        | ошибка валидации Form Request **или** доменная проверка (см. ниже)                                                                     |
-| **429**                        | превышен лимит `throttle:login` на `POST /login` (по умолчанию **5/мин на IP**, настройка `security.login_throttle`)                   |
+| **401 / redirect to `/login`** | unauthenticated request to a route under `auth`                                                                                       |
+| **403**                        | missing the required permission (route middleware **or** `FormRequest::authorize()`)                                                 |
+| **404**                        | model not found (`{user}`/`{role}`/…), user/media not in trash, disabled bot module, unknown bot message `{code}`                     |
+| **419**                        | mutation without a valid CSRF token (relevant for `POST /media`)                                                                      |
+| **422**                        | Form Request validation error **or** a domain check (see below)                                                                      |
+| **429**                        | the `throttle:login` limit on `POST /login` exceeded (by default **5/min per IP**, configurable via `security.login_throttle`)       |
 
-### Доменные ошибки (422, `ValidationException` → redirect back с ошибкой)
+### Domain errors (422, `ValidationException` → redirect back with an error)
 
-Доменные инварианты живут в `App\Services\*` и сигнализируются через
-`ValidationException::withMessages([...])` — Laravel превращает их в redirect back с
-ошибкой под указанным ключом (тот же UX, что и `back()->withErrors(...)`).
+Domain invariants live in `App\Services\*` and are signaled via
+`ValidationException::withMessages([...])` — Laravel turns them into a redirect back
+with an error under the given key (the same UX as `back()->withErrors(...)`).
 
-| Маршрут                     | Ключ            | Сообщение                                                                                                                                             |
+| Route                       | Key             | Message                                                                                                                                              |
 | --------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /login`               | `email`         | «Неверный email или пароль»                                                                                                                           |
-| `DELETE /users/{user}`      | `user`          | «Вы не можете удалить самого себя»                                                                                                                    |
-| `PUT /users/{user}`         | `roles`         | «Вы не можете убрать у себя роль admin»                                                                                                               |
-| `POST`/`PUT /users`         | `roles.*`       | «Системную роль может назначать только администратор» / «Нельзя назначить роль с правами, которых у вас нет: …»                                       |
-| `PUT /roles/{role}`         | `name`          | «Имя системной роли нельзя менять»                                                                                                                    |
-| `POST`/`PUT /roles`         | `permissions.*` | «Нельзя назначить роли право, которого у вас нет: …» (анти-эскалация, S3)                                                                             |
-| `DELETE /roles/{role}`      | `role`          | «Системную роль нельзя удалить» / «Нельзя удалить роль, назначенную пользователям»                                                                    |
-| `PATCH /permissions/matrix` | `matrix`        | «Права системной роли „admin“ нельзя изменять» / «Права системной роли может менять только администратор» / «Нельзя выдать право, которого у вас нет» |
+| `POST /login`               | `email`         | "Invalid email or password"                                                                                                                          |
+| `DELETE /users/{user}`      | `user`          | "You cannot delete yourself"                                                                                                                          |
+| `PUT /users/{user}`         | `roles`         | "You cannot remove the admin role from yourself"                                                                                                     |
+| `POST`/`PUT /users`         | `roles.*`       | "Only an administrator can assign a system role" / "You can't assign a role with permissions you don't have: …"                                      |
+| `PUT /roles/{role}`         | `name`          | "A system role's name cannot be changed"                                                                                                             |
+| `POST`/`PUT /roles`         | `permissions.*` | "You can't assign a role a permission you don't have: …" (anti-escalation, S3)                                                                       |
+| `DELETE /roles/{role}`      | `role`          | "A system role cannot be deleted" / "A role assigned to users cannot be deleted"                                                                     |
+| `PATCH /permissions/matrix` | `matrix`        | "Permissions of the system role \"admin\" cannot be changed" / "Only an administrator can change a system role's permissions" / "You can't grant a permission you don't have" |

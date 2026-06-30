@@ -5,6 +5,14 @@ All notable changes to the project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+
+- Bumped `laravel/framework` to `12.62.0` and `symfony/mime` to `7.4.13` to patch two
+  HIGH-severity CRLF-injection advisories (GHSA-5vg9-5847-vvmq and CVE-2026-45067)
+  flagged by the prod-image vulnerability scan.
+
 ## [1.2.0] — 2026-06-30
 
 ### Added

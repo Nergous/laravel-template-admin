@@ -9,6 +9,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Inertia\Response;
 use Spatie\Permission\Models\Permission;
 
 /**
@@ -20,7 +21,7 @@ class AdminDashboardController extends Controller
      * Assembles the summary (KPIs, distribution by role, activity feed)
      * and renders it on the Dashboard page.
      */
-    public function index(Request $request): \Inertia\Response
+    public function index(Request $request): Response
     {
         $roles = Role::withCount('users')
             ->orderByDesc('users_count')

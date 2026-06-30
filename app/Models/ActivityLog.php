@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
@@ -25,7 +26,7 @@ use Illuminate\Support\Facades\Lang;
  * @property string|null $subject_label
  * @property string|null $actor_label
  * @property array|null $changes
- * @property \Carbon\Carbon|null $created_at
+ * @property Carbon|null $created_at
  */
 class ActivityLog extends Model
 {

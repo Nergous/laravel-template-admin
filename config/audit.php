@@ -1,5 +1,10 @@
 <?php
 
+use App\Models\Media;
+use App\Models\User;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
+
 return [
     /*
     |--------------------------------------------------------------------------
@@ -28,9 +33,9 @@ return [
     |
     */
     'subjects' => [
-        \App\Models\User::class => 'user',
-        \App\Models\Media::class => 'media',
-        \Spatie\Permission\Models\Role::class => 'role',
-        \Spatie\Permission\Models\Permission::class => 'permission',
+        User::class => 'user',
+        Media::class => 'media',
+        Role::class => 'role',
+        Permission::class => 'permission',
     ],
 ];

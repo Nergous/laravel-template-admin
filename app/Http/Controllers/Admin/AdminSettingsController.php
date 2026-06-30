@@ -9,6 +9,7 @@ use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Application settings: reading and saving values by group (key-value).
@@ -19,7 +20,7 @@ class AdminSettingsController extends Controller
      * Returns the settings (grouped) and a list of media library images
      * for choosing the OG image.
      */
-    public function index(): \Inertia\Response
+    public function index(): Response
     {
         return Inertia::render('Settings/Index', [
             'settings' => Setting::grouped(),

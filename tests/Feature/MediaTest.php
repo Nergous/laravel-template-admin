@@ -4,11 +4,14 @@ namespace Tests\Feature;
 
 use App\Jobs\UploadMedia;
 use App\Models\Media;
+use App\Models\User;
+use App\Services\ImageOptimizer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class MediaTest extends TestCase
@@ -212,8 +215,8 @@ class MediaTest extends TestCase
 
     public function test_media_index_renders_inertia_page(): void
     {
-        \Spatie\Permission\Models\Permission::findOrCreate('media.view', 'web');
-        $user = \App\Models\User::factory()->create();
+        Permission::findOrCreate('media.view', 'web');
+        $user = User::factory()->create();
         $user->givePermissionTo('media.view');
 
         $this->actingAs($user)
@@ -295,7 +298,7 @@ class MediaTest extends TestCase
         $payload = str_repeat('not-a-real-png-', 4096);
         Storage::disk('local')->put('temp/broken.png', $payload);
 
-        $filename = \App\Services\ImageOptimizer::storeFromDisk(
+        $filename = ImageOptimizer::storeFromDisk(
             sourcePath: 'temp/broken.png',
             sourceDisk: 'local',
             directory: 'media',
@@ -332,7 +335,7 @@ class MediaTest extends TestCase
         $media = Media::firstWhere('original_name', 'big.jpg');
         $this->assertNotNull($media);
         $this->assertTrue($media->has_thumb);
-        Storage::disk('public')->assertExists(\App\Services\ImageOptimizer::thumbPath($media->filename));
+        Storage::disk('public')->assertExists(ImageOptimizer::thumbPath($media->filename));
     }
 
     public function test_backfill_marks_existing_rows_that_already_have_thumbnails(): void

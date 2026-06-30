@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
@@ -93,8 +94,8 @@ class RoleManagementTest extends TestCase
 
     public function test_roles_index_renders_inertia_page(): void
     {
-        \Spatie\Permission\Models\Permission::findOrCreate('roles.view', 'web');
-        $user = \App\Models\User::factory()->create();
+        Permission::findOrCreate('roles.view', 'web');
+        $user = User::factory()->create();
         $user->givePermissionTo('roles.view');
 
         $this->actingAs($user)

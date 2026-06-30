@@ -1,6 +1,9 @@
 # Dependabot: weekly updates of dependencies and base images.
 # Closes #11 (floating image tags): the docker ecosystem suggests updates for
 # base images from the Dockerfile, rather than digest pinning (handier for the template).
+#
+# `groups` batches all minor/patch bumps of an ecosystem into a single PR; major
+# bumps stay as individual PRs so they get reviewed one at a time.
 version: 2
 updates:
   # --- PHP (Composer) ---
@@ -9,6 +12,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      composer-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # --- Frontend (npm) ---
   - package-ecosystem: npm
@@ -16,6 +23,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      npm-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # --- Python bot (pip) ---
   - package-ecosystem: pip
@@ -23,21 +34,36 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      pip-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # --- Application base image (Dockerfile + docker-compose) ---
   - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      docker-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # --- Bot base image (modules/max-bot/Dockerfile) ---
   - package-ecosystem: docker
     directory: "/modules/max-bot"
     schedule:
       interval: weekly
+    groups:
+      bot-docker-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # --- GitHub Actions (action versions in .github/workflows) ---
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      actions-all:
+        patterns: ["*"]

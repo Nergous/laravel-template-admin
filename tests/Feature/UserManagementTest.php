@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
+use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class UserManagementTest extends TestCase
@@ -28,7 +30,7 @@ class UserManagementTest extends TestCase
     public function test_user_store_is_atomic_and_rolls_back_on_failure(): void
     {
         $this->actingAsUserWith(['users.view', 'users.create']);
-        \Spatie\Permission\Models\Role::findOrCreate('editor', 'web');
+        Role::findOrCreate('editor', 'web');
 
         User::created(function () {
             throw new \RuntimeException('boom');
@@ -84,7 +86,7 @@ class UserManagementTest extends TestCase
 
     public function test_users_index_renders_inertia_page(): void
     {
-        \Spatie\Permission\Models\Permission::findOrCreate('users.view', 'web');
+        Permission::findOrCreate('users.view', 'web');
         $user = User::factory()->create();
         $user->givePermissionTo('users.view');
 

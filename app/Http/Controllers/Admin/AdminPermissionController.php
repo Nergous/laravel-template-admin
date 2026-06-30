@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Lang;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Inertia\Response;
 use Spatie\Permission\Models\Permission;
 
 /**
@@ -35,7 +36,7 @@ class AdminPermissionController extends Controller
      * Returns: roles (columns), groups (rows, grouped by resource),
      * matrix (a map of role_id → [permission names]).
      */
-    public function index(Request $request): \Inertia\Response
+    public function index(Request $request): Response
     {
         $permissions = Permission::orderBy('name')->get();
 

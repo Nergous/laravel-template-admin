@@ -12,6 +12,7 @@ use App\Support\BotMessageCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Editing bot texts. Codes come from the messages.json registry; only overrides
@@ -20,7 +21,7 @@ use Inertia\Inertia;
 class AdminBotMessageController extends Controller
 {
     /** List of codes from the registry with their current overrides and attachments. */
-    public function index(): \Inertia\Response
+    public function index(): Response
     {
         $overrides = BotMessage::all()->keyBy('code');
 

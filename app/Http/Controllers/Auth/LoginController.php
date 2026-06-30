@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Authentication controller.
@@ -21,7 +22,7 @@ class LoginController extends Controller
     /**
      * Admin panel login form.
      */
-    public function show(): \Inertia\Response
+    public function show(): Response
     {
         return Inertia::render('Auth/Login');
     }

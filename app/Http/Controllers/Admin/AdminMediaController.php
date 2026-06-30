@@ -8,10 +8,12 @@ use App\Http\Requests\MediaRequest;
 use App\Http\Sorts\MediaSort;
 use App\Models\Media;
 use App\Services\MediaService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * Controller for managing media in the admin panel.
@@ -31,7 +33,7 @@ class AdminMediaController extends Controller
      * - sort (id|original_name|created_at) — the sort field
      * - direction (asc|desc)               — the sort direction
      */
-    public function index(Request $request, MediaSort $sort): \Inertia\Response
+    public function index(Request $request, MediaSort $sort): Response
     {
         $query = Media::query();
 
@@ -147,7 +149,7 @@ class AdminMediaController extends Controller
         $afterId = (int) ($data['after_id'] ?? 0);
         $limit = (int) ($data['limit'] ?? 50);
 
-        /** @var \Illuminate\Database\Eloquent\Collection<int, Media> $medias */
+        /** @var Collection<int, Media> $medias */
         $medias = Media::when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
             ->orderByDesc('id')
             ->limit($limit)

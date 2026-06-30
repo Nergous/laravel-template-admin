@@ -3,6 +3,7 @@
 namespace App\Traits;
 
 use App\Models\ActivityLog;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Automatic logging of model creation, update and deletion.
@@ -57,7 +58,7 @@ trait LogsActivity
     /**
      * Manual log entry (for duplication and other actions).
      *
-     * @param  \Illuminate\Database\Eloquent\Model  $model  The logged model (subject)
+     * @param  Model  $model  The logged model (subject)
      * @param  string  $action  The action (e.g. duplicated)
      * @param  array<string, array{0: mixed, 1: mixed}>|null  $changes  Field diff: [old, new]
      */

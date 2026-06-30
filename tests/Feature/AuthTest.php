@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Providers\AppServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -92,7 +93,7 @@ class AuthTest extends TestCase
         config(['session.secure' => null]);
         app()->detectEnvironment(fn () => 'production');
 
-        (new \App\Providers\AppServiceProvider(app()))->boot();
+        (new AppServiceProvider(app()))->boot();
 
         $this->assertTrue(config('session.secure'));
     }
@@ -102,7 +103,7 @@ class AuthTest extends TestCase
         config(['session.secure' => false]);
         app()->detectEnvironment(fn () => 'production');
 
-        (new \App\Providers\AppServiceProvider(app()))->boot();
+        (new AppServiceProvider(app()))->boot();
 
         $this->assertFalse(config('session.secure'));
     }

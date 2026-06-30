@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Traits\HasSearch;
 use App\Traits\LogsActivity;
 use App\Traits\TracksAuthor;
+use Carbon\Carbon;
+use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -21,13 +23,13 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $name
  * @property string $email
  * @property string $password
- * @property \Carbon\Carbon|null $email_verified_at
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property Carbon|null $email_verified_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  */
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, HasSearch, LogsActivity, Notifiable, SoftDeletes, TracksAuthor;
 
     protected $fillable = [

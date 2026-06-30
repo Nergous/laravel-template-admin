@@ -9,7 +9,9 @@ use App\Models\User;
 use App\Services\RoleService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
+use Inertia\Response;
 use Spatie\Permission\Models\Permission;
 
 /**
@@ -33,7 +35,7 @@ class AdminRoleController extends Controller
     /**
      * List of roles with permission and user counts, with search by name.
      */
-    public function index(Request $request): \Inertia\Response
+    public function index(Request $request): Response
     {
         $query = Role::query()
             ->with('permissions:id,name')
@@ -137,7 +139,7 @@ class AdminRoleController extends Controller
      * Groups all permissions by the prefix up to the first dot.
      * `users.view`, `users.edit` → ['users' => [...]]
      *
-     * @return array<string, \Illuminate\Support\Collection<int, Permission>>
+     * @return array<string, Collection<int, Permission>>
      */
     protected function groupedPermissions(): array
     {

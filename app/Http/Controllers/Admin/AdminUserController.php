@@ -12,6 +12,7 @@ use App\Services\UserService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Inertia\Response;
 
 /**
  * User management: list, CRUD, and the trash (soft deletion).
@@ -32,7 +33,7 @@ class AdminUserController extends Controller
      * List of users with search, role filter, sorting,
      * a list of roles for the filter, and a trash counter.
      */
-    public function index(Request $request, UserSort $sort): \Inertia\Response
+    public function index(Request $request, UserSort $sort): Response
     {
         $query = User::query()->with(['roles', 'creator:id,name', 'editor:id,name']);
 
@@ -126,7 +127,7 @@ class AdminUserController extends Controller
     /**
      * Trash — a list of soft-deleted users.
      */
-    public function trashed(Request $request, UserSort $sort): \Inertia\Response
+    public function trashed(Request $request, UserSort $sort): Response
     {
         $query = User::onlyTrashed()->with('roles');
 

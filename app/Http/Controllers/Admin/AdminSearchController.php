@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Media;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
@@ -19,7 +20,7 @@ class AdminSearchController extends Controller
      * Returns search results (JSON) across users and media, respecting permissions.
      * Queries shorter than 2 characters are ignored; up to 5 matches per entity.
      */
-    public function index(Request $request): \Illuminate\Http\JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $q = trim((string) $request->query('q', ''));
 

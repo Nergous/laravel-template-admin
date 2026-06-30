@@ -10,7 +10,7 @@
         "ds:pull": "tiged --mode=git --force Nergous/nergous-cit resources/js/lib/nergous-cit"
     },
     "devDependencies": {
-        "concurrently": "^9.0.1",
+        "concurrently": "^10.0.3",
         "laravel-vite-plugin": "^2.0.0",
         "prettier": "^3.9.4",
         "vite": "^7.0.7"

@@ -17,9 +17,34 @@ project and import from the barrel.
 
 ## Install
 
-The library ships as plain source — vendor the folder, don't `npm install` it.
-Copy `nergous-cit/` into your project (e.g. `src/lib/nergous-cit`) and import
-from its `index.js`.
+The library ships as plain source and is consumed as a **vendored snapshot** —
+you copy the source into your project and import it directly, you don't
+`npm install` it. The folder stays editable in place.
+
+The convenient way to pull (or later update) a snapshot is [`tiged`](https://github.com/tiged/tiged)
+(a maintained `degit` fork): it shallow-clones this repo, strips the `.git`, and
+drops the contents into a target folder.
+
+```bash
+# download / refresh the snapshot into your project
+npx tiged --mode=git --force Nergous/nergous-cit src/lib/nergous-cit
+```
+
+`--mode=git` clones through your local git, so it works for both public and
+private repos without registry tokens. `--force` overwrites the target — that is
+the snapshot model: re-pulling replaces local edits, so contribute changes back
+here rather than diverging downstream.
+
+Prefer a one-liner in your project's `package.json`:
+
+```json
+"scripts": {
+  "ds:pull": "tiged --mode=git --force Nergous/nergous-cit src/lib/nergous-cit"
+}
+```
+
+> No network / quick manual route: just copy this repo's contents into
+> `src/lib/nergous-cit` by hand. There is no build step.
 
 To make imports short, add an alias to your bundler. With Vite, mapping `@` to
 your source root lets you write `@/lib/nergous-cit`:

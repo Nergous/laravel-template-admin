@@ -1,4 +1,4 @@
-maxapi==1.2.0
+maxapi==1.2.1
 aiomysql==0.3.2
 aiofiles==25.1.0
 aiohttp==3.13.5

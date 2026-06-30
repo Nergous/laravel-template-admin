@@ -1,0 +1,106 @@
+# =============================================================================
+#  ПРИМЕР nginx как внешний TLS-reverse-proxy перед контейнером `app`.
+#
+#  Зачем: стек (docker-compose.yml) отдаёт приложение по ОБЫЧНОМУ HTTP на :8000
+#  (FrankenPHP/Caddy, auto_https off) и сам по себе НЕ предназначен смотреть в
+#  интернет напрямую. Этот конфиг терминирует TLS и проксирует чистый HTTP внутрь.
+#
+#  Куда класть: это server-блок (как для /etc/nginx/conf.d/). Варианты подключения:
+#    • nginx-контейнер в той же compose-сети → upstream `app:8000` (по умолчанию ниже);
+#    • nginx на ХОСТЕ → upstream `127.0.0.1:8888` (опубликованный APP_PORT, см. ниже).
+#  Скопируйте файл (например в `docker/nginx.conf`), впишите домен и пути к сертификатам.
+#
+#  ⚠ TRUSTED_PROXIES (.env) — ОБЯЗАТЕЛЬНО согласовать. Laravel доверяет заголовкам
+#    X-Forwarded-* только от перечисленных там подсетей. Без этого:
+#      — $request->ip() = адрес nginx, а не клиента (ломает аудит-лог и ключи
+#        login-throttle — фактически обход рейт-лимита, находка S4);
+#      — схема считается http → secure-cookie/HTTPS-URL генерируются неверно.
+#    Для nginx-контейнера укажите подсеть docker-сети (или '*', т.к. app тогда
+#    недоступен напрямую). Для nginx на хосте — IP/подсеть, с которой он стучится.
+#
+#  ⚠ Чего здесь НАМЕРЕННО НЕТ (чтобы не дублировать):
+#      — Security-заголовки (CSP с nonce, HSTS, X-Frame-Options, nosniff) ставит
+#        Laravel (SecurityHeaders middleware) — второй раз их слать не нужно.
+#      — Отдачу /storage и gzip/zstd/br делает Caddy ВНУТРИ контейнера. Поэтому
+#        ответы приходят уже сжатыми — nginx их только проксирует, повторно не жмёт.
+# =============================================================================
+
+# --- Куда проксируем ---------------------------------------------------------
+# Имя сервиса compose резолвится в docker-сети. Раскомментируйте нужный вариант.
+upstream laravel_app {
+    server app:8000;                 # nginx в той же compose-сети
+    # server 127.0.0.1:8888;         # nginx на хосте → опубликованный APP_PORT (8888)
+    keepalive 16;                    # переиспользовать соединения к upstream
+}
+
+# (опционально) Рейт-лимит уровня nginx как доп. эшелон к login-throttle Laravel.
+# limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
+
+# --- HTTP :80 → редирект на HTTPS ------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name admin.example.com;   # ← ваш домен
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# --- HTTPS :443 — основной vhost ---------------------------------------------
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name admin.example.com;   # ← ваш домен
+
+    # Сертификаты (пример под certbot/Let's Encrypt; подставьте свои пути).
+    ssl_certificate     /etc/letsencrypt/live/admin.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/admin.example.com/privkey.pem;
+
+    # Современный TLS. ssl_protocols/ciphers можно вынести в общий conf.d/ssl.conf.
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    # Размер тела запроса. Держите В СИНХРОНЕ с docker/php.ini
+    # (upload_max_filesize / post_max_size = 64M) — иначе nginx обрежет загрузку
+    # медиа своей ошибкой 413 раньше, чем запрос дойдёт до приложения.
+    client_max_body_size 64m;
+
+    # Не буферизовать тело запроса целиком на диск — стримим большие загрузки в app.
+    proxy_request_buffering off;
+
+    location / {
+        proxy_pass http://laravel_app;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";          # keepalive к upstream (см. upstream{})
+
+        # Заголовки, на которые опирается trustProxies в bootstrap/app.php.
+        # X-Forwarded-Proto=$scheme (=https) — то, что включает HTTPS-URL и
+        # secure-cookie на стороне Laravel.
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header X-Forwarded-Port  $server_port;
+
+        # Таймауты с запасом под обработку крупных загрузок (PHP max_execution_time=120).
+        proxy_connect_timeout 5s;
+        proxy_send_timeout    120s;
+        proxy_read_timeout    120s;
+
+        # Ответы из Caddy уже сжаты (zstd/br/gzip) — повторно не сжимаем.
+        gzip off;
+    }
+
+    # Health-check Laravel (bootstrap/app.php → health: '/up'). Без access-лога.
+    location = /up {
+        proxy_pass http://laravel_app;
+        proxy_set_header Host $host;
+        access_log off;
+    }
+}

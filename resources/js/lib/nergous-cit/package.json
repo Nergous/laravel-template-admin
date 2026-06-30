@@ -1,0 +1,18 @@
+{
+  "name": "nergous-cit-ui-vue",
+  "version": "1.0.0",
+  "description": "nergous-cit Design System — Vue 3 component library (tokens, components, composables).",
+  "type": "module",
+  "main": "src/index.js",
+  "module": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./styles": "./src/styles/tokens.css"
+  },
+  "files": ["src"],
+  "peerDependencies": {
+    "vue": "^3.3.0"
+  },
+  "keywords": ["vue", "vue3", "design-system", "components", "ui", "nergous-cit"],
+  "license": "MIT"
+}

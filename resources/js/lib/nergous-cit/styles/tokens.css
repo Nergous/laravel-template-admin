@@ -1,0 +1,224 @@
+/* ============================================================
+   nergous-cit Design System — Tokens & base
+   Imported automatically by src/index.js.
+   Switch themes with  <html data-theme="dark">
+   Switch density with <html data-density="compact|comfortable|spacious">
+   ============================================================ */
+
+/* Manrope (variable 400–800) */
+@font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url("../fonts/Manrope-latin.woff2") format("woff2");
+    unicode-range:
+        U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+        U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+        U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url("../fonts/Manrope-latin-ext.woff2") format("woff2");
+    unicode-range:
+        U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+        U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+        U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url("../fonts/Manrope-cyrillic.woff2") format("woff2");
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+    font-family: "Manrope";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url("../fonts/Manrope-cyrillic-ext.woff2") format("woff2");
+    unicode-range:
+        U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
+/* JetBrains Mono (variable 400–600) */
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url("../fonts/JetBrainsMono-latin.woff2") format("woff2");
+    unicode-range:
+        U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+        U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+        U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url("../fonts/JetBrainsMono-latin-ext.woff2") format("woff2");
+    unicode-range:
+        U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+        U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+        U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url("../fonts/JetBrainsMono-cyrillic.woff2") format("woff2");
+    unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+    font-family: "JetBrains Mono";
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url("../fonts/JetBrainsMono-cyrillic-ext.woff2") format("woff2");
+    unicode-range:
+        U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+
+:root {
+    /* Surfaces */
+    --bg: #f3f4f7;
+    --surface: #ffffff;
+    --surface-2: #fafbfc;
+    --surface-3: #f1f3f6;
+    --sidebar: #ffffff;
+    /* Borders */
+    --border: #e8eaef;
+    --border-2: #d9dce3;
+    /* Text */
+    --text: #191c23;
+    --text-2: #586072;
+    --text-3: #6b7280;
+    /* Accent (Blue) */
+    --accent: #0066ff;
+    --accent-h: #0055ff;
+    --accent-soft: #e8f1ff;
+    --accent-on: #ffffff;
+    /* Accent text on --accent-soft (active nav/option/badge). Darker than --accent
+       so 11–13.5px text clears AA (4.5:1) on the soft tint, which --accent does not. */
+    --accent-ink: #0052cc;
+    /* Semantic */
+    --ok: #15a34a;
+    --ok-bg: #e9f6ee;
+    --warn: #b8700a;
+    --warn-bg: #fbf0dc;
+    --danger: #dc2626;
+    --danger-bg: #fdecec;
+    --info: #2563eb;
+    --info-bg: #e9effd;
+    /* Elevation */
+    --shadow-sm: 0 1px 2px rgba(16, 18, 29, 0.05);
+    --shadow-md: 0 6px 22px -6px rgba(16, 18, 29, 0.13);
+    --shadow-lg: 0 24px 64px -14px rgba(16, 18, 29, 0.24);
+    /* Radius */
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 18px;
+    /* Bare alias used by the canonical design spec (== --radius-md) */
+    --radius: 10px;
+    /* Spacing (base 4px) */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-6: 24px;
+    --sp-8: 32px;
+    /* Type */
+    --font-sans: "Manrope", system-ui, -apple-system, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --fs: 14px;
+    /* Overlays / glass */
+    --overlay: rgba(20, 22, 30, 0.42);
+    --surface-glass: rgba(255, 255, 255, 0.78);
+    /* Control sizing (density) — default tracks the canonical design (40px) */
+    --control-h: 40px;
+    --row-h: 56px;
+    --row-pad: 14px; /* vertical padding for feed/table/matrix rows */
+    /* KPI / stat-card sizing (density-scaled) — comfortable baseline */
+    --kpi-pad: 20px;
+    --kpi-value-fs: 27px;
+    --kpi-icon: 30px;
+    --kpi-gap: 16px;
+}
+
+[data-density="compact"] {
+    --control-h: 32px;
+    --row-h: 40px;
+    --row-pad: 9px;
+    --fs: 12.5px;
+    --radius-md: 7px;
+    --radius-lg: 11px;
+    --kpi-pad: 14px;
+    --kpi-value-fs: 20px;
+    --kpi-icon: 24px;
+    --kpi-gap: 10px;
+}
+[data-density="spacious"] {
+    --control-h: 48px;
+    --row-h: 76px;
+    --row-pad: 20px;
+    --fs: 16px;
+    --radius-md: 13px;
+    --radius-lg: 18px;
+    --kpi-pad: 28px;
+    --kpi-value-fs: 34px;
+    --kpi-icon: 38px;
+    --kpi-gap: 24px;
+}
+
+[data-theme="dark"] {
+    --bg: #0b0d12;
+    --surface: #14161d;
+    --surface-2: #191c24;
+    --surface-3: #20242e;
+    --sidebar: #0f1117;
+    --border: #262a34;
+    --border-2: #333845;
+    --text: #eef0f4;
+    --text-2: #9aa1ad;
+    --text-3: #8b93a1;
+    --accent: #0066ff;
+    --accent-h: #3384ff;
+    --accent-soft: #102a4d;
+    --accent-on: #ffffff;
+    --accent-ink: #6aa6ff;
+    --ok: #34d399;
+    --ok-bg: #0f2a22;
+    --warn: #fbbf24;
+    --warn-bg: #2c2410;
+    --danger: #f87171;
+    --danger-bg: #2c1717;
+    --info: #60a5fa;
+    --info-bg: #11243d;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 28px -8px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.72);
+    --overlay: rgba(0, 0, 0, 0.55);
+    --surface-glass: rgba(20, 22, 29, 0.78);
+}
+
+/* Optional base reset — safe to remove if it clashes with your app */
+.nergouscit-reset,
+.nergouscit-reset * {
+    box-sizing: border-box;
+}
+.nergouscit-reset {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+}

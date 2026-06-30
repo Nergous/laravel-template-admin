@@ -1,0 +1,75 @@
+# --- VCS / IDE / агент-метаданные ---
+
+.git
+.gitignore
+.gitattributes
+.idea
+.vscode
+.claude
+
+# --- зависимости/артефакты (ставятся/собираются внутри образа) ---
+
+node_modules
+vendor
+public/build
+public/hot
+public/storage
+
+# --- runtime storage (создаётся entrypoint'ом / монтируется томом) ---
+
+storage/app/public/*
+!storage/app/public/.gitkeep
+storage/app/private/*
+!storage/app/private/.gitkeep
+storage/framework/cache/*
+!storage/framework/cache/.gitkeep
+storage/framework/sessions/*
+!storage/framework/sessions/.gitkeep
+storage/framework/views/*
+!storage/framework/views/.gitkeep
+storage/logs/*
+!storage/logs/.gitkeep
+bootstrap/cache/*
+!bootstrap/cache/.gitkeep
+
+# --- тесты / линтеры (не нужны в prod-образе) ---
+
+tests
+phpunit.xml
+.phpunit.result.cache
+.editorconfig
+
+# --- секреты / локальные env (в образ не кладём; .env монтируется/задаётся снаружи) ---
+
+.env
+.env.*
+!.env.example
+
+# --- compose / docker-метафайлы (не часть кода приложения) ---
+
+docker-compose.yml
+docker-compose.override.yml
+compose.dev.yaml
+compose.*.yaml
+.dockerignore
+
+# --- БД-файлы / документация / дизайн-исходники ---
+
+*.sqlite
+*.md
+!README.md
+figma
+docs
+design-system
+
+# --- внутренние инструкции агента и отчёты аудита (в prod-образ не нужны) ---
+
+CLAUDE.md
+audit
+
+# --- Модуль Бот ---
+
+modules/max-bot/venv
+modules/max-bot/__pycache__
+modules/max-bot/.pytest_cache
+modules/max-bot/.env

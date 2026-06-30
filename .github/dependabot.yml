@@ -1,0 +1,43 @@
+# Dependabot: еженедельные обновления зависимостей и базовых образов.
+# Закрывает #11 (плавающие теги образов): docker-екосистема предлагает апдейты
+# базовых образов из Dockerfile, а не digest-пиннинг (для шаблона это удобнее).
+version: 2
+updates:
+  # --- PHP (Composer) ---
+  - package-ecosystem: composer
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # --- Фронтенд (npm) ---
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # --- Python-бот (pip) ---
+  - package-ecosystem: pip
+    directory: "/modules/max-bot"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # --- Базовый образ приложения (Dockerfile + docker-compose) ---
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # --- Базовый образ бота (modules/max-bot/Dockerfile) ---
+  - package-ecosystem: docker
+    directory: "/modules/max-bot"
+    schedule:
+      interval: weekly
+
+  # --- GitHub Actions (версии экшенов в .github/workflows) ---
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

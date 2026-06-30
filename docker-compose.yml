@@ -1,0 +1,227 @@
+# =============================================================================
+#  Самодостаточный PRODUCTION-стек: app + db (MariaDB) + redis + queue + scheduler.
+#
+#  Запуск:
+#    cp .env.example .env        # затем выставить APP_ENV=production, APP_DEBUG=false,
+#                                # APP_KEY (php artisan key:generate), DB_*/REDIS_* как ниже
+#    docker compose up -d --build
+#
+#  Для разработки используйте отдельный файл:
+#    docker compose -f compose.dev.yaml up
+#
+#  По умолчанию стек ПОЛНОСТЬЮ изолирован (своя БД и redis в контейнерах).
+#  Чтобы подключиться к уже существующей внешней БД — задайте DB_HOST на внешний
+#  адрес и закомментируйте сервис `db` + его depends_on.
+#
+#  ВАЖНО (TLS): стек отдаёт приложение по ОБЫЧНОМУ HTTP (порт APP_PORT->8000,
+#  auto_https off). Это НЕ полноценный publicly-facing прод сам по себе — ставьте
+#  его ЗА внешним reverse-proxy с терминацией TLS (Caddy/Traefik/nginx/ingress).
+#  За HTTPS обязательно: SESSION_SECURE_COOKIE=true и HSTS (см. .env.example),
+#  а trustProxies в bootstrap/app.php имеет смысл сузить до CIDR вашего прокси.
+#
+#  Лимиты ресурсов (mem_limit/cpus) и ротация логов (logging) ниже — это
+#  консервативная СТАРТОВАЯ точка для одного хоста; тюнингуйте под свою нагрузку.
+# =============================================================================
+
+services:
+  app:
+    build:
+      context: .
+      target: prod
+    image: ${APP_IMAGE:-laravel-admin-template}:latest
+    container_name: ${APP_CONTAINER_NAME:-admin-template}-app
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      RUN_MIGRATIONS: "true"
+      # Базовый RBAC (роли + права) сеется ВСЕГДА вместе с миграциями (см. entrypoint.sh).
+      # RUN_SEEDS управляет только ДЕМО/боевыми ПОЛЬЗОВАТЕЛЯМИ (UserSeeder). В production
+      # оставить "false" и завести админа через `app:create-admin` (или RUN_SEEDS=true + ADMIN_PASSWORD).
+      RUN_SEEDS: "${RUN_SEEDS:-false}"
+    ports:
+      - "${APP_PORT:-8888}:8000"
+    volumes:
+      # Только пользовательские данные. Код и vendor — внутри образа (immutable).
+      - storage-data:/app/storage
+    networks: [internal]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Laravel health endpoint (bootstrap/app.php -> health: '/up')
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    # Лимиты ресурсов (compose v2, non-swarm учитывает mem_limit/cpus).
+    cpus: "1.5"
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  queue:
+    # Воркер очереди: обрабатывает Job'ы (сейчас — асинхронная загрузка медиа
+    # UploadMedia). Не нужен воркер — выставь QUEUE_CONNECTION=sync в .env и не
+    # поднимай этот сервис: джобы выполнятся прямо в HTTP-запросе app. Размен и
+    # детали — в README (Troubleshooting / раздел Docker).
+    image: ${APP_IMAGE:-laravel-admin-template}:latest
+    container_name: ${APP_CONTAINER_NAME:-admin-template}-queue
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      RUN_MIGRATIONS: "false"
+      RUN_SEEDS: "false"
+      OPTIMIZE: "false"
+    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    volumes:
+      - storage-data:/app/storage
+    networks: [internal]
+    depends_on:
+      # service_healthy ⇒ app уже прошёл entrypoint (миграции накатились, таблица
+      # jobs есть) — воркер не уходит в рестарт-цикл на холодном старте.
+      # restart: unless-stopped остаётся страховкой на рантайм-сбои.
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # У worker'а нет HTTP-endpoint'а: liveness = artisan отвечает и БД доступна.
+      test: ["CMD", "php", "artisan", "db:show", "--quiet"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    cpus: "1.0"
+    mem_limit: 384m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  scheduler:
+    image: ${APP_IMAGE:-laravel-admin-template}:latest
+    container_name: ${APP_CONTAINER_NAME:-admin-template}-scheduler
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      RUN_MIGRATIONS: "false"
+      RUN_SEEDS: "false"
+      OPTIMIZE: "false"
+    # schedule:work держит планировщик в одном процессе (не нужен системный cron).
+    # Гоняет периодические задачи из routes/console.php — как минимум ежедневную
+    # чистку журнала действий (model:prune для activity_log).
+    command: php artisan schedule:work
+    volumes:
+      - storage-data:/app/storage
+    networks: [internal]
+    depends_on:
+      # см. queue: ждём service_healthy, чтобы не стартовать до миграций.
+      app:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    cpus: "0.5"
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  bot:
+    # Опциональный модуль. Поднимается только при COMPOSE_PROFILES=bot.
+    profiles: ["bot"]
+    build:
+      context: ./modules/max-bot
+    image: ${APP_IMAGE:-laravel-admin-template}-bot:latest
+    container_name: ${APP_CONTAINER_NAME:-admin-template}-bot
+    restart: unless-stopped
+    # Корневой .env даёт DB-креды; modules/max-bot/.env — API_TOKEN/BOT_ID/LOG_LEVEL_BOT
+    # (шаблон: modules/max-bot/.env.example). Файл бота подключается рантаймом и НЕ
+    # запекается в образ (modules/max-bot/.dockerignore).
+    env_file: [.env, ./modules/max-bot/.env]
+    environment:
+      # Бот в Docker ходит к сервису `db`, а не к 127.0.0.1 из modules/max-bot/.env.
+      DB_HOST: db
+      DB_PORT: "3306"
+    networks: [internal]
+    depends_on:
+      db:
+        condition: service_healthy
+    cpus: "0.5"
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: mariadb:11
+    container_name: ${APP_CONTAINER_NAME:-admin-template}-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_DATABASE:-laravel}
+      MARIADB_USER: ${DB_USERNAME:-laravel}
+      # Пароли БД ОБЯЗАТЕЛЬНЫ — дефолтов нет. compose упадёт, если не заданы.
+      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD обязателен для Docker-стека (дефолта нет)}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD обязателен (дефолта нет)}
+    volumes:
+      - db-data:/var/lib/mysql
+    networks: [internal]
+    # Порт наружу по умолчанию не публикуем (БД доступна только внутри сети).
+    # Для отладки раскомментируйте:
+    # ports:
+    #   - "${DB_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    cpus: "1.0"
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${APP_CONTAINER_NAME:-admin-template}-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    cpus: "0.5"
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  db-data:
+  redis-data:
+  storage-data:
+
+networks:
+  internal:
+    driver: bridge

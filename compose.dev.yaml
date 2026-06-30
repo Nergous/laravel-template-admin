@@ -1,0 +1,120 @@
+# =============================================================================
+#  DEV-стек с hot-reload: bind-mount кода + Vite dev server + queue + БД.
+#
+#  Запуск:
+#    cp .env.example .env        # APP_ENV=local, APP_DEBUG=true (дефолты подходят)
+#    docker compose -f compose.dev.yaml up --build
+#
+#  Что внутри:
+#    app   — FrankenPHP отдаёт Laravel на http://localhost:8000, код смонтирован
+#            bind-mount'ом (правки PHP подхватываются: opcache validate_timestamps=1).
+#    vite  — Vite dev server (HMR) на http://localhost:5173.
+#    queue — queue:listen (перечитывает код на каждой задаче, удобно в dev).
+#    db    — MariaDB (или используйте SQLite: DB_CONNECTION=sqlite в .env, тогда
+#            сервис db можно не запускать).
+#
+#  Первый старт: entrypoint поставит vendor/ автоматически (composer install),
+#  node_modules ставит сервис vite (npm ci) в свой анонимный том.
+# =============================================================================
+
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    image: laravel-admin-template:dev
+    container_name: admin-template-dev-app
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      APP_ENV: local
+      OPTIMIZE: "false"
+      RUN_SEEDS: "true"   # в dev удобно иметь демо-данные
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      # vendor/ в именованном томе — чтобы не перетирался пустой папкой с хоста
+      # и не конфликтовал с правами Windows.
+      - vendor-dev:/app/vendor
+      - ./docker/php.dev.ini:/usr/local/etc/php/conf.d/zzz-dev.ini:ro
+    networks: [internal]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  vite:
+    image: node:20-alpine
+    container_name: admin-template-dev-vite
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev"
+    environment:
+      # Слушать на всех интерфейсах в контейнере, HMR-клиент — на localhost.
+      VITE_HOST: "0.0.0.0"
+      VITE_HMR_HOST: "localhost"
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - node-modules-dev:/app/node_modules
+    networks: [internal]
+
+  queue:
+    image: laravel-admin-template:dev
+    container_name: admin-template-dev-queue
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      APP_ENV: local
+      RUN_MIGRATIONS: "false"
+      RUN_SEEDS: "false"
+      OPTIMIZE: "false"
+    # queue:listen перечитывает код между задачами — то, что нужно в разработке.
+    command: php artisan queue:listen --tries=1 --timeout=0
+    volumes:
+      - .:/app
+      - vendor-dev:/app/vendor
+    networks: [internal]
+    depends_on:
+      app:
+        condition: service_started
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11
+    container_name: admin-template-dev-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_DATABASE:-laravel}
+      MARIADB_USER: ${DB_USERNAME:-laravel}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-secret}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - db-data-dev:/var/lib/mysql
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: admin-template-dev-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks: [internal]
+
+volumes:
+  db-data-dev:
+  vendor-dev:
+  node-modules-dev:
+
+networks:
+  internal:
+    driver: bridge

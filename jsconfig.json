@@ -1,0 +1,15 @@
+{
+    "compilerOptions": {
+        "target": "esnext",
+        "module": "esnext",
+        "moduleResolution": "bundler",
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["resources/js/*"]
+        },
+        "allowJs": true,
+        "checkJs": false
+    },
+    "include": ["resources/js/**/*.js", "resources/js/**/*.vue"],
+    "exclude": ["node_modules", "public", "vendor", "storage"]
+}

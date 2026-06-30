@@ -1,0 +1,243 @@
+name: CI
+
+# Линт, тесты (PHP + Python-бот), сборка фронта, сборка и скан prod-образа.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+# Отменяем устаревшие прогоны на одной ветке/PR.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Стиль кода (Laravel Pint, PSR-12) — падаем при отклонениях.
+  # --------------------------------------------------------------------------
+  lint-php:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_sqlite, gd, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-lint-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-lint-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Pint (check only)
+        run: ./vendor/bin/pint --test
+
+  # --------------------------------------------------------------------------
+  # PHPUnit на SQLite (:memory:, см. phpunit.xml). Матрица версий PHP.
+  # --------------------------------------------------------------------------
+  test-php:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ["8.2", "8.3", "8.4"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_sqlite, gd, zip, pcntl
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ matrix.php }}-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Run tests
+        run: php artisan test
+
+  # --------------------------------------------------------------------------
+  # Сборка фронта (Vite). Артефакт public/build — smoke-test репозитория.
+  # --------------------------------------------------------------------------
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prettier (check only)
+        run: npm run format:check
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: public/build
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Тесты Python-бота (pytest). Часть тестов ходит в реальную MariaDB —
+  # поднимаем сервис-контейнер. Креды берутся из modules/max-bot/.env.example.
+  # --------------------------------------------------------------------------
+  test-bot:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
+          MARIADB_DATABASE: bot-test-db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    defaults:
+      run:
+        working-directory: modules/max-bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: pytest
+
+  # --------------------------------------------------------------------------
+  # Сборка prod-образа (только на push в main/теги). Кэш слоёв через GHA.
+  # Образ выгружается артефактом для джоба scan.
+  # --------------------------------------------------------------------------
+  build-image:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [lint-php, test-php, build-frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build prod image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: prod
+          tags: laravel-admin-template:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          outputs: type=docker,dest=/tmp/image.tar
+
+      # --- Публикация в GHCR (опционально) -----------------------------------
+      # Раскомментируйте + добавьте `permissions: packages: write` на уровне job,
+      # чтобы пушить образ в ghcr.io по sha/тегам:
+      # - name: Login to GHCR
+      #   uses: docker/login-action@v3
+      #   with:
+      #     registry: ghcr.io
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Push
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: .
+      #     target: prod
+      #     push: true
+      #     tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
+      #     cache-from: type=gha
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prod-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  # --------------------------------------------------------------------------
+  # Скан образа: Trivy (HIGH/CRITICAL) + анти-регресс #1 — проверяем, что
+  # в prod-образ не попали .env / *.sqlite (секреты/данные).
+  # --------------------------------------------------------------------------
+  scan:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    needs: [build-image]
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: prod-image
+          path: /tmp
+
+      - name: Load image
+        run: docker load -i /tmp/image.tar
+
+      - name: Assert no secrets/data baked into image
+        run: |
+          docker run --rm --entrypoint sh laravel-admin-template:ci -c '
+            bad=""
+            [ -f .env ] && bad="$bad .env"
+            for f in .env.production .env.local .env.backup; do
+              [ -f "$f" ] && bad="$bad $f"
+            done
+            ls database/*.sqlite *.sqlite >/dev/null 2>&1 && bad="$bad sqlite"
+            if [ -n "$bad" ]; then
+              echo "УТЕЧКА: в образ попали чувствительные файлы:$bad"
+              exit 1
+            fi
+            echo "OK: .env/*.sqlite в образе не обнаружены"
+          '
+
+      - name: Trivy scan (HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: laravel-admin-template:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL

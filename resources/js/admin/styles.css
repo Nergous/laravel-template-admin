@@ -1,0 +1,35 @@
+/* Утилиты компоновки уровня приложения, общие для страниц админки.
+   Чистая презентация без бизнес-логики; держим отдельно от дизайн-системы
+   (nergous-cit остаётся domain/locale-agnostic). Раньше эти правила были
+   продублированы в scoped-стилях почти каждой страницы. */
+
+/* Вертикальная раскладка страницы: колонка с равными отступами. */
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* Пагинатор внизу страницы прижат вправо. */
+.page__pager {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Кластер иконочных действий в строке таблицы. */
+.row-actions {
+    display: flex;
+    gap: 4px;
+}
+.row-actions--center {
+    justify-content: center;
+}
+.row-actions--end {
+    justify-content: flex-end;
+}
+/* Квадратная иконочная кнопка действия (30×30). */
+.row-actions__btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+}

@@ -1,0 +1,63 @@
+# =============================================================================
+#  FrankenPHP / Caddy конфиг для Laravel Admin Template.
+#
+#  SERVER_NAME задаётся через окружение (по умолчанию ":8000" из Dockerfile).
+#  За reverse-proxy (nginx/traefik) терминирующим TLS — оставляем HTTP на :8000,
+#  trustProxies уже настроен в bootstrap/app.php.
+#
+#  Worker-режим (опционально, выше throughput): раскомментируйте `worker`-строку
+#  и задайте FRANKENPHP_CONFIG="worker ./public/index.php" — но он держит
+#  состояние между запросами, требует worker-совместимого кода. Для шаблона по
+#  умолчанию выключен (classic mode, безопасен для любого Laravel-приложения).
+# =============================================================================
+
+{
+	# Caddy admin API выключаем — в контейнере не нужен.
+	admin off
+
+	# Уровень логов управляется снаружи; здесь только формат.
+	frankenphp {
+		# worker ./public/index.php
+	}
+
+	# За внешним TLS-прокси автоматический HTTPS Caddy не нужен.
+	auto_https off
+}
+
+{$SERVER_NAME:":8000"} {
+	root * /app/public
+	encode zstd br gzip
+
+	# Загруженные медиа (/storage → symlink на storage/app/public) отдаём СТРОГО
+	# как статику: этот handle не доходит до php_server, поэтому ни один файл под
+	# /storage не исполняется как PHP (эшелонированная защита к S1 — даже если на
+	# диск попадёт .php). nosniff запрещает браузеру угадывать тип (txt→html), а
+	# Content-Disposition: attachment заставляет скачивать, а не рендерить при
+	# прямой навигации (нейтрализует stored-XSS из .html/.svg). На инлайн-картинки
+	# в админке не влияет: лайтбокс/превью грузят их через <img> (subresource —
+	# Content-Disposition игнорируется), а не-изображения UI и так открывает/качает.
+	@storage path /storage/*
+	handle @storage {
+		header X-Content-Type-Options nosniff
+		header Content-Disposition attachment
+		# Ограничивающий per-response CSP: даже если файл всё же отрендерится,
+		# sandbox + default-src 'none' гасят скрипты/формы/плагины (S8 — песочница
+		# для пользовательского контента, дополняет nosniff/attachment из S1).
+		header Content-Security-Policy "default-src 'none'; sandbox"
+		file_server
+	}
+
+	# Остальной трафик: health-check Laravel (/up), ассеты из public/build и SPA —
+	# через PHP.
+	handle {
+		php_server {
+			# Перед index.php пробуем отдать существующий файл (ассеты из public/build).
+			try_files {path} {path}/ /index.php?{query}
+		}
+	}
+
+	log {
+		output stderr
+		format console
+	}
+}

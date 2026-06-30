@@ -1,0 +1,51 @@
+
+  ANY             / .......................................................... Illuminate\Routing › RedirectController
+  GET|HEAD        admin ....................................... admin.dashboard › Admin\AdminDashboardController@index
+  GET|HEAD        admin/activity-log ............... admin.activity-log.index › Admin\AdminActivityLogController@index
+  GET|HEAD        admin/bot-messages ................ admin.bot-messages.index › Admin\AdminBotMessageController@index
+  PUT             admin/bot-messages/{code} ....... admin.bot-messages.update › Admin\AdminBotMessageController@update
+  DELETE          admin/bot-messages/{code} ....... admin.bot-messages.reset › Admin\AdminBotMessageController@destroy
+  GET|HEAD        admin/login ...................................................... login › Auth\LoginController@show
+  POST            admin/login ............................................... admin.login › Auth\LoginController@login
+  POST            admin/logout .................................................. logout › Auth\LoginController@logout
+  GET|HEAD        admin/media ................................... admin.media.index › Admin\AdminMediaController@index
+  POST            admin/media ................................... admin.media.store › Admin\AdminMediaController@store
+  DELETE          admin/media/bulk ................. admin.media.bulk-destroy › Admin\AdminMediaController@bulkDestroy
+  GET|HEAD        admin/media/poll ................................ admin.media.poll › Admin\AdminMediaController@poll
+  DELETE          admin/media/{media} ....................... admin.media.destroy › Admin\AdminMediaController@destroy
+  GET|HEAD        admin/notifications/recent .... admin.notifications.recent › Admin\AdminActivityLogController@recent
+  GET|HEAD        admin/permissions .................. admin.permissions.index › Admin\AdminPermissionController@index
+  POST            admin/permissions .................. admin.permissions.store › Admin\AdminPermissionController@store
+  GET|HEAD        admin/permissions/create ......... admin.permissions.create › Admin\AdminPermissionController@create
+  PATCH           admin/permissions/matrix ............. admin.permissions.sync › Admin\AdminPermissionController@sync
+  GET|HEAD        admin/permissions/{permission} ....... admin.permissions.show › Admin\AdminPermissionController@show
+  PUT|PATCH       admin/permissions/{permission} ... admin.permissions.update › Admin\AdminPermissionController@update
+  DELETE          admin/permissions/{permission} . admin.permissions.destroy › Admin\AdminPermissionController@destroy
+  GET|HEAD        admin/permissions/{permission}/edit .. admin.permissions.edit › Admin\AdminPermissionController@edit
+  GET|HEAD        admin/roles .................................... admin.roles.index › Admin\AdminRoleController@index
+  POST            admin/roles .................................... admin.roles.store › Admin\AdminRoleController@store
+  GET|HEAD        admin/roles/create ........................... admin.roles.create › Admin\AdminRoleController@create
+  GET|HEAD        admin/roles/{role} ............................... admin.roles.show › Admin\AdminRoleController@show
+  PUT|PATCH       admin/roles/{role} ........................... admin.roles.update › Admin\AdminRoleController@update
+  DELETE          admin/roles/{role} ......................... admin.roles.destroy › Admin\AdminRoleController@destroy
+  GET|HEAD        admin/roles/{role}/edit .......................... admin.roles.edit › Admin\AdminRoleController@edit
+  GET|HEAD        admin/search ...................................... admin.search › Admin\AdminSearchController@index
+  GET|HEAD        admin/settings .......................... admin.settings.index › Admin\AdminSettingsController@index
+  PUT             admin/settings ........................ admin.settings.update › Admin\AdminSettingsController@update
+  GET|HEAD        admin/users .................................... admin.users.index › Admin\AdminUserController@index
+  POST            admin/users .................................... admin.users.store › Admin\AdminUserController@store
+  GET|HEAD        admin/users/create ........................... admin.users.create › Admin\AdminUserController@create
+  DELETE          admin/users/force/{id} ............ admin.users.force-delete › Admin\AdminUserController@forceDelete
+  PATCH           admin/users/restore/{id} ................... admin.users.restore › Admin\AdminUserController@restore
+  GET|HEAD        admin/users/trashed ........................ admin.users.trashed › Admin\AdminUserController@trashed
+  DELETE          admin/users/trashed/bulk-force admin.users.bulk-force-delete › Admin\AdminUserController@bulkForceD…
+  POST            admin/users/trashed/bulk-restore .. admin.users.bulk-restore › Admin\AdminUserController@bulkRestore
+  DELETE          admin/users/{user} ......................... admin.users.destroy › Admin\AdminUserController@destroy
+  GET|HEAD        admin/users/{user} ............................... admin.users.show › Admin\AdminUserController@show
+  PUT|PATCH       admin/users/{user} ........................... admin.users.update › Admin\AdminUserController@update
+  GET|HEAD        admin/users/{user}/edit .......................... admin.users.edit › Admin\AdminUserController@edit
+  GET|HEAD        storage/{path} ....................................................................... storage.local
+  GET|HEAD        up ................................................................................................. 
+
+                                                                                                   Showing [47] routes
+

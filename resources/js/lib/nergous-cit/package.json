@@ -1,18 +1,43 @@
 {
   "name": "nergous-cit-ui-vue",
   "version": "1.0.0",
-  "description": "nergous-cit Design System — Vue 3 component library (tokens, components, composables).",
+  "description": "nergous-cit Design System — a zero-dependency Vue 3 component library: themeable & density-aware design tokens, 40 components, and composables.",
   "type": "module",
-  "main": "src/index.js",
-  "module": "src/index.js",
+  "main": "./index.js",
+  "module": "./index.js",
   "exports": {
-    ".": "./src/index.js",
-    "./styles": "./src/styles/tokens.css"
+    ".": "./index.js",
+    "./styles": "./styles/tokens.css"
   },
-  "files": ["src"],
+  "files": [
+    "index.js",
+    "components",
+    "composables",
+    "utils",
+    "styles",
+    "fonts",
+    "README.md"
+  ],
   "peerDependencies": {
     "vue": "^3.3.0"
   },
-  "keywords": ["vue", "vue3", "design-system", "components", "ui", "nergous-cit"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nergous/nergous-cit.git"
+  },
+  "homepage": "https://github.com/Nergous/nergous-cit#readme",
+  "bugs": {
+    "url": "https://github.com/Nergous/nergous-cit/issues"
+  },
+  "keywords": [
+    "vue",
+    "vue3",
+    "design-system",
+    "components",
+    "ui",
+    "design-tokens",
+    "composables",
+    "nergous-cit"
+  ],
   "license": "MIT"
 }

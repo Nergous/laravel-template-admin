@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from "vue";
-import { router } from "@inertiajs/vue3";
+import { router, useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
     NCard,
@@ -8,14 +8,22 @@ import {
     NPagination,
     NEmptyState,
     NDrawer,
+    NModal,
+    NFormField,
+    NInput,
     NButton,
 } from "@/lib/nergous-cit";
+import { can } from "@/lib/can.js";
 import { formatRelative, formatDateTime } from "@/lib/format.js";
 
 const props = defineProps({
     logs: { type: Object, required: true },
     filters: { type: Object, default: () => ({}) },
 });
+
+// Сегодня (ISO) — верхняя граница даты-отсечки: чистим события строго раньше
+// выбранного дня, поэтому очистить «будущее» нельзя.
+const todayIso = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD, локальная дата
 
 // Chip filter bar. Each chip maps to an `action` enum value; «Все» clears it.
 const CHIPS = [
@@ -95,23 +103,51 @@ function openDetail(log) {
     selected.value = log;
     detailOpen.value = true;
 }
+
+/* ---------- clear journal ---------- */
+const clearOpen = ref(false);
+const clearForm = useForm({ before: "" });
+
+function openClear() {
+    clearForm.reset();
+    clearForm.clearErrors();
+    clearOpen.value = true;
+}
+function submitClear() {
+    clearForm.delete("/admin/activity-log", {
+        preserveScroll: true,
+        onSuccess: () => {
+            clearOpen.value = false;
+        },
+    });
+}
 </script>
 
 <template>
     <AdminLayout title="Журнал действий" subtitle="Хронология событий">
         <div class="page">
-            <div class="chips" role="group" aria-label="Фильтр по действию">
-                <button
-                    v-for="chip in CHIPS"
-                    :key="chip.value || 'all'"
-                    type="button"
-                    class="chip"
-                    :class="{ 'chip--on': activeAction === chip.value }"
-                    :aria-pressed="activeAction === chip.value"
-                    @click="selectAction(chip.value)"
+            <div class="toolbar">
+                <div class="chips" role="group" aria-label="Фильтр по действию">
+                    <button
+                        v-for="chip in CHIPS"
+                        :key="chip.value || 'all'"
+                        type="button"
+                        class="chip"
+                        :class="{ 'chip--on': activeAction === chip.value }"
+                        :aria-pressed="activeAction === chip.value"
+                        @click="selectAction(chip.value)"
+                    >
+                        {{ chip.label }}
+                    </button>
+                </div>
+                <NButton
+                    v-if="can('activity-log.delete')"
+                    variant="secondary"
+                    icon="trash"
+                    class="toolbar__clear"
+                    @click="openClear"
+                    >Очистить журнал</NButton
                 >
-                    {{ chip.label }}
-                </button>
             </div>
 
             <NCard padding="0">
@@ -237,15 +273,67 @@ function openDetail(log) {
                 >
             </template>
         </NDrawer>
+
+        <!-- clear journal modal -->
+        <NModal
+            :model-value="clearOpen"
+            title="Очистить журнал"
+            width="440px"
+            close-label="Закрыть"
+            @update:model-value="clearOpen = $event"
+        >
+            <p class="clear__msg">
+                Удалит все события раньше выбранной даты. События за выбранный день
+                и позже останутся. Действие необратимо.
+            </p>
+            <NFormField
+                label="Удалить события до даты"
+                :error="clearForm.errors.before"
+                required
+            >
+                <NInput
+                    v-model="clearForm.before"
+                    type="date"
+                    :max="todayIso"
+                    :error="!!clearForm.errors.before"
+                />
+            </NFormField>
+
+            <template #footer="{ close }">
+                <NButton variant="secondary" block @click="close">Отмена</NButton>
+                <NButton
+                    variant="danger"
+                    block
+                    :loading="clearForm.processing"
+                    @click="submitClear"
+                    >Очистить</NButton
+                >
+            </template>
+        </NModal>
     </AdminLayout>
 </template>
 
 <style scoped>
 /* .page / .page__pager — общие утилиты в resources/js/admin/styles.css */
+.toolbar {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
 .chips {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+}
+.toolbar__clear {
+    margin-left: auto;
+    flex: none;
+}
+.clear__msg {
+    margin: 0 0 16px;
+    color: var(--text-2);
+    font-size: 14px;
+    line-height: 1.5;
 }
 .chip {
     height: 32px;

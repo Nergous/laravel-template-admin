@@ -119,6 +119,12 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.activity-log.index');
         });
 
+        // Очистка журнала до выбранной даты — под отдельным правом.
+        Route::middleware('permission:activity-log.delete')->group(function () {
+            Route::delete('activity-log', [AdminActivityLogController::class, 'clear'])
+                ->name('admin.activity-log.clear');
+        });
+
         // Настройки
         Route::middleware('permission:settings.view')->group(function () {
             Route::get('settings', [AdminSettingsController::class, 'index'])

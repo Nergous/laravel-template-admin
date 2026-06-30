@@ -4,15 +4,17 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 
 /**
- * Просмотр журнала действий (аудита) в админ-панели.
+ * Просмотр и очистка журнала действий (аудита) в админ-панели.
  *
- * Контроллер доступен только на чтение: отображает список записей ActivityLog
- * с фильтрами и постраничной навигацией. Записи в журнал пишутся отдельно
- * (см. трейт LogsActivity), здесь они только читаются.
+ * Чтение (index/recent) гейтится правом activity-log.view; очистка журнала до
+ * выбранной даты (clear) — отдельным правом activity-log.delete. Записи в журнал
+ * пишутся отдельно (см. трейт LogsActivity), здесь они читаются и массово чистятся.
  */
 class AdminActivityLogController extends Controller
 {
@@ -55,6 +57,32 @@ class AdminActivityLogController extends Controller
             'logs' => $logs,
             'filters' => $request->only('action', 'subject_type'),
         ]);
+    }
+
+    /**
+     * Очищает журнал: удаляет все записи раньше выбранной даты (начало дня).
+     *
+     * Дата `before` обязательна — это «очистить события до …». Удаление —
+     * одним массовым DELETE без гидрации/событий (у аудит-лога событий на
+     * удаление нет, чистка должна быть дешёвой; ср. ActivityLog::prunable()).
+     *
+     * @param  Request  $request  before (date) — дата-отсечка.
+     */
+    public function clear(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'before' => ['required', 'date'],
+        ], [
+            'before.required' => 'Укажите дату, до которой очистить журнал',
+            'before.date' => 'Некорректная дата',
+        ]);
+
+        $before = Carbon::parse($validated['before'])->startOfDay();
+        $deleted = ActivityLog::where('created_at', '<', $before)->delete();
+
+        return redirect()
+            ->back()
+            ->with('success', "Журнал очищен. Удалено записей: {$deleted}");
     }
 
     /**

@@ -26,7 +26,7 @@ class RolePermissionSeeder extends Seeder
             'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
             'permissions.view', 'permissions.create', 'permissions.edit', 'permissions.delete',
             'media.view', 'media.upload', 'media.delete',
-            'activity-log.view',
+            'activity-log.view', 'activity-log.delete',
             'settings.view', 'settings.edit',
         ];
 

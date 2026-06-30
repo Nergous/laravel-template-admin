@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/laravel-template-admin/modules/max-bot/messages.schema.json",
   "title": "Bot messages registry",
-  "description": "Общий реестр сообщений бота. Источник правды по кодам, меткам, описаниям и значениям по умолчанию; читается и Laravel (App\\Support\\BotMessageCatalog), и Python (repositories/messages.py). Переопределения админа хранятся отдельно — в таблице bot_messages.",
+  "description": "Shared registry of bot messages. The source of truth for codes, labels, descriptions and default values; read by both Laravel (App\\Support\\BotMessageCatalog) and Python (repositories/messages.py). Admin overrides are stored separately — in the bot_messages table.",
   "type": "array",
   "minItems": 1,
   "items": {
@@ -12,24 +12,24 @@
     "properties": {
       "code": {
         "type": "string",
-        "description": "Машинный код сообщения (совпадает с колонкой bot_messages.code и константами в repositories/messages.py).",
+        "description": "The machine code of the message (matches the bot_messages.code column and the constants in repositories/messages.py).",
         "pattern": "^[a-z0-9_]+$",
         "minLength": 1,
         "maxLength": 128
       },
       "label": {
         "type": "string",
-        "description": "Человекочитаемая метка для UI админки.",
+        "description": "Human-readable label for the admin UI.",
         "minLength": 1
       },
       "description": {
         "type": "string",
-        "description": "Когда отправляется это сообщение (подсказка в админке).",
+        "description": "When this message is sent (a hint in the admin UI).",
         "minLength": 1
       },
       "default": {
         "type": "string",
-        "description": "Текст по умолчанию (инлайн-HTML), если нет активного переопределения в bot_messages.",
+        "description": "Default text (inline HTML) when there is no active override in bot_messages.",
         "minLength": 1
       }
     }

@@ -31,7 +31,41 @@ CREATE TABLE IF NOT EXISTS bot_messages (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
 
-_TABLES = ["bot_messages"]
+# Minimal mirrors of the Laravel `media` and `bot_message_media` tables — enough
+# for repository tests of message attachments (get_attachments joins the two).
+_CREATE_MEDIA = """
+CREATE TABLE IF NOT EXISTS media (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    filename VARCHAR(255) NOT NULL,
+    original_name VARCHAR(255) NULL,
+    mime_type VARCHAR(255) NULL,
+    type VARCHAR(32) NULL,
+    size BIGINT NULL,
+    has_thumb TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
+
+_CREATE_BOT_MESSAGE_MEDIA = """
+CREATE TABLE IF NOT EXISTS bot_message_media (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    code VARCHAR(128) NOT NULL,
+    media_id BIGINT UNSIGNED NOT NULL,
+    position INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NULL,
+    updated_at TIMESTAMP NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY bot_message_media_code_media_unique (code, media_id),
+    KEY bot_message_media_code_idx (code),
+    CONSTRAINT bot_message_media_media_fk
+        FOREIGN KEY (media_id) REFERENCES media (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
+
+# Truncated child-first; foreign-key checks are disabled during truncation anyway.
+_TABLES = ["bot_messages", "bot_message_media", "media"]
 
 @pytest.fixture
 async def db_pool() -> AsyncIterator[aiomysql.Pool]:
@@ -49,6 +83,8 @@ async def db_pool() -> AsyncIterator[aiomysql.Pool]:
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(_CREATE_BOT_MESSAGES)
+            await cur.execute(_CREATE_MEDIA)
+            await cur.execute(_CREATE_BOT_MESSAGE_MEDIA)
             await cur.execute("SET FOREIGN_KEY_CHECKS=0")
             for tbl in _TABLES:
                 await cur.execute(f"TRUNCATE TABLE {tbl}")

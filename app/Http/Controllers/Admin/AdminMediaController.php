@@ -100,6 +100,39 @@ class AdminMediaController extends Controller
     }
 
     /**
+     * Browse the library as JSON for the media picker (search + pagination).
+     *
+     * Unlike index() (a full Inertia page), this feeds a modal opened from other
+     * screens — e.g. attaching media to a bot message. Returns a paginator payload:
+     * { data: [...], current_page, last_page }.
+     */
+    public function browse(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $media = Media::query()
+            ->when($data['search'] ?? null, fn ($q, $term) => $q->search($term))
+            ->orderByDesc('id')
+            ->paginate(24, ['*'], 'page', $data['page'] ?? 1);
+
+        return response()->json([
+            'data' => $media->getCollection()->map(fn (Media $m) => [
+                'id' => $m->id,
+                'url' => $m->url(),
+                'thumb_url' => $m->thumbUrl(),
+                'type' => $m->type,
+                'original_name' => $m->original_name,
+                'size' => $m->size,
+            ])->all(),
+            'current_page' => $media->currentPage(),
+            'last_page' => $media->lastPage(),
+        ]);
+    }
+
+    /**
      * Polling for the frontend: returns a JSON array of media newer than after_id
      * (by descending id, no more than limit). Used to track the progress of
      * asynchronous uploads.

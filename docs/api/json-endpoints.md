@@ -4,13 +4,13 @@ This is a server-driven **Inertia** application: the vast majority of routes ret
 Inertia page objects (HTML/JSON) or a `RedirectResponse` with flash and validation
 errors (see [response-conventions.md](response-conventions.md)), **not** a JSON API.
 
-There are only **four** "real" JSON/XHR endpoints that the frontend reads directly
+There are only **five** "real" JSON/XHR endpoints that the frontend reads directly
 via `fetch`. Their response shapes are an implicit contract between the controller
 and Vue; this file pins it down in one place.
 
 ## Authentication for all JSON endpoints
 
-All four live under `/admin/*` and are protected by a **session cookie + CSRF**, not
+All five live under `/admin/*` and are protected by a **session cookie + CSRF**, not
 a token. They are part of the admin SPA, not a public API:
 
 - requests carry the same session as the page (the `*_session` cookie);
@@ -32,6 +32,7 @@ a token. They are part of the admin SPA, not a public API:
 | GET   | `/admin/search`               | `users.view` and/or `media.view` | `{ results: [...] }`      |
 | GET   | `/admin/notifications/recent` | `activity-log.view`             | `{ count, items: [...] }` |
 | GET   | `/admin/media/poll`           | `media.view`                    | **bare array** `[...]`    |
+| GET   | `/admin/media/browse`         | `media.view`                    | `{ data, current_page, last_page }` |
 | POST  | `/admin/media`                | `media.upload`                  | `{ queued: <int> }`       |
 
 ---
@@ -147,6 +148,45 @@ Returns media with `id > after_id`, descending by `id`, at most `limit`.
 
 `created_at` is an already-formatted `d.m.Y H:i` string, not ISO. `filename` is only
 the base name (no path).
+
+---
+
+## GET `/admin/media/browse` — media picker (paginated)
+
+`AdminMediaController@browse`. Consumer — `resources/js/admin/components/MediaPicker.vue`
+(a modal for picking files from the library, e.g. attaching media to a bot message).
+Unlike `media/poll` (a bare array of recent uploads), this is a searchable, paginated
+browse feed.
+
+**Permission:** `media.view`.
+
+**Request** (validated inline in the controller):
+
+| Parameter | Rules                          | Default |
+| --------- | ------------------------------ | ------- |
+| `search`  | `nullable, string, max:255`    | —       |
+| `page`    | `nullable, integer, min:1`     | `1`     |
+
+`search` matches the file name (substring); results are 24 per page, descending by `id`.
+
+**Response** `200 application/json` (a trimmed paginator envelope, NOT the full Laravel one):
+
+```json
+{
+    "data": [
+        {
+            "id": 105,
+            "url": "/storage/media/abc.webp",
+            "thumb_url": "/storage/media/abc_thumb.webp",
+            "type": "image",
+            "original_name": "Моё фото.png",
+            "size": 24576
+        }
+    ],
+    "current_page": 1,
+    "last_page": 3
+}
+```
 
 ---
 

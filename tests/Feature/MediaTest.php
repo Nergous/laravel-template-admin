@@ -15,6 +15,42 @@ class MediaTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_browse_returns_paginated_json_for_picker(): void
+    {
+        $this->actingAsUserWith(['media.view']);
+        Media::create(['filename' => 'media/a.webp', 'original_name' => 'a.webp', 'type' => 'image']);
+        $b = Media::create(['filename' => 'media/b.pdf', 'original_name' => 'b.pdf', 'type' => 'document']);
+
+        $this->getJson(route('admin.media.browse'))
+            ->assertOk()
+            ->assertJsonStructure([
+                'data' => [['id', 'url', 'thumb_url', 'type', 'original_name', 'size']],
+                'current_page',
+                'last_page',
+            ])
+            ->assertJsonPath('data.0.id', $b->id) // newest first
+            ->assertJsonCount(2, 'data');
+    }
+
+    public function test_browse_filters_by_search(): void
+    {
+        $this->actingAsUserWith(['media.view']);
+        Media::create(['filename' => 'media/report.pdf', 'original_name' => 'report.pdf']);
+        Media::create(['filename' => 'media/photo.webp', 'original_name' => 'photo.webp']);
+
+        $this->getJson(route('admin.media.browse', ['search' => 'report']))
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.original_name', 'report.pdf');
+    }
+
+    public function test_browse_forbidden_without_view_permission(): void
+    {
+        $this->actingAsUserWith([]);
+
+        $this->getJson(route('admin.media.browse'))->assertForbidden();
+    }
+
     public function test_upload_queues_a_job_per_file(): void
     {
         Storage::fake('local');

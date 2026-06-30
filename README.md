@@ -226,6 +226,13 @@ external bot. The source of truth for codes/labels/defaults is the shared JSON r
 `bot_messages` table (`App\Models\BotMessage`); a "reset" deletes the override and restores
 the default from the registry.
 
+Each message can also have **media attachments** from the library (photos, PDFs, …) —
+picked in a modal inside the drawer, stored in the `bot_message_media` table, and sent
+alongside the text. The bot reads those files from the Laravel public disk; in Docker the
+storage volume is mounted read-only into the bot container (`MEDIA_ROOT`, see
+`modules/max-bot/README.md`). Without the bot's queue/worker considerations this needs no
+extra setup beyond the storage symlink that media already requires.
+
 The module is **toggleable**. The flag is `config('bot.enabled')`, which is turned on by either of:
 
 - `BOT_ACTIVE=true` (the app layer; local runs). In `.env.example` it defaults to

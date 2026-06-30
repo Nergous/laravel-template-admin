@@ -11,6 +11,7 @@
   POST            admin/logout .................................................. logout › Auth\LoginController@logout
   GET|HEAD        admin/media ................................... admin.media.index › Admin\AdminMediaController@index
   POST            admin/media ................................... admin.media.store › Admin\AdminMediaController@store
+  GET|HEAD        admin/media/browse .......................... admin.media.browse › Admin\AdminMediaController@browse
   DELETE          admin/media/bulk ................. admin.media.bulk-destroy › Admin\AdminMediaController@bulkDestroy
   GET|HEAD        admin/media/poll ................................ admin.media.poll › Admin\AdminMediaController@poll
   DELETE          admin/media/{media} ....................... admin.media.destroy › Admin\AdminMediaController@destroy
@@ -48,5 +49,5 @@
   GET|HEAD        storage/{path} ....................................................................... storage.local
   GET|HEAD        up ................................................................................................. 
 
-                                                                                                   Showing [48] routes
+                                                                                                   Showing [49] routes
 

@@ -97,6 +97,10 @@ Route::prefix('/admin')->group(function () {
             Route::get('media/poll', [AdminMediaController::class, 'poll'])
                 ->name('admin.media.poll');
 
+            // JSON browse for the media picker (e.g. attaching media to a bot message).
+            Route::get('media/browse', [AdminMediaController::class, 'browse'])
+                ->name('admin.media.browse');
+
             Route::get('media', [AdminMediaController::class, 'index'])
                 ->name('admin.media.index');
         });

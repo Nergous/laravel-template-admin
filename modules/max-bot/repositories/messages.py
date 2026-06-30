@@ -25,6 +25,15 @@ class MessageDef:
     description: str
     default: str
 
+
+@dataclass(frozen=True)
+class MessageAttachment:
+    """A media file attached to a message code (joined from bot_message_media → media)."""
+
+    filename: str          # path relative to the public disk, e.g. "media/abc.webp"
+    mime_type: str | None
+    original_name: str | None
+
 def _load_registry() -> dict[str, MessageDef]:
     raw = json.loads(_REGISTRY_PATH.read_text(encoding="utf-8"))
     return {
@@ -85,3 +94,36 @@ class MessageRepository:
             log.error("unknown message code requested: %r", code)
             return ""
         return message.default
+
+    async def get_attachments(self, code: str) -> list[MessageAttachment]:
+        """Media attached to a message code, in the order set in the admin panel.
+
+        Joins bot_message_media → media. Degrades to an empty list on any error
+        (e.g. the optional table is absent) so a greeting is never blocked by it.
+        """
+        try:
+            async with read(self._pool) as cur:
+                await cur.execute(
+                    """
+                    SELECT m.filename, m.mime_type, m.original_name
+                    FROM bot_message_media bmm
+                    JOIN media m ON m.id = bmm.media_id
+                    WHERE bmm.code = %s
+                    ORDER BY bmm.position, bmm.id
+                    """,
+                    (code,),
+                )
+                rows = await cur.fetchall()
+        except Exception:
+            log.exception("failed to load attachments for code %r", code)
+            return []
+
+        return [
+            MessageAttachment(
+                filename=row["filename"],
+                mime_type=row.get("mime_type"),
+                original_name=row.get("original_name"),
+            )
+            for row in rows
+            if row.get("filename")
+        ]

@@ -1,9 +1,9 @@
-"""Валидирует messages.json против messages.schema.json.
+"""Validates messages.json against messages.schema.json.
 
-Реестр — общий контракт Python ↔ Laravel, поэтому его форму держим под тестом.
-Проверка без зависимости jsonschema: интерпретируем подмножество схемы, которое
-реально используется (type/required/additionalProperties/pattern/minItems и т.п.).
-Так схема остаётся машинной правдой, а тест ловит расхождение реестра с ней.
+The registry is a shared Python ↔ Laravel contract, so we keep its shape under test.
+Validation without a jsonschema dependency: we interpret the subset of the schema that
+is actually used (type/required/additionalProperties/pattern/minItems, etc.).
+This way the schema stays the machine truth, and the test catches a registry that diverges from it.
 """
 import json
 import re
@@ -24,7 +24,7 @@ def test_registry_matches_schema():
     registry = _load(_REGISTRY)
     schema = _load(_SCHEMA)
 
-    assert isinstance(registry, list), "messages.json должен быть массивом"
+    assert isinstance(registry, list), "messages.json must be an array"
     assert len(registry) >= schema["minItems"]
 
     item_schema = schema["items"]
@@ -33,22 +33,22 @@ def test_registry_matches_schema():
     code_pattern = re.compile(props["code"]["pattern"])
 
     for i, item in enumerate(registry):
-        assert isinstance(item, dict), f"запись {i} не объект"
+        assert isinstance(item, dict), f"entry {i} is not an object"
 
-        # additionalProperties: false — никаких лишних ключей.
+        # additionalProperties: false — no extra keys.
         extra = set(item) - set(props)
-        assert not extra, f"запись {i}: лишние ключи {extra}"
+        assert not extra, f"entry {i}: extra keys {extra}"
 
         for key in required:
-            assert key in item, f"запись {i}: нет обязательного ключа {key!r}"
-            assert isinstance(item[key], str), f"запись {i}: {key!r} должен быть строкой"
-            assert item[key].strip(), f"запись {i}: {key!r} не должен быть пустым"
+            assert key in item, f"entry {i}: missing required key {key!r}"
+            assert isinstance(item[key], str), f"entry {i}: {key!r} must be a string"
+            assert item[key].strip(), f"entry {i}: {key!r} must not be empty"
 
         assert code_pattern.fullmatch(item["code"]), \
-            f"запись {i}: code {item['code']!r} не подходит под {props['code']['pattern']}"
+            f"entry {i}: code {item['code']!r} does not match {props['code']['pattern']}"
 
 
 def test_registry_codes_unique():
     codes = [item["code"] for item in _load(_REGISTRY)]
     duplicates = {c for c in codes if codes.count(c) > 1}
-    assert not duplicates, f"дублирующиеся коды в messages.json: {duplicates}"
+    assert not duplicates, f"duplicate codes in messages.json: {duplicates}"

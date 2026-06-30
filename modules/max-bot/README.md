@@ -73,6 +73,34 @@ The live contract:
 > The table is created **only when the bot is enabled**: `BotServiceProvider` registers
 > `migrations/bot/` only when `config('bot.enabled')`.
 
+### 2b. The `bot_message_media` table — attachments
+
+Migration `database/migrations/bot/...create_bot_message_media_table.php`. A message can
+carry media files (photos, PDFs, …) picked from the admin's media library. They are keyed
+by the message **`code`** (not by a `bot_messages` row), so a message can keep its default
+text yet still have attachments, and resetting the text does not drop them.
+
+| Column | Type | Meaning |
+|---|---|---|
+| `id` | PK | — |
+| `code` | string(128) | message code from the registry |
+| `media_id` | FK media, **cascade on delete** | the attached file |
+| `position` | uint | order set in the admin |
+
+The live contract:
+
+- **Laravel writes:** `AdminBotMessageController@update` syncs the set from `media_ids[]`
+  (validated by `BotMessageRequest`, capped by `config('bot.max_attachments')`).
+- **Python reads:** `MessageRepository.get_attachments(code)` joins `bot_message_media → media`
+  and returns `(filename, mime_type, original_name)` in `position` order.
+
+The bot needs the **file bytes** to upload them to MAX, so it must see the Laravel
+`public` disk on disk. The path is `MEDIA_ROOT` + the media `filename`
+(e.g. `media/abc.webp`); the library uploads it via `bot.send_message(attachments=[InputMedia(...)])`
+(see `utils/messaging.py`). In Docker the storage volume is mounted **read-only** into the
+bot container and `MEDIA_ROOT=/app/storage/app/public` (see `docker-compose.yml`). A file
+missing on disk is skipped, never fatal.
+
 ### 3. The text format contract — inline HTML only
 
 The admin edits the text in `NRichText` and stores **inline HTML**. The bot sends it with
@@ -106,6 +134,7 @@ is looked up first in `modules/max-bot/.env`, then in the admin panel root (one 
 | `API_BASE_URL` | no | `https://platform-api.max.ru` | base URL of the MAX API |
 | `DB_HOST` | no | `127.0.0.1` | DB host |
 | `DB_PORT` | no | `3306` | DB port |
+| `MEDIA_ROOT` | no | repo `storage/app/public` | root of the Laravel public disk where message attachments are read from (Docker: `/app/storage/app/public`, storage volume mounted read-only) |
 | `MAX_API_RATE_LIMIT_HZ` | no | `20` | MAX API request limit, Hz |
 
 A missing required variable → `ValueError` on startup.
@@ -142,7 +171,7 @@ modules/max-bot/
 ├── messages.schema.json # JSON schema of the registry (validated in tests)
 ├── config/config.py     # loading env → dataclass Config
 ├── handlers/            # event handlers (bot_started, bot_added are active)
-├── repositories/        # messages.py (registry + override), db.py (aiomysql pool)
-├── utils/               # rate_limiter etc.
+├── repositories/        # messages.py (registry + override + attachments), db.py (aiomysql pool)
+├── utils/               # messaging.py (send text + media attachments), rate_limiter etc.
 └── log/                 # logging setup
 ```

@@ -1,7 +1,8 @@
 """Application settings loaded from env variables"""
 
-import os 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 
 def _required(name: str) -> str:
@@ -9,6 +10,15 @@ def _required(name: str) -> str:
     if not val:
         raise ValueError(f"Environment variable {name} is required")
     return val
+
+
+# Root of the Laravel `public` disk where media files live (filename column is
+# relative to it, e.g. "media/abc.webp"). In Docker the storage volume is mounted
+# read-only and MEDIA_ROOT points at it; for a local run it defaults to the repo's
+# storage/app/public (config.py is at modules/max-bot/config/config.py).
+_DEFAULT_MEDIA_ROOT = str(
+    Path(__file__).resolve().parents[3] / "storage" / "app" / "public"
+)
 
 @dataclass(frozen=True)
 class DbConfig:
@@ -24,6 +34,7 @@ class Config:
     api_token: str
     bot_id: int
     db: DbConfig
+    media_root: str
     max_api_rate_limit_hz: int = 20
 
     @classmethod
@@ -39,5 +50,6 @@ class Config:
                 user=_required("DB_USERNAME"),
                 password=_required("DB_PASSWORD"),
             ),
+            media_root=os.getenv("MEDIA_ROOT", _DEFAULT_MEDIA_ROOT),
             max_api_rate_limit_hz=int(os.getenv("MAX_API_RATE_LIMIT_HZ", 20)),
         )

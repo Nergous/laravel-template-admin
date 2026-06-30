@@ -96,6 +96,7 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | ------ | ---------------- | -------------- | --------------------- | -------------------------------- |
 | GET    | `/media`         | `media.view`   | —                     | list                             |
 | GET    | `/media/poll`    | `media.view`   | — (inline validation) | JSON polling                     |
+| GET    | `/media/browse`  | `media.view`   | — (inline validation) | JSON picker (search + pagination) |
 | POST   | `/media`         | `media.upload` | (also `media.upload`) | `MediaRequest`, JSON, needs CSRF |
 | DELETE | `/media/{media}` | `media.delete` | —                     | —                                |
 | DELETE | `/media/bulk`    | `media.delete` | —                     | `BulkDestroyMediaRequest`        |
@@ -114,7 +115,7 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | Method | URI                    | Route permission                    | Action permission | Notes                                              |
 | ------ | ---------------------- | ----------------------------------- | -------------- | -------------------------------------------------- |
 | GET    | `/bot-messages`        | `bot.enabled` + `bot-messages.view` | —              | —                                                  |
-| PUT    | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | `BotMessageRequest`; `{code}` ∈ registry, else 404 |
+| PUT    | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | `BotMessageRequest`; `{code}` ∈ registry, else 404; `media_ids[]` attach library files (need `media.view` to pick) |
 | DELETE | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | reset to default (route name `reset`)              |
 
 > When `config('bot.enabled') === false`, the `EnsureBotEnabled` middleware returns

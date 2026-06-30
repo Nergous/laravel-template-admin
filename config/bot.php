@@ -10,4 +10,7 @@ return [
 
     // Path to the shared JSON message registry (the source of truth, also read by the bot).
     'registry' => base_path('modules/max-bot/messages.json'),
+
+    // Max media files that can be attached to a single bot message (admin-side cap).
+    'max_attachments' => 10,
 ];

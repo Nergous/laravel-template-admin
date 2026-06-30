@@ -6,8 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\BotMessageRequest;
 use App\Models\ActivityLog;
 use App\Models\BotMessage;
+use App\Models\BotMessageMedia;
+use App\Models\Media;
 use App\Support\BotMessageCatalog;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 /**
@@ -16,12 +19,24 @@ use Inertia\Inertia;
  */
 class AdminBotMessageController extends Controller
 {
-    /** List of codes from the registry with their current overrides. */
+    /** List of codes from the registry with their current overrides and attachments. */
     public function index(): \Inertia\Response
     {
         $overrides = BotMessage::all()->keyBy('code');
 
-        $messages = array_map(function (array $def) use ($overrides) {
+        // Attachments grouped by code (ordered), with the media payload the picker
+        // and the previews need (url/thumb/type/name).
+        $attachments = BotMessageMedia::with('media')
+            ->orderBy('position')
+            ->get()
+            ->groupBy('code')
+            ->map(fn ($rows) => $rows
+                ->filter(fn (BotMessageMedia $r) => $r->media !== null)
+                ->map(fn (BotMessageMedia $r) => $this->mediaPayload($r->media))
+                ->values()
+            );
+
+        $messages = array_map(function (array $def) use ($overrides, $attachments) {
             $override = $overrides->get($def['code']);
 
             return [
@@ -32,6 +47,7 @@ class AdminBotMessageController extends Controller
                 'text' => $override?->text ?? $def['default'],
                 'is_overridden' => $override !== null,
                 'is_active' => $override?->is_active ?? true,
+                'attachments' => $attachments->get($def['code'], collect())->all(),
             ];
         }, BotMessageCatalog::all());
 
@@ -49,16 +65,20 @@ class AdminBotMessageController extends Controller
     {
         abort_unless(BotMessageCatalog::find($code) !== null, 404);
 
-        $message = BotMessage::updateOrCreate(
-            ['code' => $code],
-            [
-                'text' => $request->input('text'),
-                'is_active' => $request->boolean('is_active', true),
-                'updated_by' => auth()->id(),
-            ],
-        );
+        DB::transaction(function () use ($request, $code) {
+            $message = BotMessage::updateOrCreate(
+                ['code' => $code],
+                [
+                    'text' => $request->input('text'),
+                    'is_active' => $request->boolean('is_active', true),
+                    'updated_by' => auth()->id(),
+                ],
+            );
 
-        ActivityLog::record($message, 'updated');
+            $this->syncAttachments($code, $request->mediaIds());
+
+            ActivityLog::record($message, 'updated');
+        });
 
         return back()->with('success', 'Сообщение обновлено');
     }
@@ -79,5 +99,42 @@ class AdminBotMessageController extends Controller
         }
 
         return back()->with('success', 'Текст сброшен к значению по умолчанию');
+    }
+
+    /**
+     * Replaces the attachment set of a message code with the given media ids,
+     * preserving their order. Ids the user can't see (missing media) are skipped
+     * by the FormRequest's exists rule before we get here.
+     *
+     * @param  list<int>  $mediaIds  Media ids in display order
+     */
+    private function syncAttachments(string $code, array $mediaIds): void
+    {
+        BotMessageMedia::where('code', $code)
+            ->whereNotIn('media_id', $mediaIds ?: [0])
+            ->delete();
+
+        foreach (array_values($mediaIds) as $position => $mediaId) {
+            BotMessageMedia::updateOrCreate(
+                ['code' => $code, 'media_id' => $mediaId],
+                ['position' => $position],
+            );
+        }
+    }
+
+    /**
+     * Shapes a Media row for the frontend (picker + drawer previews).
+     *
+     * @return array{id:int,url:string,thumb_url:string,type:?string,original_name:?string}
+     */
+    private function mediaPayload(Media $media): array
+    {
+        return [
+            'id' => $media->id,
+            'url' => $media->url(),
+            'thumb_url' => $media->thumbUrl(),
+            'type' => $media->type,
+            'original_name' => $media->original_name,
+        ];
     }
 }

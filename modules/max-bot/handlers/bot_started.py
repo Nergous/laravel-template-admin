@@ -1,10 +1,10 @@
 """Bot started handler: greets the user with the WELCOME message."""
 from maxapi import Dispatcher
-from maxapi.enums import ParseMode
 
 from handlers import HandlerDeps
 from log.log import get_logger
 from repositories.messages import WELCOME
+from utils.messaging import send_bot_message
 
 log = get_logger("handler.bot_started")
 
@@ -16,10 +16,5 @@ def register(dp: Dispatcher, deps: HandlerDeps) -> None:
 
 
 async def handle_bot_started(event, deps: HandlerDeps) -> None:
-    # Тексты редактируются в админке через NRichText и хранятся как HTML
-    # (инлайн-разметка), поэтому отправляем с format=HTML.
-    text = await deps.messages.get(WELCOME)
-    if text:
-        await deps.bot.send_message(
-            chat_id=event.chat_id, text=text, format=ParseMode.HTML
-        )
+    # Text (admin override or default) plus any media attached to this code.
+    await send_bot_message(deps, chat_id=event.chat_id, code=WELCOME)

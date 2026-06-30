@@ -7,6 +7,18 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Media attachments for bot messages.** A bot message can now carry files from the
+  media library (photos, PDFs, …) — several at once, capped by `config('bot.max_attachments')`.
+  They are picked in a new reusable `MediaPicker` modal (backed by `GET /admin/media/browse`,
+  gated by `media.view`) inside the bot-message drawer, stored in the `bot_message_media`
+  pivot keyed by the message `code` (independent of the text override — resetting the text
+  keeps the attachments), and synced from `media_ids[]`. The Python bot joins them to `media`,
+  reads the file from the Laravel public disk (`MEDIA_ROOT`; in Docker the storage volume is
+  mounted read-only into the bot container) and uploads it to MAX via the `maxapi` library
+  (`utils/messaging.py`). A file missing on disk is skipped, never fatal.
+
 ### Changed
 
 - **Codebase internationalized to English.** All code comments (PHPDoc, inline,

@@ -34,6 +34,10 @@ class BotMessageRequest extends FormRequest
         return [
             'text' => ['required', 'string', 'max:4000'],
             'is_active' => ['boolean'],
+            // Media attached from the library, in display order. Unknown/foreign ids
+            // are rejected by exists; the count is capped by config('bot.max_attachments').
+            'media_ids' => ['array', 'max:'.(int) config('bot.max_attachments', 10)],
+            'media_ids.*' => ['integer', 'exists:media,id'],
         ];
     }
 
@@ -42,6 +46,18 @@ class BotMessageRequest extends FormRequest
         return [
             'text.required' => 'Текст сообщения обязателен',
             'text.max' => 'Текст слишком длинный (максимум 4000 символов)',
+            'media_ids.max' => 'Слишком много вложений (максимум :max)',
+            'media_ids.*.exists' => 'Выбранный файл не найден в медиатеке',
         ];
+    }
+
+    /**
+     * Validated media ids in display order, normalized to a list of ints.
+     *
+     * @return list<int>
+     */
+    public function mediaIds(): array
+    {
+        return array_values(array_map('intval', $this->input('media_ids', []) ?? []));
     }
 }

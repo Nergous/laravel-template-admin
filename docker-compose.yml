@@ -1,26 +1,26 @@
 # =============================================================================
-#  Самодостаточный PRODUCTION-стек: app + db (MariaDB) + redis + queue + scheduler.
+#  Self-contained PRODUCTION stack: app + db (MariaDB) + redis + queue + scheduler.
 #
-#  Запуск:
-#    cp .env.example .env        # затем выставить APP_ENV=production, APP_DEBUG=false,
-#                                # APP_KEY (php artisan key:generate), DB_*/REDIS_* как ниже
+#  Run:
+#    cp .env.example .env        # then set APP_ENV=production, APP_DEBUG=false,
+#                                # APP_KEY (php artisan key:generate), DB_*/REDIS_* as below
 #    docker compose up -d --build
 #
-#  Для разработки используйте отдельный файл:
+#  For development use a separate file:
 #    docker compose -f compose.dev.yaml up
 #
-#  По умолчанию стек ПОЛНОСТЬЮ изолирован (своя БД и redis в контейнерах).
-#  Чтобы подключиться к уже существующей внешней БД — задайте DB_HOST на внешний
-#  адрес и закомментируйте сервис `db` + его depends_on.
+#  By default the stack is FULLY isolated (its own DB and redis in containers).
+#  To connect to an already existing external DB — set DB_HOST to the external
+#  address and comment out the `db` service + its depends_on.
 #
-#  ВАЖНО (TLS): стек отдаёт приложение по ОБЫЧНОМУ HTTP (порт APP_PORT->8000,
-#  auto_https off). Это НЕ полноценный publicly-facing прод сам по себе — ставьте
-#  его ЗА внешним reverse-proxy с терминацией TLS (Caddy/Traefik/nginx/ingress).
-#  За HTTPS обязательно: SESSION_SECURE_COOKIE=true и HSTS (см. .env.example),
-#  а trustProxies в bootstrap/app.php имеет смысл сузить до CIDR вашего прокси.
+#  IMPORTANT (TLS): the stack serves the app over PLAIN HTTP (port APP_PORT->8000,
+#  auto_https off). This is NOT a fully publicly-facing prod on its own — put
+#  it BEHIND an external reverse proxy that terminates TLS (Caddy/Traefik/nginx/ingress).
+#  Behind HTTPS, mandatory: SESSION_SECURE_COOKIE=true and HSTS (see .env.example),
+#  and it makes sense to narrow trustProxies in bootstrap/app.php to your proxy's CIDR.
 #
-#  Лимиты ресурсов (mem_limit/cpus) и ротация логов (logging) ниже — это
-#  консервативная СТАРТОВАЯ точка для одного хоста; тюнингуйте под свою нагрузку.
+#  Resource limits (mem_limit/cpus) and log rotation (logging) below are a
+#  conservative STARTING point for a single host; tune them for your load.
 # =============================================================================
 
 services:
@@ -34,14 +34,14 @@ services:
     env_file: [.env]
     environment:
       RUN_MIGRATIONS: "true"
-      # Базовый RBAC (роли + права) сеется ВСЕГДА вместе с миграциями (см. entrypoint.sh).
-      # RUN_SEEDS управляет только ДЕМО/боевыми ПОЛЬЗОВАТЕЛЯМИ (UserSeeder). В production
-      # оставить "false" и завести админа через `app:create-admin` (или RUN_SEEDS=true + ADMIN_PASSWORD).
+      # The base RBAC (roles + permissions) is ALWAYS seeded together with the migrations (see entrypoint.sh).
+      # RUN_SEEDS only controls DEMO/real USERS (UserSeeder). In production
+      # leave it "false" and create the admin via `app:create-admin` (or RUN_SEEDS=true + ADMIN_PASSWORD).
       RUN_SEEDS: "${RUN_SEEDS:-false}"
     ports:
       - "${APP_PORT:-8888}:8000"
     volumes:
-      # Только пользовательские данные. Код и vendor — внутри образа (immutable).
+      # User data only. Code and vendor live inside the image (immutable).
       - storage-data:/app/storage
     networks: [internal]
     depends_on:
@@ -56,7 +56,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
-    # Лимиты ресурсов (compose v2, non-swarm учитывает mem_limit/cpus).
+    # Resource limits (compose v2, non-swarm honors mem_limit/cpus).
     cpus: "1.5"
     mem_limit: 512m
     logging:
@@ -66,10 +66,10 @@ services:
         max-file: "3"
 
   queue:
-    # Воркер очереди: обрабатывает Job'ы (сейчас — асинхронная загрузка медиа
-    # UploadMedia). Не нужен воркер — выставь QUEUE_CONNECTION=sync в .env и не
-    # поднимай этот сервис: джобы выполнятся прямо в HTTP-запросе app. Размен и
-    # детали — в README (Troubleshooting / раздел Docker).
+    # Queue worker: processes Jobs (currently — the asynchronous media upload
+    # UploadMedia). Don't want a worker — set QUEUE_CONNECTION=sync in .env and
+    # don't bring up this service: the jobs run right inside the app HTTP request. The
+    # trade-off and details are in the README (Troubleshooting / Docker section).
     image: ${APP_IMAGE:-laravel-admin-template}:latest
     container_name: ${APP_CONTAINER_NAME:-admin-template}-queue
     restart: unless-stopped
@@ -83,9 +83,9 @@ services:
       - storage-data:/app/storage
     networks: [internal]
     depends_on:
-      # service_healthy ⇒ app уже прошёл entrypoint (миграции накатились, таблица
-      # jobs есть) — воркер не уходит в рестарт-цикл на холодном старте.
-      # restart: unless-stopped остаётся страховкой на рантайм-сбои.
+      # service_healthy ⇒ app has already passed entrypoint (migrations applied, the
+      # jobs table exists) — the worker doesn't go into a restart loop on a cold start.
+      # restart: unless-stopped remains a safety net against runtime failures.
       app:
         condition: service_healthy
       db:
@@ -93,7 +93,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # У worker'а нет HTTP-endpoint'а: liveness = artisan отвечает и БД доступна.
+      # The worker has no HTTP endpoint: liveness = artisan responds and the DB is reachable.
       test: ["CMD", "php", "artisan", "db:show", "--quiet"]
       interval: 60s
       timeout: 10s
@@ -116,15 +116,15 @@ services:
       RUN_MIGRATIONS: "false"
       RUN_SEEDS: "false"
       OPTIMIZE: "false"
-    # schedule:work держит планировщик в одном процессе (не нужен системный cron).
-    # Гоняет периодические задачи из routes/console.php — как минимум ежедневную
-    # чистку журнала действий (model:prune для activity_log).
+    # schedule:work keeps the scheduler in a single process (no system cron needed).
+    # Runs the periodic tasks from routes/console.php — at least the daily
+    # cleanup of the activity log (model:prune for activity_log).
     command: php artisan schedule:work
     volumes:
       - storage-data:/app/storage
     networks: [internal]
     depends_on:
-      # см. queue: ждём service_healthy, чтобы не стартовать до миграций.
+      # see queue: we wait for service_healthy so we don't start before migrations.
       app:
         condition: service_healthy
       db:
@@ -138,21 +138,28 @@ services:
         max-file: "3"
 
   bot:
-    # Опциональный модуль. Поднимается только при COMPOSE_PROFILES=bot.
+    # Optional module. Comes up only when COMPOSE_PROFILES=bot.
     profiles: ["bot"]
     build:
       context: ./modules/max-bot
     image: ${APP_IMAGE:-laravel-admin-template}-bot:latest
     container_name: ${APP_CONTAINER_NAME:-admin-template}-bot
     restart: unless-stopped
-    # Корневой .env даёт DB-креды; modules/max-bot/.env — API_TOKEN/BOT_ID/LOG_LEVEL_BOT
-    # (шаблон: modules/max-bot/.env.example). Файл бота подключается рантаймом и НЕ
-    # запекается в образ (modules/max-bot/.dockerignore).
+    # The root .env provides the DB credentials; modules/max-bot/.env — API_TOKEN/BOT_ID/LOG_LEVEL_BOT
+    # (template: modules/max-bot/.env.example). The bot's file is wired in at runtime and is NOT
+    # baked into the image (modules/max-bot/.dockerignore).
     env_file: [.env, ./modules/max-bot/.env]
     environment:
-      # Бот в Docker ходит к сервису `db`, а не к 127.0.0.1 из modules/max-bot/.env.
+      # In Docker the bot talks to the `db` service, not to 127.0.0.1 from modules/max-bot/.env.
       DB_HOST: db
       DB_PORT: "3306"
+      # Where Laravel's public disk (storage/app/public) is mounted. The bot reads
+      # the media-library files attached to messages from here and uploads them to MAX.
+      MEDIA_ROOT: /app/storage/app/public
+    volumes:
+      # The same volume as app/queue/scheduler, but read-only: the bot only needs to read
+      # the already uploaded media files, not modify them.
+      - storage-data:/app/storage:ro
     networks: [internal]
     depends_on:
       db:
@@ -172,14 +179,14 @@ services:
     environment:
       MARIADB_DATABASE: ${DB_DATABASE:-laravel}
       MARIADB_USER: ${DB_USERNAME:-laravel}
-      # Пароли БД ОБЯЗАТЕЛЬНЫ — дефолтов нет. compose упадёт, если не заданы.
-      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD обязателен для Docker-стека (дефолта нет)}
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD обязателен (дефолта нет)}
+      # DB passwords are MANDATORY — there are no defaults. compose will fail if they aren't set.
+      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required for the Docker stack (no default)}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD is required (no default)}
     volumes:
       - db-data:/var/lib/mysql
     networks: [internal]
-    # Порт наружу по умолчанию не публикуем (БД доступна только внутри сети).
-    # Для отладки раскомментируйте:
+    # By default we don't publish the port externally (the DB is reachable only inside the network).
+    # For debugging, uncomment:
     # ports:
     #   - "${DB_PORT:-3306}:3306"
     healthcheck:

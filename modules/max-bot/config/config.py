@@ -29,7 +29,7 @@ class Config:
     @classmethod
     def from_env(cls) -> Config:
         return cls(
-            api_base_url=os.getenv("API_BASE_URL", "https://platform-api.max.ru"),
+            api_base_url=os.getenv("API_BASE_URL", "https://platform-api2.max.ru"),
             api_token=_required("API_TOKEN"),
             bot_id=int(_required("BOT_ID")),
             db=DbConfig(

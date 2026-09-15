@@ -1,0 +1,10 @@
+# Dependencies (none today — the library is zero-build source; kept for future tooling/playground)
+node_modules/
+dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/

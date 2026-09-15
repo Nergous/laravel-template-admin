@@ -86,7 +86,7 @@ useDismiss(() => props.modelValue, close);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
-    overflow: hidden;
+    overflow: visible;
     animation: n-pop 0.16s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .n-modal__head {

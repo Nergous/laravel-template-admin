@@ -17,6 +17,7 @@ import NInput from "./components/forms/NInput.vue";
 import NTextarea from "./components/forms/NTextarea.vue";
 import NRichText from "./components/forms/NRichText.vue";
 import NSelect from "./components/forms/NSelect.vue";
+import NSelectWithSearch from "./components/forms/NSelectWithSearch.vue";
 import NCheckbox from "./components/forms/NCheckbox.vue";
 import NRadioGroup from "./components/forms/NRadioGroup.vue";
 import NSwitch from "./components/forms/NSwitch.vue";
@@ -75,6 +76,7 @@ export {
     NFormField,
     NInput,
     NSelect,
+    NSelectWithSearch,
     NTextarea,
     NRichText,
     NSwitch,

@@ -11,7 +11,7 @@ project and import from the barrel.
 
 ## Requirements
 
-- **Vue 3** (`^3.3`) — the only peer dependency.
+- **Vue 3** (`^3.5`) — the only peer dependency.
 - A bundler that understands `.vue` single-file components and `.css` imports
   (Vite, Rollup, webpack, …). Vite is the reference setup.
 
@@ -183,6 +183,7 @@ also exported standalone from the barrel.
 | `NFormField` | Field wrapper: label + control + error/hint | `label`, `error`, `hint`, `required`, `tag` (`label`/`div`), `labelId`; passes an a11y contract to the nested control via `useFormField` (provide/inject — `aria-describedby`/`aria-invalid`/`aria-required`) |
 | `NInput` | Text input | `v-model`, `type`, `icon`, `error`, `placeholder` |
 | `NSelect` | Themed listbox (replaces native `<select>`) | `v-model` (value), `options: [{value,label,disabled?}]`, `placeholder`, `error` |
+| `NSelectWithSearch` | Searchable single-select listbox; English search/empty defaults | `v-model` (value), `options: [{value,label,disabled?}]`, `placeholder`, `searchPlaceholder`, `noResultsText`, `error` |
 | `NTextarea` | Multi-line input | `v-model`, `rows` |
 | `NRichText` | Mini WYSIWYG on `contenteditable` | `v-model` (HTML string), `placeholder`, `error`, `disabled`, `labels` (toolbar captions), `tools` (limit the button set). With `NFormField` use `tag="div"` |
 | `NSwitch` | Toggle | `v-model` (Boolean) |
@@ -282,6 +283,18 @@ inside the system; they react to the active theme and density for free:
   padding: var(--sp-4);
 }
 ```
+
+## Selects inside forms and dialogs
+
+Use the `options` prop and `v-model`; native `<option>` children are not supported.
+Option clicks suppress the wrapping label's default activation so picking an option
+closes the list without reopening it. `NModal` allows the list to extend beyond
+its body, and Escape closes an open select before dismissing the dialog.
+
+`NSelectWithSearch` defaults to `searchPlaceholder="Search…"` and
+`noResultsText="No results"`. Pass localized strings at the call site.
+`NDataTable` accepts `rowClass(row)` for consumer-defined row highlighting;
+`NToaster` centers single-line notifications vertically.
 
 ## Demos
 

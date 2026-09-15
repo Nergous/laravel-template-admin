@@ -217,19 +217,28 @@ function bulkDelete() {
 // invite modal
 const invite = ref(false);
 const inviteEmail = ref("");
+const roleOpts = [
+    { value: "Owner", label: "Owner" },
+    { value: "Admin", label: "Admin" },
+    { value: "Editor", label: "Editor" },
+    { value: "Viewer", label: "Viewer" },
+];
+const inviteRoleOpts = roleOpts.filter((option) => option.value !== "Owner");
+const inviteRole = ref("Editor");
 function submitInvite() {
     const em = inviteEmail.value.trim() || "new.user@nergous-cit.app";
     members.value.unshift({
         id: Date.now(),
         name: em.split("@")[0].replace(/\./g, " "),
         email: em,
-        role: "Editor",
+        role: inviteRole.value,
         status: "invited",
         plan: "Free",
         lastActive: "—",
     });
     invite.value = false;
     inviteEmail.value = "";
+    inviteRole.value = "Editor";
     toast.success("Приглашение отправлено", em);
 }
 
@@ -482,11 +491,7 @@ function onFiles(files) {
                     icon="mail"
                     placeholder="name@company.com"
                 />
-                <NSelect
-                    ><option>Editor</option>
-                    <option>Admin</option>
-                    <option>Viewer</option></NSelect
-                >
+                <NSelect v-model="inviteRole" :options="inviteRoleOpts" />
             </div>
             <template #footer="{ close }">
                 <NButton variant="secondary" block @click="close"
@@ -518,12 +523,7 @@ function onFiles(files) {
                     <label>Email<NInput v-model="drawer.email" /></label>
                     <label
                         >Роль
-                        <NSelect v-model="drawer.role"
-                            ><option>Owner</option>
-                            <option>Admin</option>
-                            <option>Editor</option>
-                            <option>Viewer</option></NSelect
-                        >
+                        <NSelect v-model="drawer.role" :options="roleOpts" />
                     </label>
                 </div>
             </template>

@@ -42,6 +42,9 @@ const props = defineProps({
     // Returns the label for `row`; without it role="button" derives the name from
     // the row's cell text, which is usually too verbose — pass this for a clean name.
     rowLabel: { type: Function, default: null },
+    // Extra class(es) per row: (row) => string | string[] | object. Lets a consumer
+    // highlight rows (e.g. unprocessed items) without the table knowing the domain.
+    rowClass: { type: Function, default: null },
 });
 const emit = defineEmits(["update:selected", "row-click", "sort-change"]);
 
@@ -233,11 +236,14 @@ const isSel = (r) => props.selected.includes(r[props.rowKey]);
                     <tr
                         v-for="row in paged"
                         :key="row[rowKey]"
-                        :class="{
-                            on: isSel(row),
-                            hoverable: hover,
-                            interactive: rowInteractive,
-                        }"
+                        :class="[
+                            {
+                                on: isSel(row),
+                                hoverable: hover,
+                                interactive: rowInteractive,
+                            },
+                            rowClass ? rowClass(row) : null,
+                        ]"
                         :role="rowInteractive ? 'button' : undefined"
                         :tabindex="rowInteractive ? 0 : undefined"
                         :aria-label="

@@ -41,7 +41,10 @@ const roleFor = (tone) =>
                     v-for="t in toasts"
                     :key="t.id"
                     class="n-toast"
-                    :class="'n-toast--' + t.tone"
+                    :class="[
+                        'n-toast--' + t.tone,
+                        { 'n-toast--single': !(t.title && t.msg) },
+                    ]"
                 >
                     <span class="n-toast__icon" aria-hidden="true"
                         ><NIcon :name="ICONS[t.tone] || 'check'" :size="15"
@@ -95,6 +98,10 @@ const roleFor = (tone) =>
     border-radius: 12px;
     box-shadow: var(--shadow-lg);
     pointer-events: auto;
+}
+/* Single-line toast (only a title OR only a msg): center icon, text, close vertically. */
+.n-toast--single {
+    align-items: center;
 }
 .n-toast--ok {
     border-left-color: var(--ok);

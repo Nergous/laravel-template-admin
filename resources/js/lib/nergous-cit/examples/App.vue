@@ -39,6 +39,13 @@ const radio = ref("b");
 const seg = ref("list");
 const tab = ref("t1");
 const role = ref("editor");
+const roleOpts = [
+    { value: "admin", label: "Admin" },
+    { value: "editor", label: "Editor" },
+    { value: "viewer", label: "Viewer" },
+];
+const inviteRoleOpts = roleOpts.filter((option) => option.value !== "admin");
+const inviteRole = ref("editor");
 const modal = ref(false);
 const drawer = ref(false);
 
@@ -101,6 +108,11 @@ const statusOpts = [
     { value: "draft", label: "Черновик" },
     { value: "scheduled", label: "Запланирован" },
     { value: "published", label: "Опубликован" },
+];
+const categoryOpts = [
+    { value: "product", label: "Продукт" },
+    { value: "eng", label: "Инженерия" },
+    { value: "news", label: "Новости" },
 ];
 // Both shells edit the same conceptual record.
 const post = reactive({
@@ -173,11 +185,7 @@ const post = reactive({
                         icon="search"
                         placeholder="Поиск"
                     />
-                    <NSelect v-model="role">
-                        <option value="admin">Admin</option>
-                        <option value="editor">Editor</option>
-                        <option value="viewer">Viewer</option>
-                    </NSelect>
+                    <NSelect v-model="role" :options="roleOpts" />
                     <NTextarea v-model="desc" :rows="2" />
                 </div>
             </NCard>
@@ -327,11 +335,10 @@ const post = reactive({
                         <template v-else-if="step.value === 'taxonomy'">
                             <label class="demo__field"
                                 ><span>Категория</span>
-                                <NSelect v-model="post.category">
-                                    <option value="product">Продукт</option>
-                                    <option value="eng">Инженерия</option>
-                                    <option value="news">Новости</option>
-                                </NSelect>
+                                <NSelect
+                                    v-model="post.category"
+                                    :options="categoryOpts"
+                                />
                             </label>
                             <label class="demo__field"
                                 ><span>Теги</span><NInput v-model="post.tags"
@@ -444,11 +451,10 @@ const post = reactive({
                     <div class="demo__col">
                         <label class="demo__field"
                             ><span>Категория</span>
-                            <NSelect v-model="post.category">
-                                <option value="product">Продукт</option>
-                                <option value="eng">Инженерия</option>
-                                <option value="news">Новости</option>
-                            </NSelect>
+                            <NSelect
+                                v-model="post.category"
+                                :options="categoryOpts"
+                            />
                         </label>
                         <label class="demo__field"
                             ><span>Теги</span><NInput v-model="post.tags"
@@ -521,10 +527,7 @@ const post = reactive({
         >
             <div class="demo__col">
                 <NInput icon="mail" placeholder="name@company.com" />
-                <NSelect
-                    ><option>Editor</option>
-                    <option>Viewer</option></NSelect
-                >
+                <NSelect v-model="inviteRole" :options="inviteRoleOpts" />
             </div>
             <template #footer="{ close }">
                 <NButton variant="secondary" block @click="close"

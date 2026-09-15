@@ -8,7 +8,7 @@
 //   isActive  — reactive source (ref / getter) truthy while the overlay is open.
 //   onDismiss — called when Escape is pressed and this overlay is the topmost one.
 // Behaviour:
-//   • on activation: pushes onto the shared stack and listens for Escape (capture).
+//   • on activation: pushes onto the shared stack and listens for Escape.
 //   • Escape: only the top-of-stack overlay calls onDismiss + stops the event, so a
 //     drawer → modal stack closes just the modal, then the drawer on a second press.
 //   • on deactivation / unmount: removes its listener and leaves the stack.
@@ -26,6 +26,7 @@ export function useDismiss(isActive, onDismiss) {
 
     function onKeydown(e) {
         if (e.key !== "Escape") return;
+        if (e.defaultPrevented) return;
         // Stand down unless we're the topmost open overlay.
         if (dismissStack[dismissStack.length - 1] !== id) return;
         e.preventDefault();
@@ -36,11 +37,11 @@ export function useDismiss(isActive, onDismiss) {
 
     function activate() {
         if (!dismissStack.includes(id)) dismissStack.push(id);
-        document.addEventListener("keydown", onKeydown, true);
+        document.addEventListener("keydown", onKeydown);
     }
 
     function deactivate() {
-        document.removeEventListener("keydown", onKeydown, true);
+        document.removeEventListener("keydown", onKeydown);
         const idx = dismissStack.indexOf(id);
         if (idx !== -1) dismissStack.splice(idx, 1);
     }

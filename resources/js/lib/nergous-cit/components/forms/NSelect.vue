@@ -201,7 +201,7 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
                     role="option"
                     :aria-selected="opt.value === modelValue"
                     :aria-disabled="opt.disabled || undefined"
-                    @click="selectOption(opt)"
+                    @click.stop.prevent="selectOption(opt)"
                     @mousemove="onOptionHover(i, opt)"
                 >
                     <span class="n-select__opt-label">{{ opt.label }}</span>
@@ -286,6 +286,8 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
     margin: 0;
     padding: 6px;
     min-width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     max-height: 280px;
     overflow-y: auto;
     list-style: none;
@@ -308,7 +310,9 @@ onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
 }
 .n-select__opt-label {
     flex: 1;
-    white-space: nowrap;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .n-select__opt-check {
     flex: none;

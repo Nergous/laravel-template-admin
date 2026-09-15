@@ -56,9 +56,6 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
 
             'appName' => config('app.name'),
-            'bot' => [
-                'enabled' => config('bot.enabled'),
-            ],
 
             'auth' => [
                 'user' => $user ? [

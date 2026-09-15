@@ -28,17 +28,6 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
-  # --- Python bot (pip) ---
-  - package-ecosystem: pip
-    directory: "/modules/max-bot"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      pip-minor:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-
   # --- Application base image (Dockerfile + docker-compose) ---
   - package-ecosystem: docker
     directory: "/"
@@ -46,16 +35,6 @@ updates:
       interval: weekly
     groups:
       docker-minor:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-
-  # --- Bot base image (modules/max-bot/Dockerfile) ---
-  - package-ecosystem: docker
-    directory: "/modules/max-bot"
-    schedule:
-      interval: weekly
-    groups:
-      bot-docker-minor:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 

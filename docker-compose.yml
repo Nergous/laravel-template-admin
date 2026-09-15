@@ -138,41 +138,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  bot:
-    # Optional module. Comes up only when COMPOSE_PROFILES=bot.
-    profiles: ["bot"]
-    build:
-      context: ./modules/max-bot
-    image: ${APP_IMAGE:-laravel-admin-template}-bot:latest
-    container_name: ${APP_CONTAINER_NAME:-admin-template}-bot
-    restart: unless-stopped
-    # The root .env provides the DB credentials; modules/max-bot/.env — API_TOKEN/BOT_ID/LOG_LEVEL_BOT
-    # (template: modules/max-bot/.env.example). The bot's file is wired in at runtime and is NOT
-    # baked into the image (modules/max-bot/.dockerignore).
-    env_file: [.env, ./modules/max-bot/.env]
-    environment:
-      # In Docker the bot talks to the `db` service, not to 127.0.0.1 from modules/max-bot/.env.
-      DB_HOST: db
-      DB_PORT: "3306"
-      # Where Laravel's public disk (storage/app/public) is mounted. The bot reads
-      # the media-library files attached to messages from here and uploads them to MAX.
-      MEDIA_ROOT: /app/storage/app/public
-    volumes:
-      # The same volume as app/queue/scheduler, but read-only: the bot only needs to read
-      # the already uploaded media files, not modify them.
-      - storage-data:/app/storage:ro
-    networks: [internal]
-    depends_on:
-      db:
-        condition: service_healthy
-    cpus: "0.5"
-    mem_limit: 256m
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   db:
     image: mariadb:11
     container_name: ${APP_CONTAINER_NAME:-admin-template}-db

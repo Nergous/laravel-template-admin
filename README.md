@@ -157,9 +157,6 @@ docker compose up -d --build
   `DB_CONNECTION=sqlite`, the entrypoint **fails with a clear error**: SQLite in a container
   is ephemeral and would lose data on recreation. For a deliberate SQLite on a persistent
   volume — `ALLOW_SQLITE_IN_PRODUCTION=true`.
-- **The optional bot module** — the `bot` service (built from `modules/max-bot`)
-  comes up only with `COMPOSE_PROFILES=bot`. The same variable also enables the bot's
-  app layer (`config('bot.enabled')`, see ["Bot messages (optional module)"](#bot-messages-optional-module)).
 - The database (`db`) is not published externally — it is reachable only within the stack's network.
   To use an external database, set `DB_HOST` to the external address and remove the
   `db` service (+ its `depends_on`).
@@ -189,12 +186,7 @@ docker compose down -v                           # tear down along with data
 | Media library    | `/admin/media`        | `media.view`        |
 | Activity log     | `/admin/activity-log` | `activity-log.view` |
 | Settings         | `/admin/settings`     | `settings.view`     |
-| Bot messages\*   | `/admin/bot-messages` | `bot-messages.view` |
-
-> \* — an optional module, available only when the bot is enabled (`config('bot.enabled')`);
-> otherwise the routes return 404 and the sidebar item is hidden.
-
-> The "Permission" column is access to the section (viewing). Actions are gated **granularly**: create/edit — `*.create`/`*.edit` (in `FormRequest::authorize()`), delete — `*.delete` (middleware on destroy routes). For media: upload — `media.upload`, rename — `media.edit`, delete — `media.delete`. Settings: write — `settings.edit`; bot messages: edit — `bot-messages.edit`. If you create a custom role with `*.view` but without `*.delete`, the server-side protection still kicks in (403), but you should also hide the delete buttons in the UI via `can('*.delete')` (see `resources/js/lib/can.js`).
+> The "Permission" column is access to the section (viewing). Actions are gated **granularly**: create/edit — `*.create`/`*.edit` (in `FormRequest::authorize()`), delete — `*.delete` (middleware on destroy routes). For media: upload — `media.upload`, rename — `media.edit`, delete — `media.delete`. Settings: write — `settings.edit`. If you create a custom role with `*.view` but without `*.delete`, the server-side protection still kicks in (403), but you should also hide the delete buttons in the UI via `can('*.delete')` (see `resources/js/lib/can.js`).
 
 ### Base permissions
 
@@ -206,7 +198,6 @@ The `RolePermissionSeeder` seeder creates:
 - `media.{view,upload,edit,delete}`
 - `activity-log.{view,delete}`
 - `settings.{view,edit}`
-- `bot-messages.{view,edit}` — only when the bot module is enabled
 
 Roles: `admin` — all permissions; `operator` — media library only (`media.*`). Both are marked `is_system`.
 
@@ -224,43 +215,6 @@ and invalidated on write; validation is handled by `UpdateSettingsRequest`.
 > `canonical_domain`) in `Setting::SCHEMA` are neutral placeholders; replace them here
 > or through the UI. The `/admin` dashboard is also a demo: its KPIs are tied to the
 > template's entities — rewrite it for your own domain (`AdminDashboardController` + `pages/Dashboard.vue`).
-
-### Bot messages (optional module)
-
-The `/admin/bot-messages` section lets an administrator override the texts sent by the
-external bot. The source of truth for codes/labels/defaults is the shared JSON registry
-`modules/max-bot/messages.json` (`config('bot.registry')`, read by the
-`App\Support\BotMessageCatalog` class). Edits are stored as overrides in the
-`bot_messages` table (`App\Models\BotMessage`); a "reset" deletes the override and restores
-the default from the registry.
-
-Each message can also have **media attachments** from the library (photos, PDFs, …) —
-picked in a modal inside the drawer, stored in the `bot_message_media` table, and sent
-alongside the text. The bot reads those files from the Laravel public disk; in Docker the
-storage volume is mounted read-only into the bot container (`MEDIA_ROOT`, see
-`modules/max-bot/README.md`). Without the bot's queue/worker considerations this needs no
-extra setup beyond the storage symlink that media already requires.
-
-Message edits record old/new field values in the activity log. Cmd+K also searches
-message labels, codes and override text when the bot is enabled and the user has
-`bot-messages.view`. The external bot supports polling (default) and opt-in webhook
-delivery; see `modules/max-bot/README.md` for configuration.
-
-The module is **toggleable**. The flag is `config('bot.enabled')`, which is turned on by either of:
-
-- `BOT_ACTIVE=true` (the app layer; local runs). In `.env.example` it defaults to
-  `false`, so the module is off out of the box — set `BOT_ACTIVE=true` to enable it.
-- `COMPOSE_PROFILES` contains `bot` (Docker — the same variable brings up the `bot` container).
-
-When disabled: the `bot.enabled` middleware (`EnsureBotEnabled`) returns 404 on the routes,
-`BotServiceProvider` does not register the `database/migrations/bot/` migrations, the
-`bot-messages.*` permissions are not seeded, and the sidebar item is hidden.
-
-> **Enabling the bot later?** The `bot-messages.*` permissions are seeded only when the bot is enabled.
-> After enabling it, re-seed them (idempotently):
-> `php artisan db:seed --class=Database\Seeders\RolePermissionSeeder` — otherwise the bot
-> section will be inaccessible (its routes sit behind `permission:bot-messages.view`). The bot's
-> migrations apply themselves once the flag is on: `php artisan migrate`.
 
 ### UI features
 
@@ -302,7 +256,7 @@ A quick recipe for the current stack (Inertia + Vue):
    (transactions, syncing relations, logging, invariants): the controller then stays
    thin — it validates input and renders, while the service makes the decisions. For simple CRUD
    a service is optional: the controller can work with the model directly (like
-   `AdminBotMessageController`/`AdminSettingsController`). The "when to use a service" boundary is
+   `AdminSettingsController`). The "when to use a service" boundary is
    in [CLAUDE.md](CLAUDE.md). Throw rule violations via
    `Illuminate\Validation\ValidationException::withMessages([...])` — Laravel returns a
    `redirect back` with the error under the right key itself, and the controller needs no `try/catch`.
@@ -396,24 +350,21 @@ laravel-template-admin/
 ├── app/
 │   ├── Console/Commands/        # CreateAdmin (app:create-admin), BackfillThumbnails
 │   ├── Http/
-│   │   ├── Controllers/Admin/   # Dashboard, Users, Roles, Permissions, Media, ActivityLog, Settings, BotMessage, Search
+│   │   ├── Controllers/Admin/   # Dashboard, Users, Roles, Permissions, Media, ActivityLog, Settings, Search
 │   │   ├── Controllers/Auth/    # LoginController
-│   │   ├── Middleware/          # SecurityHeaders, HandleInertiaRequests (shared props), EnsureBotEnabled
+│   │   ├── Middleware/          # SecurityHeaders, HandleInertiaRequests (shared props)
 │   │   ├── Requests/            # FormRequest for validation
 │   │   └── Sorts/               # Table sorting strategies (UserSort, MediaSort)
 │   ├── Jobs/UploadMedia.php     # Asynchronous media processing (WebP + thumbnails)
-│   ├── Models/                  # User, Media, ActivityLog, Setting, BotMessage
-│   ├── Providers/               # AppServiceProvider, BotServiceProvider (optional bot module)
+│   ├── Models/                  # User, Media, ActivityLog, Setting
+│   ├── Providers/               # AppServiceProvider, SettingsServiceProvider
 │   ├── Services/ImageOptimizer  # WebP conversion and thumbnails
-│   ├── Support/BotMessageCatalog # reads the bot messages JSON registry
 │   └── Traits/                  # LogsActivity, HasSearch, TracksAuthor
-├── config/{permission,inertia,bot,audit,rbac}.php  # audit: subjects + log retention; rbac: the superadmin name
+├── config/{permission,inertia,audit,rbac}.php  # audit: subjects + log retention; rbac: the superadmin name
 ├── database/
 │   ├── migrations/              # users, media, activity_log, settings, permission_tables, …
-│   │   └── bot/                 # bot module migrations (loaded only when the bot is enabled)
 │   └── seeders/                 # RolePermissionSeeder, UserSeeder
 ├── lang/ru/                     # activity.php, permissions.php (localization)
-├── modules/max-bot/             # optional external bot (source of truth — messages.json)
 ├── resources/
 │   ├── js/
 │   │   ├── admin/               # Inertia app: app.js, pages/, layouts/, components/, composables/
@@ -429,10 +380,8 @@ laravel-template-admin/
 
 ## Documentation
 
-- **The API surface** (4 JSON endpoints and their contracts, the per-route permission matrix and
+- **The API surface** (5 JSON endpoints and their contracts, the per-route permission matrix and
   error catalog, response conventions, a `route:list` snapshot) — in **[docs/](docs/README.md)**.
-- **The bot module** (the Python ↔ Laravel contract) — in
-  **[modules/max-bot/README.md](modules/max-bot/README.md)**.
 
 **Health check.** The application serves `GET /up` (Laravel's standard health route,
 `bootstrap/app.php`) — it returns 200 once it's up. Used in the services' Docker

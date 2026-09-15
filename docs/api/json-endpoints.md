@@ -46,8 +46,7 @@ ignored (an empty `results` is returned). At most **5** matches per entity.
 
 **Permission:** the endpoint is under `auth`, but result types are filtered inline via
 `can()`: the `user` block is returned only with `users.view`, the `media` block —
-only with `media.view`. The `bot-message` block also requires the enabled bot module
-and `bot-messages.view`; it searches catalog labels/codes and override/default text.
+only with `media.view`.
 With no matching view permissions you get `{ "results": [] }` (not a 403).
 
 **Response** `200 application/json`:
@@ -73,7 +72,7 @@ With no matching view permissions you get `{ "results": [] }` (not a 403).
 }
 ```
 
-Fields of each result: `type` (`user`|`media`|`bot-message`), `label`, `meta`, `url`, `icon`.
+Fields of each result: `type` (`user`|`media`), `label`, `meta`, `url`, `icon`.
 
 > To add a new entity to search, follow the pattern of the block in the controller (a
 > new `if ($user?->can('xxx.view'))` with `->map(...)` into the same shape).
@@ -156,7 +155,7 @@ the base name (no path).
 ## GET `/admin/media/browse` — media picker (paginated)
 
 `AdminMediaController@browse`. Consumer — `resources/js/admin/components/MediaPicker.vue`
-(a modal for picking files from the library, e.g. attaching media to a bot message).
+(a reusable modal for picking files from the library).
 Unlike `media/poll` (a bare array of recent uploads), this is a searchable, paginated
 browse feed.
 

@@ -3,9 +3,6 @@
   GET|HEAD        admin ....................................... admin.dashboard › Admin\AdminDashboardController@index
   GET|HEAD        admin/activity-log ............... admin.activity-log.index › Admin\AdminActivityLogController@index
   DELETE          admin/activity-log ............... admin.activity-log.clear › Admin\AdminActivityLogController@clear
-  GET|HEAD        admin/bot-messages ................ admin.bot-messages.index › Admin\AdminBotMessageController@index
-  PUT             admin/bot-messages/{code} ....... admin.bot-messages.update › Admin\AdminBotMessageController@update
-  DELETE          admin/bot-messages/{code} ....... admin.bot-messages.reset › Admin\AdminBotMessageController@destroy
   GET|HEAD        admin/login ...................................................... login › Auth\LoginController@show
   POST            admin/login ............................................... admin.login › Auth\LoginController@login
   POST            admin/logout .................................................. logout › Auth\LoginController@logout
@@ -51,5 +48,5 @@
   PUT             storage/{path} storage.local.upload › vendor/laravel/framework/src/Illuminate/Filesystem/Filesystem…
   GET|HEAD        up ..... vendor/laravel/framework/src/Illuminate/Foundation/Configuration/ApplicationBuilder.php:219
 
-                                                                                                   Showing [51] routes
+                                                                                                    Showing [48] routes
 

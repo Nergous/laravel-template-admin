@@ -30,7 +30,7 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 
 ## Notation
 
-- **Route permission** — middleware `permission:*` (or `auth` / `guest` / `bot.enabled`).
+- **Route permission** — middleware `permission:*` (or `auth` / `guest`).
 - **Action permission** — what `FormRequest::authorize()` actually checks (when it
   differs from the route permission).
 - All routes are under the `/admin` prefix.
@@ -111,17 +111,6 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | GET    | `/settings`     | `settings.view`       | —              | —                                                      |
 | PUT    | `/settings`     | `settings.edit`       | —              | `UpdateSettingsRequest` (rules from `Setting::SCHEMA`) |
 
-### Bot Messages (module under `bot.enabled`)
-
-| Method | URI                    | Route permission                    | Action permission | Notes                                              |
-| ------ | ---------------------- | ----------------------------------- | -------------- | -------------------------------------------------- |
-| GET    | `/bot-messages`        | `bot.enabled` + `bot-messages.view` | —              | —                                                  |
-| PUT    | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | `BotMessageRequest`; `{code}` ∈ registry, else 404; `media_ids[]` attach library files (need `media.view` to pick) |
-| DELETE | `/bot-messages/{code}` | `bot.enabled` + `bot-messages.edit` | —              | reset to default (route name `reset`)              |
-
-> When `config('bot.enabled') === false`, the `EnsureBotEnabled` middleware returns
-> **404** on all three (the module is indistinguishable from a non-existent one).
-
 ---
 
 ## Error catalog
@@ -132,7 +121,7 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **401 / redirect to `/login`** | unauthenticated request to a route under `auth`                                                                                       |
 | **403**                        | missing the required permission (route middleware **or** `FormRequest::authorize()`)                                                 |
-| **404**                        | model not found (`{user}`/`{role}`/…), user/media not in trash, disabled bot module, unknown bot message `{code}`                     |
+| **404**                        | model not found (`{user}`/`{role}`/…), user/media not in trash                                                                         |
 | **419**                        | mutation without a valid CSRF token (relevant for `POST /media`)                                                                      |
 | **422**                        | Form Request validation error **or** a domain check (see below)                                                                      |
 | **429**                        | the `throttle:login` limit on `POST /login` exceeded (by default **5/min per IP**, configurable via `security.login_throttle`)       |

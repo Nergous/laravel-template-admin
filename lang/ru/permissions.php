@@ -14,7 +14,6 @@ return [
         'media' => 'Медиатека',
         'activity-log' => 'Журнал действий',
         'settings' => 'Настройки',
-        'bot-messages' => 'Сообщения бота',
         'other' => 'Прочее',
     ],
 

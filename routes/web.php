@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Admin\AdminActivityLogController;
-use App\Http\Controllers\Admin\AdminBotMessageController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminMediaController;
 use App\Http\Controllers\Admin\AdminPermissionController;
@@ -97,7 +96,7 @@ Route::prefix('/admin')->group(function () {
             Route::get('media/poll', [AdminMediaController::class, 'poll'])
                 ->name('admin.media.poll');
 
-            // JSON browse for the media picker (e.g. attaching media to a bot message).
+            // JSON browse for reusable media picker interfaces.
             Route::get('media/browse', [AdminMediaController::class, 'browse'])
                 ->name('admin.media.browse');
 
@@ -144,21 +143,5 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.settings.update');
         });
 
-        // Bot messages (optional module; routes guarded by the bot.enabled middleware).
-        Route::middleware('bot.enabled')->group(function () {
-            Route::middleware('permission:bot-messages.view')
-                ->get('bot-messages', [AdminBotMessageController::class, 'index'])
-                ->name('admin.bot-messages.index');
-
-            Route::middleware('permission:bot-messages.edit')->group(function () {
-                Route::put('bot-messages/{code}', [AdminBotMessageController::class, 'update'])
-                    ->where('code', '[a-z0-9_]+')
-                    ->name('admin.bot-messages.update');
-
-                Route::delete('bot-messages/{code}', [AdminBotMessageController::class, 'destroy'])
-                    ->where('code', '[a-z0-9_]+')
-                    ->name('admin.bot-messages.reset');
-            });
-        });
     });
 });

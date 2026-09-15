@@ -127,22 +127,6 @@ const sections = computed(() => [
             },
         ],
     },
-    ...(page.props.bot?.enabled
-        ? [
-              {
-                  label: "Бот",
-                  items: [
-                      {
-                          id: "botMessages",
-                          label: "Сообщения бота",
-                          icon: "mail",
-                          href: "/admin/bot-messages",
-                          perm: "bot-messages.view",
-                      },
-                  ],
-              },
-          ]
-        : []),
     {
         label: "Система",
         items: [

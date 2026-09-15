@@ -19,7 +19,6 @@ return [
     'subjects' => [
         'user' => 'Пользователь',
         'media' => 'Медиа',
-        'bot_message' => 'Сообщение бота',
         'role' => 'Роль',
         'permission' => 'Разрешение',
     ],

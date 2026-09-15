@@ -30,17 +30,6 @@ class RolePermissionSeeder extends Seeder
             'settings.view', 'settings.edit',
         ];
 
-        // Bot permissions are seeded only when the bot is enabled. If you enable
-        // the bot LATER (BOT_ACTIVE=true / COMPOSE_PROFILES=bot) — re-create the permissions:
-        //   php artisan db:seed --class=Database\\Seeders\\RolePermissionSeeder
-        // (firstOrCreate is idempotent). Otherwise bot-messages.* won't appear and the bot routes
-        // (gated by permission:bot-messages.view) will be unreachable. We deliberately do NOT seed
-        // them always: otherwise a "dead" feature's permissions would dangle in the matrix while the bot is off.
-        if (config('bot.enabled')) {
-            $permissions[] = 'bot-messages.view';
-            $permissions[] = 'bot-messages.edit';
-        }
-
         foreach ($permissions as $name) {
             Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
         }

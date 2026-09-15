@@ -9,7 +9,7 @@ have to be inferred from the code for each page.
 | ------------ | -------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
 | **Inertia**  | a page object `Inertia::render('Xxx/Index', [...])` (HTML on first hit, JSON on navigation)        | section GET pages                                   |
 | **Redirect** | a `RedirectResponse` (`redirect()->route(...)` or `back()`) with flash and/or validation errors    | mutations (`store`/`update`/`destroy`/…)            |
-| **JSON**     | `response()->json(...)` — a real XHR response                                                       | 4 endpoints, see [json-endpoints.md](json-endpoints.md) |
+| **JSON**     | `response()->json(...)` — a real XHR response                                                       | 5 endpoints, see [json-endpoints.md](json-endpoints.md) |
 
 Mutations do **not** return JSON — they redirect, and the result is shown via a
 flash toast on the next page.
@@ -25,7 +25,6 @@ pages via `usePage().props`:
 | `auth.can`    | a flat list of the user's **permission names**; read by the `can(perm)` helper (`resources/js/lib/can.js`) for conditional rendering |
 | `counts`      | lazy aggregates for the sidebar/bell badges                                                                                |
 | `flash`       | flash messages (`success`/`error`/`warning`/`info`) → toasts                                                               |
-| `bot.enabled` | whether the bot module is enabled (`config('bot.enabled')`) — gates the sidebar item                                       |
 | `appName`     | the application name (from settings)                                                                                       |
 
 Any information needed globally in Vue is added here rather than passed into every

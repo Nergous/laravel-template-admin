@@ -22,7 +22,7 @@ const props = defineProps({
     // Already-attached media objects ({ id, url, thumb_url, type, original_name, size }),
     // used to seed the selection when the modal opens.
     preselected: { type: Array, default: () => [] },
-    // Max files that can be selected (mirrors config('bot.max_attachments')).
+    // Max files that can be selected by the consuming form.
     max: { type: Number, default: 10 },
 });
 const emit = defineEmits(["update:modelValue", "select"]);

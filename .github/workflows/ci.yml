@@ -1,6 +1,6 @@
 name: CI
 
-# Lint, tests (PHP + Python bot), frontend build, build and scan of the prod image.
+# Lint, PHP tests, frontend build, build and scan of the prod image.
 on:
   push:
     branches: [main]
@@ -115,29 +115,6 @@ jobs:
           retention-days: 7
 
   # --------------------------------------------------------------------------
-  # Python bot tests (pytest): isolated in-memory SQLite and mocked MAX API.
-  # conftest.py blocks network access and does not load application .env files.
-  # --------------------------------------------------------------------------
-  test-bot:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: modules/max-bot
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run pytest
-        run: pytest tests config handlers utils
-
-  # --------------------------------------------------------------------------
   # Build the prod image (only on push to main/tags). Layer cache via GHA.
   # The image is uploaded as an artifact for the scan job.
   # --------------------------------------------------------------------------
@@ -157,6 +134,7 @@ jobs:
           context: .
           target: prod
           tags: laravel-admin-template:ci
+          pull: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           outputs: type=docker,dest=/tmp/image.tar

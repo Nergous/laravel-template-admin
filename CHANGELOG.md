@@ -7,6 +7,18 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 ## [2.0.0] — 2026-09-15
 
+### Added
+
+- Added media display-name renaming with dedicated authorization, validation,
+  audit logging and UI support.
+- Added production-grade password validation coverage and Russian validation
+  messages for the admin forms.
+
+### Changed
+
+- Synchronized the shared Vue components with the hardened standalone UI package.
+- Hardened admin search, audit labels, container startup and CI isolation checks.
+
 ### Removed
 
 - Removed the optional Python bot module and its Laravel integration: bot-message

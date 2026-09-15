@@ -5,11 +5,29 @@ namespace Tests;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 
 abstract class TestCase extends BaseTestCase
 {
+    public function createApplication()
+    {
+        $app = parent::createApplication();
+
+        // This runs before RefreshDatabase can migrate or clear any tables.
+        if (! $app->environment('testing')
+            || $app['config']->get('database.default') !== 'sqlite'
+            || $app['config']->get('database.connections.sqlite.database') !== ':memory:'
+            || $app['config']->get('database.connections.sqlite.url')) {
+            throw new \RuntimeException('Tests require isolated SQLite :memory: with no DB_URL.');
+        }
+
+        Http::preventStrayRequests();
+
+        return $app;
+    }
+
     /**
      * The test suite runs pure PHP (no `npm run build`), so the Vite manifest is
      * absent. Stub Vite out globally — `@vite` in admin.blade.php would otherwise

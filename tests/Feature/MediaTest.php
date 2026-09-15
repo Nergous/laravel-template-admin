@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\UploadMedia;
+use App\Models\ActivityLog;
 use App\Models\Media;
 use App\Models\User;
 use App\Services\ImageOptimizer;
@@ -349,5 +350,59 @@ class MediaTest extends TestCase
         $this->artisan('media:backfill-thumbs')->assertSuccessful();
 
         $this->assertTrue($media->fresh()->has_thumb);
+    }
+
+    public function test_rename_updates_display_name_but_not_the_file_path(): void
+    {
+        $this->actingAsUserWith(['media.edit']);
+        $media = Media::create(['filename' => 'media/abc123.webp', 'original_name' => 'old.webp', 'type' => 'image']);
+
+        $this->patch(route('admin.media.update', $media), [
+            'original_name' => 'Новое имя.webp',
+        ])->assertRedirect();
+
+        $media->refresh();
+        $this->assertSame('Новое имя.webp', $media->original_name);
+        $this->assertSame('media/abc123.webp', $media->filename);
+    }
+
+    public function test_rename_is_written_to_the_activity_log(): void
+    {
+        $user = $this->actingAsUserWith(['media.edit']);
+        $media = Media::create(['filename' => 'media/abc123.webp', 'original_name' => 'old.webp']);
+
+        $this->patch(route('admin.media.update', $media), ['original_name' => 'new.webp'])
+            ->assertRedirect();
+
+        $log = ActivityLog::where('action', 'updated')
+            ->where('subject_type', Media::class)
+            ->latest('id')->first();
+        $this->assertNotNull($log);
+        $this->assertSame($user->id, $log->user_id);
+        $this->assertSame(['old.webp', 'new.webp'], $log->changes['original_name']);
+    }
+
+    public function test_rename_forbidden_without_edit_permission(): void
+    {
+        $this->actingAsUserWith(['media.view', 'media.upload', 'media.delete']);
+        $media = Media::create(['filename' => 'media/abc123.webp', 'original_name' => 'old.webp']);
+
+        $this->patch(route('admin.media.update', $media), ['original_name' => 'new.webp'])
+            ->assertForbidden();
+
+        $this->assertSame('old.webp', $media->fresh()->original_name);
+    }
+
+    public function test_rename_rejects_path_like_names(): void
+    {
+        $this->actingAsUserWith(['media.edit']);
+        $media = Media::create(['filename' => 'media/abc123.webp', 'original_name' => 'old.webp']);
+
+        foreach (['../evil.webp', 'dir/evil.webp', "bad\x00name"] as $name) {
+            $this->patch(route('admin.media.update', $media), ['original_name' => $name])
+                ->assertSessionHasErrors('original_name');
+        }
+
+        $this->assertSame('old.webp', $media->fresh()->original_name);
     }
 }

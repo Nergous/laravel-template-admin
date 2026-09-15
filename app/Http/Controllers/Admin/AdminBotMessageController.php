@@ -67,18 +67,29 @@ class AdminBotMessageController extends Controller
         abort_unless(BotMessageCatalog::find($code) !== null, 404);
 
         DB::transaction(function () use ($request, $code) {
-            $message = BotMessage::updateOrCreate(
-                ['code' => $code],
-                [
-                    'text' => $request->input('text'),
-                    'is_active' => $request->boolean('is_active', true),
-                    'updated_by' => auth()->id(),
-                ],
-            );
+            $message = BotMessage::firstOrNew(['code' => $code]);
+            $message->fill([
+                'text' => $request->input('text'),
+                'is_active' => $request->boolean('is_active', true),
+                'updated_by' => auth()->id(),
+            ]);
+
+            // Field diff (old → new) for the audit log, mirroring the LogsActivity
+            // trait: skip the updated_by bookkeeping column as noise.
+            $existed = $message->exists;
+            $changes = [];
+            foreach ($message->getDirty() as $key => $new) {
+                if ($key === 'updated_by') {
+                    continue;
+                }
+                $changes[$key] = [$message->getOriginal($key), $new];
+            }
+
+            $message->save();
 
             $this->syncAttachments($code, $request->mediaIds());
 
-            ActivityLog::record($message, 'updated');
+            ActivityLog::record($message, $existed ? 'updated' : 'created', $changes ?: null);
         });
 
         return back()->with('success', 'Сообщение обновлено');

@@ -43,6 +43,15 @@ function plain(html) {
     return (el.textContent || "").replace(/\s+/g, " ").trim();
 }
 
+// Text is stored with "\n" line breaks (MAX renders \n; the sanitizer collapses
+// block tags to \n on save). NRichText is a contenteditable — a bare \n in innerHTML
+// is whitespace, not a line break — so restore breaks as <br> when loading into the
+// editor. On save the editor emits <br>/<div> and the server sanitizer maps them back
+// to \n, so the round-trip is stable.
+function nl2br(text) {
+    return (text ?? "").replace(/\r?\n/g, "<br>");
+}
+
 // NRichText toolbar labels in Russian. The toolbar is limited to inline formatting
 // that MAX understands (format=html): bold/italic/strikethrough/code/link.
 const rteTools = ["bold", "italic", "strike", "code", "link"];
@@ -82,7 +91,7 @@ function openEdit(message) {
     current.value = message;
     attachments.value = [...(message.attachments ?? [])];
     form.defaults({
-        text: message.text,
+        text: nl2br(message.text),
         is_active: message.is_active,
         media_ids: attachments.value.map((m) => m.id),
     });
@@ -115,7 +124,7 @@ function submitEdit() {
 }
 
 function useDefault() {
-    if (current.value) form.text = current.value.default;
+    if (current.value) form.text = nl2br(current.value.default);
 }
 
 // Icon shown for a non-image attachment chip (mirrors Media/Index mapping).

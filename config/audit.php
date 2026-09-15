@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\BotMessage;
 use App\Models\Media;
 use App\Models\User;
 use Spatie\Permission\Models\Permission;
@@ -35,6 +36,7 @@ return [
     'subjects' => [
         User::class => 'user',
         Media::class => 'media',
+        BotMessage::class => 'bot_message',
         Role::class => 'role',
         Permission::class => 'permission',
     ],

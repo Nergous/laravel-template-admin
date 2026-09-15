@@ -21,7 +21,7 @@ class SoftDeleteAndAuditTest extends TestCase
         $this->post(route('admin.users.store'), [
             'name' => 'Reuser',
             'email' => 'reuse@example.com',
-            'password' => 'Password1',
+            'password' => 'Str0ng!Passw0rd#42',
             'roles' => [],
         ])->assertRedirect(route('admin.users.index'));
 
@@ -55,5 +55,13 @@ class SoftDeleteAndAuditTest extends TestCase
 
         $this->assertNull($log->user_id);
         $this->assertSame($admin->name, $log->actor_label);
+
+        $deletedLog = ActivityLog::where('subject_type', User::class)
+            ->where('subject_id', $admin->id)
+            ->where('action', 'force_deleted')
+            ->firstOrFail();
+
+        $this->assertNull($deletedLog->user_id);
+        $this->assertSame($admin->name, $deletedLog->actor_label);
     }
 }

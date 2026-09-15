@@ -92,7 +92,7 @@ Route::prefix('/admin')->group(function () {
         });
 
         // Media library: viewing under media.view, uploading under media.upload,
-        // deletion (single and bulk) under media.delete.
+        // renaming under media.edit, deletion (single and bulk) under media.delete.
         Route::middleware('permission:media.view')->group(function () {
             Route::get('media/poll', [AdminMediaController::class, 'poll'])
                 ->name('admin.media.poll');
@@ -108,6 +108,10 @@ Route::prefix('/admin')->group(function () {
         Route::middleware('permission:media.upload')->group(function () {
             Route::post('media', [AdminMediaController::class, 'store'])
                 ->name('admin.media.store');
+        });
+        Route::middleware('permission:media.edit')->group(function () {
+            Route::patch('media/{media}', [AdminMediaController::class, 'update'])
+                ->name('admin.media.update');
         });
         Route::middleware('permission:media.delete')->group(function () {
             Route::delete('media/bulk', [AdminMediaController::class, 'bulkDestroy'])

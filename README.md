@@ -4,7 +4,7 @@ An admin-panel template built on **Laravel 12** + **Inertia 3** + **Vue 3.5** (S
 
 - SPA on Inertia + Vue with the **nergous-cit** design system (dark theme, interface density, command palette) — with no runtime dependencies beyond `vue` + `inertia`;
 - **RBAC** via [spatie/laravel-permission](https://spatie.be/docs/laravel-permission) — roles, permissions, a granular access matrix, and a management UI;
-- A media library with asynchronous uploads and WebP conversion (the `UploadMedia` job + queue);
+- A media library with asynchronous uploads, WebP conversion (the `UploadMedia` job + queue), and display-name editing;
 - An activity log (`activity_log` + the `LogsActivity` trait) with a JSON diff of changes;
 - Application settings (typed key/value) and an optional "Bot messages" module.
 
@@ -16,8 +16,8 @@ Use it as a starting point for new projects: clone → remove the demo seeders �
 
 - **PHP** ^8.4 · **Laravel** ^12
 - **Inertia** ^3 (`inertiajs/inertia-laravel`) · **Vue** ^3.5 — SPA (a single Blade template, everything else in Vue)
-- **Vite** 7 · the **nergous-cit** design system (`resources/js/lib/nergous-cit`, a zero-deps Vue library) — a vendored snapshot from the standalone [`Nergous/nergous-cit`](https://github.com/Nergous/nergous-cit) repository; updated with `npm run ds:pull`
-- **spatie/laravel-permission** ^7 (RBAC)
+- **Vite** 8 · the **nergous-cit** design system (`resources/js/lib/nergous-cit`, a zero-deps Vue library) — a vendored snapshot from the standalone [`Nergous/nergous-cit`](https://github.com/Nergous/nergous-cit) repository; updated with `npm run ds:pull`
+- **spatie/laravel-permission** ^8 (RBAC)
 - **SQLite** by default (compatible with MySQL/MariaDB/PostgreSQL)
 - Queues: the `database` driver — for asynchronous media processing
 
@@ -32,7 +32,7 @@ baked into the image. For running locally without Docker:
   (media optimization; without it originals are stored without thumbnails — `ImageOptimizer`
   silently falls back), `mbstring`, and `intl` extensions.
 - **Composer** 2.
-- **Node.js** ≥ 20.19 or ≥ 22.12 (required by Vite 7) + npm.
+- **Node.js** ≥ 20.19 or ≥ 22.12 (required by Vite 8) + npm.
 
 ## Quick start
 
@@ -85,6 +85,11 @@ superadmin role, idempotently) and assigns the role to the user. As a result it 
 it the superadmin role would be left with no permissions, and the admin would get a 403 in
 every section.
 
+**Password policy:** passwords set through this command or the users UI require at least
+15 characters, upper- and lowercase letters, a digit and a symbol. The UI can generate
+and copy a 20-character password. Demo seed passwords bypass validation; replace demo
+accounts before production use.
+
 ---
 
 ## Docker
@@ -126,6 +131,7 @@ cp .env.example .env
 #                                     so the key persists across restarts)
 #   TRUSTED_PROXIES=<proxy subnet>   (if behind a reverse proxy; see below)
 # Uncomment the "Docker-compose" block in .env (DB_*/REDIS_* -> the db/redis hosts)
+# Set RUN_MIGRATIONS=true for this first boot; return it to false after provisioning.
 
 docker compose up -d --build
 ```
@@ -135,8 +141,10 @@ docker compose up -d --build
   client's real IP (rather than the proxy's address), set `TRUSTED_PROXIES` = the proxy's
   subnet/IP; by default proxies are not trusted, so `X-Forwarded-For` cannot be spoofed
   (this protects the login throttle). In production the session cookie is marked `Secure` automatically.
-- Migrations run when the `app` service starts (`RUN_MIGRATIONS=true`); `queue`
-  and `scheduler` do not run them. `queue:work` is optional — if you don't need asynchronous file processing, set `QUEUE_CONNECTION=sync`.
+- Migrations and base RBAC seeding run only with `RUN_MIGRATIONS=true` (default `false`).
+  Enable this for first boot or a release, then return it to `false` before ordinary
+  rebuilds. Re-seeding resets the built-in admin/operator permission assignments;
+  review custom grants before opting in. `queue` and `scheduler` do not migrate. `queue:work` is optional — if you don't need asynchronous file processing, set `QUEUE_CONNECTION=sync`.
 - **Base RBAC** (roles + permissions) is seeded automatically together with the migrations
   when `app` starts — in any environment. **Demo/production USERS**, however, are controlled
   by `RUN_SEEDS` (default `false` — not created in production). Create an admin:
@@ -186,7 +194,7 @@ docker compose down -v                           # tear down along with data
 > \* — an optional module, available only when the bot is enabled (`config('bot.enabled')`);
 > otherwise the routes return 404 and the sidebar item is hidden.
 
-> The "Permission" column is access to the section (viewing). Actions are gated **granularly**: create/edit — `*.create`/`*.edit` (in `FormRequest::authorize()`), delete — `*.delete` (middleware on destroy routes). For media: upload — `media.upload`, delete — `media.delete`. Settings: write — `settings.edit`; bot messages: edit — `bot-messages.edit`. If you create a custom role with `*.view` but without `*.delete`, the server-side protection still kicks in (403), but you should also hide the delete buttons in the UI via `can('*.delete')` (see `resources/js/lib/can.js`).
+> The "Permission" column is access to the section (viewing). Actions are gated **granularly**: create/edit — `*.create`/`*.edit` (in `FormRequest::authorize()`), delete — `*.delete` (middleware on destroy routes). For media: upload — `media.upload`, rename — `media.edit`, delete — `media.delete`. Settings: write — `settings.edit`; bot messages: edit — `bot-messages.edit`. If you create a custom role with `*.view` but without `*.delete`, the server-side protection still kicks in (403), but you should also hide the delete buttons in the UI via `can('*.delete')` (see `resources/js/lib/can.js`).
 
 ### Base permissions
 
@@ -195,8 +203,8 @@ The `RolePermissionSeeder` seeder creates:
 - `users.{view,create,edit,delete}`
 - `roles.{view,create,edit,delete}`
 - `permissions.{view,create,edit,delete}`
-- `media.{view,upload,delete}`
-- `activity-log.view`
+- `media.{view,upload,edit,delete}`
+- `activity-log.{view,delete}`
 - `settings.{view,edit}`
 - `bot-messages.{view,edit}` — only when the bot module is enabled
 
@@ -232,6 +240,11 @@ alongside the text. The bot reads those files from the Laravel public disk; in D
 storage volume is mounted read-only into the bot container (`MEDIA_ROOT`, see
 `modules/max-bot/README.md`). Without the bot's queue/worker considerations this needs no
 extra setup beyond the storage symlink that media already requires.
+
+Message edits record old/new field values in the activity log. Cmd+K also searches
+message labels, codes and override text when the bot is enabled and the user has
+`bot-messages.view`. The external bot supports polling (default) and opt-in webhook
+delivery; see `modules/max-bot/README.md` for configuration.
 
 The module is **toggleable**. The flag is `config('bot.enabled')`, which is turned on by either of:
 
@@ -430,3 +443,9 @@ healthchecks; suitable for a load balancer's liveness/readiness probes.
 ## License
 
 MIT.
+
+## Template synchronization
+
+Reusable changes imported from `jur-bot-max` are documented in
+[docs/template-sync-2026-09-14.md](docs/template-sync-2026-09-14.md), including the
+project-specific differences intentionally retained in the source application.

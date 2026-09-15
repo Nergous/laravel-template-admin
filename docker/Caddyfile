@@ -48,12 +48,13 @@
 	}
 
 	# The rest of the traffic: Laravel health check (/up), assets from public/build and the SPA —
-	# through PHP.
+	# through PHP. Bare php_server: its built-in fallback already does
+	# "existing file, else index.php". Do NOT add a custom
+	# `try_files ... /index.php?{query}` — on some FrankenPHP builds the file
+	# matcher checks the literal name including `?{query}`, the rewrite never
+	# fires and every non-file URL becomes a bare Caddy 404.
 	handle {
-		php_server {
-			# Before index.php, try to serve an existing file (assets from public/build).
-			try_files {path} {path}/ /index.php?{query}
-		}
+		php_server
 	}
 
 	log {

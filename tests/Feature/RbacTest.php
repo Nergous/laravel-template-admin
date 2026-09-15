@@ -68,7 +68,7 @@ class RbacTest extends TestCase
         $this->post(route('admin.users.store'), [
             'name' => 'Nope',
             'email' => 'nope@example.test',
-            'password' => 'Password1',
+            'password' => 'Str0ng!Passw0rd#42',
             'roles' => [],
         ])->assertForbidden();
 
@@ -82,7 +82,7 @@ class RbacTest extends TestCase
         $this->post(route('admin.users.store'), [
             'name' => 'Yes',
             'email' => 'yes@example.test',
-            'password' => 'Password1',
+            'password' => 'Str0ng!Passw0rd#42',
             'roles' => [],
         ])->assertRedirect(route('admin.users.index'));
 
@@ -140,7 +140,7 @@ class RbacTest extends TestCase
         $this->post(route('admin.users.store'), [
             'name' => 'Escalate',
             'email' => 'escalate@example.test',
-            'password' => 'Password1',
+            'password' => 'Str0ng!Passw0rd#42',
             'roles' => ['admin'],
         ])->assertSessionHasErrors('roles.0');
 
@@ -359,7 +359,7 @@ class RbacTest extends TestCase
         ])->assertForbidden();
 
         $this->assertSame(
-            'Управление медиатекой: загрузка и удаление файлов.',
+            'Управление медиатекой: загрузка, переименование и удаление файлов.',
             $operator->fresh()->description
         );
     }

@@ -33,7 +33,8 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
-      RUN_MIGRATIONS: "true"
+      # Opt in for first boot or a release; rebuilds must not re-seed existing roles.
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-false}"
       # The base RBAC (roles + permissions) is ALWAYS seeded together with the migrations (see entrypoint.sh).
       # RUN_SEEDS only controls DEMO/real USERS (UserSeeder). In production
       # leave it "false" and create the admin via `app:create-admin` (or RUN_SEEDS=true + ADMIN_PASSWORD).

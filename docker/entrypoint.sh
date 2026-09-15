@@ -5,7 +5,7 @@ cd /app
 
 # -----------------------------------------------------------------------------
 #  Control variables (can be overridden in the service environment):
-#    RUN_MIGRATIONS=true   — run `migrate --force` on start (web: yes, queue/scheduler: no)
+#    RUN_MIGRATIONS=false  — opt in to migrations + base RBAC seeding for first boot/releases
 #    RUN_SEEDS=false       — run `db:seed --force`. OFF BY DEFAULT:
 #                            the seeder creates DEMO users, not needed in production.
 #    OPTIMIZE=auto         — cache config/route/view. auto = only if APP_ENV != local.
@@ -78,7 +78,7 @@ fi
 php artisan storage:link --force --no-interaction || true
 
 # Migrations (web only; queue/scheduler start with RUN_MIGRATIONS=false)
-if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
     php artisan migrate --force --no-interaction
 
     # The structural RBAC (permission catalog + granting it to the superadmin) is needed in ANY

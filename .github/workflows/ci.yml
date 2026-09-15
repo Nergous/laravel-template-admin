@@ -115,24 +115,11 @@ jobs:
           retention-days: 7
 
   # --------------------------------------------------------------------------
-  # Python bot tests (pytest). Some tests hit a real MariaDB —
-  # we bring up a service container. Credentials come from modules/max-bot/.env.example.
+  # Python bot tests (pytest): isolated in-memory SQLite and mocked MAX API.
+  # conftest.py blocks network access and does not load application .env files.
   # --------------------------------------------------------------------------
   test-bot:
     runs-on: ubuntu-latest
-    services:
-      mariadb:
-        image: mariadb:11
-        env:
-          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: "yes"
-          MARIADB_DATABASE: bot-test-db
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="healthcheck.sh --connect --innodb_initialized"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
     defaults:
       run:
         working-directory: modules/max-bot
@@ -148,7 +135,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run pytest
-        run: pytest
+        run: pytest tests config handlers utils
 
   # --------------------------------------------------------------------------
   # Build the prod image (only on push to main/tags). Layer cache via GHA.

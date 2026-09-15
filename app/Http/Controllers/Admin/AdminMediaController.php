@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BulkDestroyMediaRequest;
 use App\Http\Requests\MediaRequest;
+use App\Http\Requests\RenameMediaRequest;
 use App\Http\Sorts\MediaSort;
 use App\Models\Media;
 use App\Services\MediaService;
@@ -68,6 +69,20 @@ class AdminMediaController extends Controller
         $queued = $this->media->queue($request->file('media', []), $request->user()?->id);
 
         return response()->json(['queued' => $queued]);
+    }
+
+    /**
+     * Rename a file (the display name).
+     *
+     * Only original_name changes — the physical path on disk (filename) stays,
+     * so existing attachment links and thumbnails keep working. The change is
+     * written to the activity log by the LogsActivity trait.
+     */
+    public function update(RenameMediaRequest $request, Media $media): RedirectResponse
+    {
+        $media->update(['original_name' => trim($request->input('original_name'))]);
+
+        return back()->with('success', 'Файл переименован');
     }
 
     /**

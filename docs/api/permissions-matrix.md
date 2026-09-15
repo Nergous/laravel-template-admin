@@ -98,6 +98,7 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | GET    | `/media/poll`    | `media.view`   | — (inline validation) | JSON polling                     |
 | GET    | `/media/browse`  | `media.view`   | — (inline validation) | JSON picker (search + pagination) |
 | POST   | `/media`         | `media.upload` | (also `media.upload`) | `MediaRequest`, JSON, needs CSRF |
+| PATCH  | `/media/{media}` | `media.edit` | (also `media.edit`) | `RenameMediaRequest`; display name only, redirect + flash |
 | DELETE | `/media/{media}` | `media.delete` | —                     | —                                |
 | DELETE | `/media/bulk`    | `media.delete` | —                     | `BulkDestroyMediaRequest`        |
 

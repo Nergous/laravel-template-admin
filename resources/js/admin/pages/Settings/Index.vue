@@ -116,7 +116,7 @@ const pickedUrl = computed(() => {
                     >
                         <NInput
                             v-model="form.settings.general.app_name"
-                            placeholder="nergous-cit"
+                            placeholder="app-name"
                         />
                     </NFormField>
 
@@ -208,7 +208,7 @@ const pickedUrl = computed(() => {
                     >
                         <NInput
                             v-model="form.settings.seo.meta_title_template"
-                            placeholder="%s — nergous-cit"
+                            placeholder="%s — app-name"
                         />
                     </NFormField>
 
@@ -229,13 +229,13 @@ const pickedUrl = computed(() => {
                     >
                         <NInput
                             v-model="form.settings.seo.canonical_domain"
-                            placeholder="https://nergous-cit.app"
+                            placeholder="https://example.com"
                         />
                     </NFormField>
 
                     <NFormField
                         label="OG-изображение"
-                        hint="Превью при шаринге ссылки в соцсетях — выбирается из медиатеки"
+                        hint="Превью ссылки в соцсетях — выбирается из медиатеки"
                         tag="div"
                     >
                         <div class="og-picker">

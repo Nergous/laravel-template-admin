@@ -33,7 +33,9 @@ COPY public ./public
 RUN npm run build
 
 # ---------- base runtime (shared base for prod and dev) ----------
-FROM dunglas/frankenphp:php8.4-alpine AS base
+# Pinned to major version 1: a floating tag once pulled in a FrankenPHP build
+# where php_server's custom try_files broke URL rewriting (bare 404 on every route).
+FROM dunglas/frankenphp:1-php8.4-alpine AS base
 
 # Extensions covering the full range of DBs/drivers the project supports:
 #   pdo_mysql  — MySQL/MariaDB (stack default)

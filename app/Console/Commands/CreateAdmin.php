@@ -9,6 +9,7 @@ use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password;
 
 /**
  * Creates or updates an administrator.
@@ -57,7 +58,7 @@ class CreateAdmin extends Command
             ['email' => $email, 'password' => $password, 'name' => $name],
             [
                 'email' => ['required', 'email'],
-                'password' => ['required', 'string', 'min:8'],
+                'password' => ['required', 'string', Password::defaults()],
                 'name' => ['required', 'string', 'max:255'],
             ]
         );

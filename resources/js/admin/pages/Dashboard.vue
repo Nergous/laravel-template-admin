@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { Link } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import { NCard, NStatCard, NActivityRow, NEmptyState } from "@/lib/nergous-cit";
+import { can } from "@/lib/can.js";
 import { formatNumber } from "@/lib/format.js";
 import { swatchColor } from "@/lib/swatch.js";
 
@@ -62,8 +63,15 @@ const bars = computed(() => {
             />
         </div>
 
-        <div class="grid-2">
-            <NCard padding="0" class="activity-card">
+        <div
+            class="grid-2"
+            :class="{ 'grid-2--single': !can('activity-log.view') }"
+        >
+            <NCard
+                v-if="can('activity-log.view')"
+                padding="0"
+                class="activity-card"
+            >
                 <div class="card-head card-head--inset">
                     <h2 class="card-title">Последние действия</h2>
                     <Link href="/admin/activity-log" class="dash-link"
@@ -119,7 +127,7 @@ const bars = computed(() => {
 <style scoped>
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: var(--kpi-gap, 16px);
 }
 .grid-2 {
@@ -127,6 +135,9 @@ const bars = computed(() => {
     grid-template-columns: 1.5fr 1fr;
     gap: 16px;
     margin-top: 16px;
+}
+.grid-2--single {
+    grid-template-columns: 1fr;
 }
 @media (max-width: 920px) {
     .kpi-grid {

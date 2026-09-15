@@ -63,3 +63,12 @@ the paginator.
 | GET   | `/up` | Laravel health check (`bootstrap/app.php`, `health: '/up'`). Returns 200 if the app booted. Use it for liveness/readiness probes (Docker healthcheck, load balancer)                |
 | GET   | `/`   | redirect to `/admin`                                                                                                                                                                |
 | —     | 404   | a non-admin, non-JSON 404 redirects to `/admin` (`bootstrap/app.php`)                                                                                                               |
+
+## Media display-name changes
+
+`PATCH /admin/media/{media}` accepts `original_name` (required string, at most 255
+characters, no path separators or control characters). Both middleware and
+`RenameMediaRequest` require `media.edit`. Success redirects back with a flash
+message; validation uses the standard Inertia error bag. Only `original_name`
+changes; stored filenames, attachment links and thumbnails remain valid. The
+activity log records the old and new display names.

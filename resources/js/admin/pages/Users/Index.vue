@@ -81,6 +81,9 @@ const drawerSubtitle = computed(() =>
 function openCreate() {
     mode.value = "create";
     editing.value = null;
+    // openEdit() sets form.defaults() to the edited row; reset the defaults back to
+    // empty here, otherwise reset() restores the last edited user into the create form.
+    form.defaults({ name: "", email: "", password: "", roles: [] });
     form.reset();
     form.clearErrors();
     drawerOpen.value = true;

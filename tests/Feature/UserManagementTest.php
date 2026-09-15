@@ -20,7 +20,7 @@ class UserManagementTest extends TestCase
         $this->post(route('admin.users.store'), [
             'name' => 'New User',
             'email' => 'new@example.com',
-            'password' => 'Password1',
+            'password' => 'Str0ng!Passw0rd#42',
             'roles' => [],
         ])->assertRedirect(route('admin.users.index'));
 
@@ -40,7 +40,7 @@ class UserManagementTest extends TestCase
             $this->post(route('admin.users.store'), [
                 'name' => 'Atomic User',
                 'email' => 'atomic@example.test',
-                'password' => 'Password1',
+                'password' => 'Str0ng!Passw0rd#42',
                 'roles' => ['editor'],
             ]);
         } catch (\Throwable) {

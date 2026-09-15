@@ -48,14 +48,31 @@ def _build_input_media(
 
 
 async def send_bot_message(
-    deps: "HandlerDeps", *, chat_id: int, code: str
+    deps: "HandlerDeps",
+    *,
+    chat_id: int,
+    code: str,
+    keyboard=None,
+    text_override: str | None = None,
+    edit_message_id: str | None = None,
 ) -> None:
     """Send the message registered under ``code`` (text + attachments) to ``chat_id``.
 
-    When neither text nor a usable attachment is present, nothing is sent (mirrors the
-    previous "skip empty text" behavior).
+    ``keyboard`` is an optional inline-keyboard markup (``InlineKeyboardBuilder.as_markup()``)
+    appended to the attachments, for example to attach navigation buttons.
+
+    ``text_override`` replaces the registry/override text (attachments are still resolved
+    by ``code``). Callers can send personalized text while keeping the code's attachments.
+
+    ``edit_message_id`` — when given, the message with that id is **edited in place**
+    (``bot.edit_message``) instead of sending a new one.
+    Only text-only ⇄ text-only transitions are edited by the caller — steps that add or
+    remove attachments always send a fresh message, since editing media in/out is unreliable.
+
+    When neither text, a usable attachment, nor a keyboard is present, nothing is sent
+    (mirrors the previous "skip empty text" behavior).
     """
-    text = await deps.messages.get(code)
+    text = text_override if text_override is not None else await deps.messages.get(code)
     attachments = await deps.messages.get_attachments(code)
 
     media = [
@@ -66,14 +83,25 @@ async def send_bot_message(
         if item is not None
     ]
 
-    if not text and not media:
+    parts = [*media, keyboard] if keyboard is not None else media
+
+    if not text and not parts:
         return
 
     # Texts are authored in the admin via NRichText and stored as inline HTML,
     # so we send with format=HTML.
+    if edit_message_id is not None:
+        await deps.bot.edit_message(
+            message_id=edit_message_id,
+            text=text or None,
+            attachments=parts or None,
+            format=ParseMode.HTML,
+        )
+        return
+
     await deps.bot.send_message(
         chat_id=chat_id,
         text=text or None,
-        attachments=media or None,
+        attachments=parts or None,
         format=ParseMode.HTML,
     )

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\ActivityLog;
 use App\Models\BotMessage;
 use App\Models\BotMessageMedia;
 use App\Models\Media;
@@ -45,6 +46,37 @@ class BotMessageTest extends TestCase
             'text' => 'Новый привет',
             'is_active' => 1,
         ]);
+    }
+
+    public function test_update_logs_activity_with_diff(): void
+    {
+        $user = $this->actingAsUserWith(['bot-messages.edit']);
+
+        // First save → 'created' with a text diff (old is null).
+        $this->put(route('admin.bot-messages.update', 'welcome'), [
+            'text' => 'Первый вариант',
+            'is_active' => true,
+        ])->assertRedirect();
+
+        $created = ActivityLog::where('action', 'created')
+            ->where('subject_type', BotMessage::class)
+            ->latest('id')->first();
+        $this->assertNotNull($created);
+        $this->assertSame($user->id, $created->user_id);
+        $this->assertArrayHasKey('text', $created->changes);
+        $this->assertSame([null, 'Первый вариант'], $created->changes['text']);
+
+        // Second save → 'updated' with old → new diff.
+        $this->put(route('admin.bot-messages.update', 'welcome'), [
+            'text' => 'Второй вариант',
+            'is_active' => true,
+        ])->assertRedirect();
+
+        $updated = ActivityLog::where('action', 'updated')
+            ->where('subject_type', BotMessage::class)
+            ->latest('id')->first();
+        $this->assertNotNull($updated);
+        $this->assertSame(['Первый вариант', 'Второй вариант'], $updated->changes['text']);
     }
 
     public function test_update_sanitizes_html_to_inline_subset(): void

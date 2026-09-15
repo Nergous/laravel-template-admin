@@ -18,4 +18,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . /app
 
+# Webhook mode (BOT_MODE=webhook) serves the aiohttp receiver on WEBHOOK_PORT.
+# Metadata only — publish/map it in compose when running in webhook mode.
+EXPOSE 8080
+
 CMD ["python", "main.py"]

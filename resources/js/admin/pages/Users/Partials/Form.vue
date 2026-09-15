@@ -1,5 +1,6 @@
 <script setup>
-import { NInput, NAvatar, NIcon, NFormField } from "@/lib/nergous-cit";
+import { computed, ref, watch } from "vue";
+import { NInput, NAvatar, NIcon, NFormField, NButton } from "@/lib/nergous-cit";
 import { formatDateShort, formatDateTime } from "@/lib/format.js";
 
 const props = defineProps({
@@ -20,6 +21,82 @@ function toggleRole(name) {
 function isSelected(name) {
     return props.form.roles.includes(name);
 }
+
+/* ---------- password generator ---------- */
+// Mirrors the server policy (Password::defaults() in AppServiceProvider):
+// min 15, mixed case, numbers, symbols. Generates 20 chars with a margin.
+// Confusable characters (I/l/O/0/1) are excluded for hand-typing.
+const PASSWORD_LENGTH = 20;
+const UPPER = "ABCDEFGHJKMNPQRSTUVWXYZ";
+const LOWER = "abcdefghijkmnpqrstuvwxyz";
+const DIGITS = "23456789";
+const SYMBOLS = "!@#$%^&*-_=+?";
+
+// Show the generated password so it can be shared with the user.
+// Clearing the field restores password masking.
+const generated = ref(false);
+const copied = ref(false);
+
+function pickRandom(set, count) {
+    return Array.from(
+        crypto.getRandomValues(new Uint32Array(count)),
+        (n) => set[n % set.length],
+    );
+}
+
+function generatePassword() {
+    const all = UPPER + LOWER + DIGITS + SYMBOLS;
+    // Guarantee every required class, fill the rest from the full alphabet…
+    const chars = [
+        ...pickRandom(UPPER, 2),
+        ...pickRandom(LOWER, 2),
+        ...pickRandom(DIGITS, 2),
+        ...pickRandom(SYMBOLS, 2),
+        ...pickRandom(all, PASSWORD_LENGTH - 8),
+    ];
+    // …then shuffle so the class blocks don't sit at the start (Fisher–Yates).
+    const rnd = crypto.getRandomValues(new Uint32Array(chars.length));
+    for (let i = chars.length - 1; i > 0; i--) {
+        const j = rnd[i] % (i + 1);
+        [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join("");
+}
+
+async function onGenerate() {
+    const password = generatePassword();
+    props.form.password = password;
+    generated.value = true;
+    try {
+        await navigator.clipboard.writeText(password);
+        copied.value = true;
+    } catch {
+        // Clipboard is unavailable (permissions / non-secure context) — the
+        // password is still visible in the opened field.
+        copied.value = false;
+    }
+}
+
+watch(
+    () => props.form.password,
+    (value) => {
+        if (!value) {
+            generated.value = false;
+            copied.value = false;
+        }
+    },
+);
+
+const POLICY_HINT =
+    "Минимум 15 символов: заглавные и строчные буквы, цифры и спецсимволы.";
+const passwordHint = computed(() => {
+    if (generated.value && copied.value) {
+        return "Сгенерированный пароль скопирован в буфер обмена.";
+    }
+    return props.isEdit
+        ? `Оставьте пустым, чтобы не менять. ${POLICY_HINT}`
+        : POLICY_HINT;
+});
 </script>
 
 <template>
@@ -47,7 +124,7 @@ function isSelected(name) {
                 type="email"
                 icon="mail"
                 autocomplete="email"
-                placeholder="name@nergous-cit.app"
+                placeholder="name@example.com"
                 :error="!!form.errors.email"
             />
         </NFormField>
@@ -55,25 +132,33 @@ function isSelected(name) {
         <NFormField
             label="Пароль"
             :error="form.errors.password"
-            :hint="
-                isEdit
-                    ? 'Оставьте пустым, чтобы не менять.'
-                    : 'Минимум 8 символов.'
-            "
+            :hint="passwordHint"
             :required="!isEdit"
         >
-            <NInput
-                v-model="form.password"
-                type="password"
-                icon="lock"
-                autocomplete="new-password"
-                :placeholder="
-                    isEdit
-                        ? 'Оставьте пустым, чтобы не менять'
-                        : 'Минимум 8 символов'
-                "
-                :error="!!form.errors.password"
-            />
+            <div class="uform__password">
+                <NInput
+                    v-model="form.password"
+                    :type="generated ? 'text' : 'password'"
+                    icon="lock"
+                    autocomplete="new-password"
+                    reveal-label="Показать пароль"
+                    hide-label="Скрыть пароль"
+                    :placeholder="
+                        isEdit
+                            ? 'Оставьте пустым, чтобы не менять'
+                            : 'Минимум 15 символов'
+                    "
+                    :error="!!form.errors.password"
+                    class="uform__password-input"
+                />
+                <NButton
+                    variant="secondary"
+                    icon="bolt"
+                    aria-label="Сгенерировать пароль"
+                    @click="onGenerate"
+                    >Сгенерировать</NButton
+                >
+            </div>
         </NFormField>
 
         <NFormField
@@ -178,6 +263,17 @@ function isSelected(name) {
     font-size: 12.5px;
     color: var(--text-3);
     margin-top: 2px;
+}
+
+/* --- password + generator --- */
+.uform__password {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.uform__password-input {
+    flex: 1;
+    min-width: 0;
 }
 
 /* --- roles as option cards --- */

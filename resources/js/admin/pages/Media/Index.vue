@@ -14,6 +14,9 @@ import {
     NIcon,
     NEmptyState,
     NLightbox,
+    NModal,
+    NInput,
+    NFormField,
     useToast,
 } from "@/lib/nergous-cit";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
@@ -303,6 +306,50 @@ function deselect(ids) {
     selected.value = next;
 }
 
+/* ── Renaming a file (the display name, original_name) ────────────────── */
+const renOpen = ref(false);
+const renId = ref(null);
+const renName = ref("");
+const renError = ref("");
+const renLoading = ref(false);
+
+function askRename(m) {
+    renId.value = m.id;
+    renName.value = m.original_name || m.filename.split("/").pop();
+    renError.value = "";
+    renOpen.value = true;
+}
+function confirmRename() {
+    const id = renId.value;
+    const name = renName.value.trim();
+    if (!name) {
+        renError.value = "Введите имя файла";
+        return;
+    }
+    renLoading.value = true;
+    router.patch(
+        `/admin/media/${id}`,
+        { original_name: name },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                // The server redirects back; the local row is updated in place so
+                // polled-in rows (absent from the server page props) don't get lost.
+                const row = rows.value.find((m) => m.id === id);
+                if (row) row.original_name = name;
+                renOpen.value = false;
+            },
+            onError: (errors) => {
+                renError.value =
+                    errors.original_name || "Не удалось переименовать файл";
+            },
+            onFinish: () => {
+                renLoading.value = false;
+            },
+        },
+    );
+}
+
 /* ── Deleting a single file ───────────────────────────────────────────── */
 const delOpen = ref(false);
 const delId = ref(null);
@@ -522,18 +569,34 @@ function goPage(p) {
                         </span>
 
                         <span class="mcard__badge">{{ typeBadge(m) }}</span>
-                        <NButton
-                            v-if="can('media.delete')"
-                            class="mcard__del"
-                            variant="ghost"
-                            tone="danger"
-                            size="sm"
-                            icon="trash"
-                            :aria-label="
-                                'Удалить: ' + (m.original_name || m.filename)
-                            "
-                            @click.stop="askDelete(m.id)"
-                        />
+                        <div class="mcard__actions">
+                            <NButton
+                                v-if="can('media.edit')"
+                                class="mcard__act"
+                                variant="ghost"
+                                tone="accent"
+                                size="sm"
+                                icon="edit"
+                                :aria-label="
+                                    'Переименовать: ' +
+                                    (m.original_name || m.filename)
+                                "
+                                @click.stop="askRename(m)"
+                            />
+                            <NButton
+                                v-if="can('media.delete')"
+                                class="mcard__act"
+                                variant="ghost"
+                                tone="danger"
+                                size="sm"
+                                icon="trash"
+                                :aria-label="
+                                    'Удалить: ' +
+                                    (m.original_name || m.filename)
+                                "
+                                @click.stop="askDelete(m.id)"
+                            />
+                        </div>
                     </div>
                     <div class="mcard__foot">
                         <div class="mcard__name">
@@ -580,6 +643,39 @@ function goPage(p) {
             prev-label="Предыдущее фото"
             next-label="Следующее фото"
         />
+
+        <NModal
+            v-model="renOpen"
+            title="Переименовать файл"
+            width="420px"
+            close-label="Закрыть"
+        >
+            <NFormField
+                label="Имя файла"
+                :error="renError"
+                hint="Меняется только отображаемое имя, ссылки на файл не изменятся."
+                required
+            >
+                <NInput
+                    v-model="renName"
+                    :error="!!renError"
+                    placeholder="Название файла"
+                    @keyup.enter="confirmRename"
+                />
+            </NFormField>
+            <template #footer="{ close }">
+                <NButton variant="secondary" block @click="close"
+                    >Отмена</NButton
+                >
+                <NButton
+                    variant="primary"
+                    block
+                    :loading="renLoading"
+                    @click="confirmRename"
+                    >Сохранить</NButton
+                >
+            </template>
+        </NModal>
 
         <ConfirmModal
             :open="delOpen"
@@ -778,11 +874,16 @@ function goPage(p) {
     border: 1px solid var(--border);
     font-family: var(--font-mono);
 }
-.mcard__del {
+/* Action buttons (rename/delete) — top-right corner of the preview. */
+.mcard__actions {
     position: absolute;
     top: 9px;
     right: 9px;
     z-index: 1;
+    display: flex;
+    gap: 6px;
+}
+.mcard__act {
     width: 26px;
     height: 26px;
     background: var(--surface);

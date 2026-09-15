@@ -122,7 +122,7 @@ removed). When storing texts in the DB **do not rely on block markup.**
 ## Configuration (env)
 
 The bot reads its own environment (`config/config.py`, `Config.from_env`). The `.env`
-is looked up first in `modules/max-bot/.env`, then in the admin panel root (one level up).
+is looked up first in `modules/max-bot/.env`, then in the admin panel root (two levels up).
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -130,8 +130,8 @@ is looked up first in `modules/max-bot/.env`, then in the admin panel root (one 
 | `BOT_ID` | **yes** | — | bot id (int) |
 | `DB_DATABASE` | **yes** | — | database shared with Laravel |
 | `DB_USERNAME` | **yes** | — | DB user |
-| `DB_PASSWORD` | **yes** | — | DB password |
-| `API_BASE_URL` | no | `https://platform-api.max.ru` | base URL of the MAX API |
+| `DB_PASSWORD` | no | empty | DB password |
+| `API_BASE_URL` | no | `https://platform-api2.max.ru` | base URL of the MAX API |
 | `DB_HOST` | no | `127.0.0.1` | DB host |
 | `DB_PORT` | no | `3306` | DB port |
 | `MEDIA_ROOT` | no | repo `storage/app/public` | root of the Laravel public disk where message attachments are read from (Docker: `/app/storage/app/public`, storage volume mounted read-only) |
@@ -160,13 +160,17 @@ cp .env.example .env        # fill in API_TOKEN, BOT_ID, DB_*
 python main.py
 ```
 
-The bot's tests — `pytest` (see `pytest.ini`, `conftest.py`, `tests/`, `handlers/test_handlers.py`).
+The bot's tests run with `pytest` across `tests/`, `config/`, `handlers/`, and `utils/`.
+Each database test receives a fresh SQLite `:memory:` database through a small
+DB-API adapter. Tests do not load application `.env` files, use mocked MAX methods,
+and block external socket connections. No MySQL service or credentials are required.
+The adapter verifies repository behavior, not MySQL-specific SQL or isolation semantics.
 
 ## Structure
 
 ```
 modules/max-bot/
-├── main.py              # entry point: long-polling + workers + graceful shutdown
+├── main.py              # entry point: polling/webhook + workers + graceful shutdown
 ├── messages.json        # shared registry of codes/defaults (source of truth)
 ├── messages.schema.json # JSON schema of the registry (validated in tests)
 ├── config/config.py     # loading env → dataclass Config
@@ -175,3 +179,20 @@ modules/max-bot/
 ├── utils/               # messaging.py (send text + media attachments), rate_limiter etc.
 └── log/                 # logging setup
 ```
+
+## Webhook delivery (optional)
+
+`BOT_MODE=polling` is the default. To opt in to webhook delivery, set `BOT_MODE=webhook`
+and `WEBHOOK_URL=https://your-domain.example/webhook`. The receiver uses
+`WEBHOOK_HOST=0.0.0.0`, `WEBHOOK_PORT=8080`, and `WEBHOOK_PATH=/webhook` by default.
+Set `WEBHOOK_SECRET` (5–256 characters) to verify incoming requests. The listener
+registers the URL through maxapi and uses the same graceful shutdown as polling.
+
+The Dockerfile exposes port 8080 as metadata only. For webhook deployments, add an
+explicit port mapping or route a trusted HTTPS reverse proxy to the bot container;
+match its path to `WEBHOOK_PATH`. The default Compose stack remains polling-only.
+
+`send_bot_message()` also accepts an optional inline `keyboard`, `text_override`
+(personalized text while retaining registry attachments), and `edit_message_id`
+for editing an existing message. Calls without those options keep the original
+text-plus-media behavior. Empty messages without attachments or keyboard are skipped.

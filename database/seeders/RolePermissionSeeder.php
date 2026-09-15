@@ -25,7 +25,7 @@ class RolePermissionSeeder extends Seeder
             'users.view', 'users.create', 'users.edit', 'users.delete',
             'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
             'permissions.view', 'permissions.create', 'permissions.edit', 'permissions.delete',
-            'media.view', 'media.upload', 'media.delete',
+            'media.view', 'media.upload', 'media.edit', 'media.delete',
             'activity-log.view', 'activity-log.delete',
             'settings.view', 'settings.edit',
         ];
@@ -55,11 +55,11 @@ class RolePermissionSeeder extends Seeder
         $admin->syncPermissions($permissions);
 
         $operator = Role::firstOrCreate(['name' => 'operator', 'guard_name' => 'web']);
-        $operator->description = 'Управление медиатекой: загрузка и удаление файлов.';
+        $operator->description = 'Управление медиатекой: загрузка, переименование и удаление файлов.';
         $operator->is_system = true;
         $operator->save();
         $operator->syncPermissions([
-            'media.view', 'media.upload', 'media.delete',
+            'media.view', 'media.upload', 'media.edit', 'media.delete',
         ]);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();

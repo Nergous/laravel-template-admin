@@ -29,6 +29,7 @@ services:
     environment:
       APP_ENV: local
       OPTIMIZE: "false"
+      RUN_MIGRATIONS: "true" # initialize the separate development database
       RUN_SEEDS: "true"   # in dev it's handy to have demo data
     ports:
       - "8000:8000"

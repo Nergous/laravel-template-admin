@@ -20,8 +20,8 @@ class CreateAdminCommandTest extends TestCase
     public function test_creates_admin_with_full_permissions_on_fresh_database(): void
     {
         $this->artisan('app:create-admin', ['email' => 'boss@example.test', 'name' => 'Boss'])
-            ->expectsQuestion('Введите пароль', 'Password1')
-            ->expectsQuestion('Повторите пароль', 'Password1')
+            ->expectsQuestion('Введите пароль', 'Str0ng!Passw0rd#42')
+            ->expectsQuestion('Повторите пароль', 'Str0ng!Passw0rd#42')
             ->assertSuccessful();
 
         $user = User::where('email', 'boss@example.test')->firstOrFail();
@@ -38,13 +38,13 @@ class CreateAdminCommandTest extends TestCase
     public function test_is_idempotent_and_updates_existing_user(): void
     {
         $this->artisan('app:create-admin', ['email' => 'boss@example.test', 'name' => 'Boss'])
-            ->expectsQuestion('Введите пароль', 'Password1')
-            ->expectsQuestion('Повторите пароль', 'Password1')
+            ->expectsQuestion('Введите пароль', 'Str0ng!Passw0rd#42')
+            ->expectsQuestion('Повторите пароль', 'Str0ng!Passw0rd#42')
             ->assertSuccessful();
 
         $this->artisan('app:create-admin', ['email' => 'boss@example.test', 'name' => 'Boss Renamed'])
-            ->expectsQuestion('Введите пароль', 'Password2')
-            ->expectsQuestion('Повторите пароль', 'Password2')
+            ->expectsQuestion('Введите пароль', 'Upd4ted!Passw0rd#42')
+            ->expectsQuestion('Повторите пароль', 'Upd4ted!Passw0rd#42')
             ->assertSuccessful();
 
         $this->assertSame(1, User::where('email', 'boss@example.test')->count());

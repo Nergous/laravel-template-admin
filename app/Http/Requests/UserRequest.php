@@ -36,11 +36,11 @@ class UserRequest extends FormRequest
         ];
 
         if ($this->isMethod('POST')) {
-            $rules['password'] = ['required', Password::min(8)->mixedCase()->numbers()];
+            $rules['password'] = ['required', Password::defaults()];
         }
 
         if ($this->isMethod('PUT') || $this->isMethod('PATCH')) {
-            $rules['password'] = ['nullable', Password::min(8)->mixedCase()->numbers()];
+            $rules['password'] = ['nullable', Password::defaults()];
         }
 
         return $rules;

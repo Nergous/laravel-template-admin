@@ -122,14 +122,21 @@ class ActivityLog extends Model
      */
     public static function record($subject, string $action, ?array $changes = null): void
     {
+        $actor = Auth::user();
+        $actorId = $actor?->getKey();
+
+        if ($actorId !== null && ! User::withTrashed()->whereKey($actorId)->exists()) {
+            $actorId = null;
+        }
+
         try {
             static::create([
-                'user_id' => Auth::id(),
+                'user_id' => $actorId,
                 'action' => $action,
                 'subject_type' => $subject->getMorphClass(),
                 'subject_id' => $subject->getKey(),
                 'subject_label' => static::labelFor($subject),
-                'actor_label' => Auth::user()?->name,
+                'actor_label' => $actor?->name,
                 'changes' => $changes,
                 'created_at' => now(),
             ]);

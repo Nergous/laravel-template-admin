@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 
 /**
  * The application's main service provider.
@@ -32,6 +33,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Single password policy for every place a password is set (admin user form,
+        // app:create-admin, …): consumers reference Password::defaults() so the
+        // requirements live here only.
+        Password::defaults(fn () => Password::min(15)->mixedCase()->numbers()->symbols());
+
         if ($this->app->environment('production')) {
             URL::forceScheme('https');
 

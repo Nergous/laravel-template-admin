@@ -29,7 +29,7 @@ a token. They are part of the admin SPA, not a public API:
 
 | Method | URI                           | Permission                      | Response shape            |
 | ----- | ----------------------------- | ------------------------------- | ------------------------- |
-| GET   | `/admin/search`               | `users.view` and/or `media.view` | `{ results: [...] }`      |
+| GET   | `/admin/search`               | per-entity view permission | `{ results: [...] }`      |
 | GET   | `/admin/notifications/recent` | `activity-log.view`             | `{ count, items: [...] }` |
 | GET   | `/admin/media/poll`           | `media.view`                    | **bare array** `[...]`    |
 | GET   | `/admin/media/browse`         | `media.view`                    | `{ data, current_page, last_page }` |
@@ -46,7 +46,9 @@ ignored (an empty `results` is returned). At most **5** matches per entity.
 
 **Permission:** the endpoint is under `auth`, but result types are filtered inline via
 `can()`: the `user` block is returned only with `users.view`, the `media` block —
-only with `media.view`. Without both permissions you get `{ "results": [] }` (not a 403).
+only with `media.view`. The `bot-message` block also requires the enabled bot module
+and `bot-messages.view`; it searches catalog labels/codes and override/default text.
+With no matching view permissions you get `{ "results": [] }` (not a 403).
 
 **Response** `200 application/json`:
 
@@ -71,7 +73,7 @@ only with `media.view`. Without both permissions you get `{ "results": [] }` (no
 }
 ```
 
-Fields of each result: `type` (`user`|`media`), `label`, `meta`, `url`, `icon`.
+Fields of each result: `type` (`user`|`media`|`bot-message`), `label`, `meta`, `url`, `icon`.
 
 > To add a new entity to search, follow the pattern of the block in the controller (a
 > new `if ($user?->can('xxx.view'))` with `->map(...)` into the same shape).

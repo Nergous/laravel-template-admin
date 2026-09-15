@@ -14,6 +14,7 @@
   GET|HEAD        admin/media/browse .......................... admin.media.browse › Admin\AdminMediaController@browse
   DELETE          admin/media/bulk ................. admin.media.bulk-destroy › Admin\AdminMediaController@bulkDestroy
   GET|HEAD        admin/media/poll ................................ admin.media.poll › Admin\AdminMediaController@poll
+  PATCH           admin/media/{media} ......................... admin.media.update › Admin\AdminMediaController@update
   DELETE          admin/media/{media} ....................... admin.media.destroy › Admin\AdminMediaController@destroy
   GET|HEAD        admin/notifications/recent .... admin.notifications.recent › Admin\AdminActivityLogController@recent
   GET|HEAD        admin/permissions .................. admin.permissions.index › Admin\AdminPermissionController@index
@@ -46,8 +47,9 @@
   GET|HEAD        admin/users/{user} ............................... admin.users.show › Admin\AdminUserController@show
   PUT|PATCH       admin/users/{user} ........................... admin.users.update › Admin\AdminUserController@update
   GET|HEAD        admin/users/{user}/edit .......................... admin.users.edit › Admin\AdminUserController@edit
-  GET|HEAD        storage/{path} ....................................................................... storage.local
-  GET|HEAD        up ................................................................................................. 
+  GET|HEAD        storage/{path} storage.local › vendor/laravel/framework/src/Illuminate/Filesystem/FilesystemService…
+  PUT             storage/{path} storage.local.upload › vendor/laravel/framework/src/Illuminate/Filesystem/Filesystem…
+  GET|HEAD        up ..... vendor/laravel/framework/src/Illuminate/Foundation/Configuration/ApplicationBuilder.php:219
 
-                                                                                                   Showing [49] routes
+                                                                                                   Showing [51] routes
 

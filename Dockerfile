@@ -4,9 +4,10 @@
 #  Laravel Admin Template — multi-stage image.
 #
 #  Runtime: FrankenPHP (Caddy + PHP-FPM in one process, optional worker mode).
-#  Stages:  vendor  → composer dependencies (without dev)
-#           assets  → frontend build (Vite/Vue)
-#           base    → shared runtime with PHP extensions
+#  Stages:  vendor             → composer dependencies (without dev)
+#           assets             → frontend build (Vite/Vue)
+#           frankenphp-builder → server binary with patched Go dependencies
+#           base               → shared runtime with PHP extensions
 #           prod    → final image (default)
 #           dev     → development image (with dev dependencies, no build)
 #
@@ -32,10 +33,34 @@ COPY resources ./resources
 COPY public ./public
 RUN npm run build
 
+# ---------- patched FrankenPHP binary ----------
+# The current stable image still ships older transitive Go modules. Rebuild the
+# same official module set while pinning the fixed versions; Trivy verifies the
+# resulting binary in CI, so these pins can be removed after upstream catches up.
+FROM dunglas/frankenphp:1-builder-php8.4-alpine AS frankenphp-builder
+COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
+RUN CGO_ENABLED=1 \
+    XCADDY_SETCAP=1 \
+    XCADDY_GO_BUILD_FLAGS="-ldflags='-w -s' -tags=nobadger,nomysql,nopgx" \
+    CGO_CFLAGS="$(php-config --includes)" \
+    CGO_LDFLAGS="$(php-config --ldflags) $(php-config --libs)" \
+    xcaddy build \
+        --output /usr/local/bin/frankenphp \
+        --with github.com/dunglas/frankenphp=./ \
+        --with github.com/dunglas/frankenphp/caddy=./caddy/ \
+        --with github.com/dunglas/caddy-cbrotli \
+        --with github.com/dunglas/mercure/caddy \
+        --with github.com/dunglas/vulcain/caddy \
+        --with github.com/getkin/kin-openapi/openapi3@v0.144.0 \
+        --with golang.org/x/crypto/ssh@v0.55.0 \
+        --with google.golang.org/grpc@v1.83.2
+
 # ---------- base runtime (shared base for prod and dev) ----------
 # Pinned to major version 1: a floating tag once pulled in a FrankenPHP build
 # where php_server's custom try_files broke URL rewriting (bare 404 on every route).
 FROM dunglas/frankenphp:1-php8.4-alpine AS base
+
+COPY --from=frankenphp-builder /usr/local/bin/frankenphp /usr/local/bin/frankenphp
 
 # Extensions covering the full range of DBs/drivers the project supports:
 #   pdo_mysql  — MySQL/MariaDB (stack default)

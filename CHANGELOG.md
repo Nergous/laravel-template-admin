@@ -16,6 +16,9 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 - Updated `guzzlehttp/guzzle` to 7.15.5 and `league/commonmark` to 2.10.1,
   including their compatible transitive dependencies.
+- Rebuild the official FrankenPHP module set with patched `kin-openapi`,
+  `golang.org/x/crypto` and `google.golang.org/grpc` versions until the stable
+  upstream image includes them.
 
 ## [1.2.2] — 2026-06-30
 

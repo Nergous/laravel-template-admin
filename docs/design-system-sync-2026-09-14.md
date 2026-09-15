@@ -2,10 +2,9 @@
 
 ## Scope
 
-Synchronized the standalone `C:/Files/01_work/active/nergous-cit` repository
+Synchronized the standalone `C:/Files/01_work/active/nergous-cit-ui-vue` repository
 (HEAD `c4d7c96`, package 1.0.1) and the vendored snapshot at
-`resources/js/lib/nergous-cit`. The user explicitly excluded `jur-bot-max`
-from changes. Its snapshot was read only for comparison.
+`resources/js/lib/nergous-cit`.
 
 All **69 distributable/snapshot files are byte-identical** between the standalone
 library and the Laravel template after this sync. Repository-only `AGENTS.md`,

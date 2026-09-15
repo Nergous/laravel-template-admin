@@ -392,9 +392,3 @@ healthchecks; suitable for a load balancer's liveness/readiness probes.
 ## License
 
 MIT.
-
-## Template synchronization
-
-Reusable changes imported from `jur-bot-max` are documented in
-[docs/template-sync-2026-09-14.md](docs/template-sync-2026-09-14.md), including the
-project-specific differences intentionally retained in the source application.

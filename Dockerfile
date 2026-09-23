@@ -28,7 +28,7 @@ FROM node:26-alpine AS assets
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY vite.config.js jsconfig.json ./
+COPY vite.config.ts tsconfig.json ./
 COPY resources ./resources
 COPY public ./public
 RUN npm run build

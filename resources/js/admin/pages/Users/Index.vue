@@ -1,6 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from "vue";
-import { Link, router, useForm } from "@inertiajs/vue3";
+import type { PropType } from "vue";
+import { Link, router } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
     NDataTable,
@@ -10,33 +11,38 @@ import {
     NSelect,
     NBadge,
     NAvatar,
-    NDrawer,
     NEmptyState,
-} from "@/lib/nergous-cit";
+} from "nergous-ui-vue";
+import type { Column, Row } from "nergous-ui-vue";
+import type { AdminUser, Pagination } from "@/admin/types";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
-import DrawerFooter from "@/admin/components/DrawerFooter.vue";
-import UserForm from "@/admin/pages/Users/Partials/Form.vue";
-import { useConfirm } from "@/admin/composables/useConfirm.js";
-import { useIndexFilters } from "@/admin/composables/useIndexFilters.js";
-import { can } from "@/lib/can.js";
-import { formatDateShort } from "@/lib/format.js";
-import { swatchColor } from "@/lib/swatch.js";
+import { useConfirm } from "@/admin/composables/useConfirm";
+import { useIndexFilters } from "@/admin/composables/useIndexFilters";
+import { can } from "@/lib/can";
+import { formatDateShort } from "@/lib/format";
+import { swatchColor } from "@/lib/swatch";
 
 const props = defineProps({
-    users: { type: Object, required: true },
-    roles: { type: Object, default: () => ({}) }, // { admin:'admin', ... }
-    allRoles: { type: Array, default: () => [] }, // [{ name, description }]
+    users: { type: Object as PropType<Pagination<AdminUser>>, required: true },
+    roles: {
+        type: Object as PropType<Record<string, string>>,
+        default: () => ({}),
+    }, // { admin:'admin', ... }
     trashedCount: { type: Number, default: 0 },
     currentSort: { type: String, default: "id" },
-    currentDirection: { type: String, default: "desc" },
-    filters: { type: Object, default: () => ({}) },
+    currentDirection: {
+        type: String as PropType<"asc" | "desc">,
+        default: "desc",
+    },
+    filters: {
+        type: Object as PropType<{ search?: string; role?: string }>,
+        default: () => ({}),
+    },
 });
 
-/* ---------- toolbar / server filters ---------- */
 const search = ref(props.filters.search ?? "");
 const role = ref(props.filters.role ?? "");
 
-// NSelect — options via :options, NOT via an <option> slot.
 const roleOptions = computed(() => [
     { value: "", label: "Все роли" },
     ...Object.entries(props.roles).map(([value, label]) => ({ value, label })),
@@ -49,79 +55,21 @@ const { reload, onSearch, onSort } = useIndexFilters("/admin/users", () => ({
     direction: props.currentDirection,
 }));
 
-/* ---------- rows ---------- */
 const rows = computed(() => props.users.data);
 
-/* ---------- table columns ---------- */
-const columns = [
+const columns: Column[] = [
     { key: "name", label: "Пользователь", sortable: true },
     { key: "email", label: "Email" },
     { key: "roles", label: "Роли" },
     { key: "created_at", label: "Добавлен", sortable: true, width: "140px" },
-    { key: "actions", label: "Действия", width: "80px", align: "center" },
+    { key: "actions", label: "Действия", width: "120px", align: "center" },
 ];
 
-/* ---------- drawer (create | edit) ---------- */
-const drawerOpen = ref(false);
-const mode = ref("create"); // create | edit
-const editing = ref(null); // full row when editing
-const form = useForm({ name: "", email: "", password: "", roles: [] });
-
-const drawerTitle = computed(() =>
-    mode.value === "edit" && editing.value
-        ? editing.value.name
-        : "Новый пользователь",
-);
-const drawerSubtitle = computed(() =>
-    mode.value === "edit" && editing.value
-        ? editing.value.email
-        : "Заполните данные и отправьте приглашение",
-);
-
-function openCreate() {
-    mode.value = "create";
-    editing.value = null;
-    // openEdit() sets form.defaults() to the edited row; reset the defaults back to
-    // empty here, otherwise reset() restores the last edited user into the create form.
-    form.defaults({ name: "", email: "", password: "", roles: [] });
-    form.reset();
-    form.clearErrors();
-    drawerOpen.value = true;
-}
-function openEdit(row) {
-    mode.value = "edit";
-    editing.value = row;
-    form.clearErrors();
-    form.defaults({
-        name: row.name,
-        email: row.email,
-        password: "",
-        roles: row.roles.map((r) => r.name),
-    });
-    form.reset();
-    drawerOpen.value = true;
-}
-function closeDrawer() {
-    drawerOpen.value = false;
-}
-function submit() {
-    if (mode.value === "edit" && editing.value) {
-        form.put(`/admin/users/${editing.value.id}`, {
-            preserveScroll: true,
-            onSuccess: closeDrawer,
-        });
-    } else {
-        form.post("/admin/users", {
-            preserveScroll: true,
-            onSuccess: closeDrawer,
-        });
-    }
-}
-
-/* ---------- delete ---------- */
 const del = useConfirm();
+const userRow = (row: Row): AdminUser => row as AdminUser;
 
 function confirmDelete() {
+    if (!del.payload) return;
     del.loading = true;
     router.delete(`/admin/users/${del.payload.id}`, {
         preserveScroll: true,
@@ -136,7 +84,6 @@ function confirmDelete() {
         :subtitle="`${users.total} учётных записей`"
     >
         <div class="page">
-            <!-- inline toolbar -->
             <div class="toolbar">
                 <div class="toolbar__search">
                     <NInput
@@ -165,10 +112,11 @@ function confirmDelete() {
                 >
                 <NButton
                     v-if="can('users.create')"
+                    :as="Link"
+                    href="/admin/users/create"
                     variant="primary"
                     icon="plus"
                     class="toolbar__add"
-                    @click="openCreate"
                     >Добавить</NButton
                 >
             </div>
@@ -184,53 +132,64 @@ function confirmDelete() {
                 empty-text="Нет данных"
                 @sort-change="onSort"
             >
-                <!-- User -->
                 <template #cell-name="{ row }">
                     <div class="ucell">
-                        <NAvatar :name="row.name" :size="36" />
-                        <div class="ucell__name">{{ row.name }}</div>
+                        <NAvatar :name="userRow(row).name" :size="36" />
+                        <Link
+                            :href="`/admin/users/${userRow(row).id}`"
+                            class="ucell__name"
+                            >{{ userRow(row).name }}</Link
+                        >
                     </div>
                 </template>
 
-                <!-- Email -->
                 <template #cell-email="{ row }">
-                    <span class="email-cell">{{ row.email }}</span>
+                    <span class="email-cell">{{ userRow(row).email }}</span>
                 </template>
 
-                <!-- Roles -->
                 <template #cell-roles="{ row }">
                     <span class="roles-cell">
                         <NBadge
-                            v-for="r in row.roles"
+                            v-for="r in userRow(row).roles"
                             :key="r.id"
                             tone="neutral"
                             pill
                             :swatch="swatchColor(r.name)"
                             >{{ r.name }}</NBadge
                         >
-                        <span v-if="!row.roles?.length" class="muted">—</span>
+                        <span v-if="!userRow(row).roles?.length" class="muted"
+                            >—</span
+                        >
                     </span>
                 </template>
 
-                <!-- Added -->
                 <template #cell-created_at="{ row }">
                     <span class="created">{{
-                        formatDateShort(row.created_at)
+                        formatDateShort(userRow(row).created_at)
                     }}</span>
                 </template>
 
-                <!-- Actions -->
                 <template #cell-actions="{ row }">
                     <div class="row-actions row-actions--center">
                         <NButton
+                            :as="Link"
+                            :href="`/admin/users/${userRow(row).id}`"
+                            variant="ghost"
+                            icon="eye"
+                            size="sm"
+                            class="row-actions__btn"
+                            :aria-label="`Открыть пользователя ${userRow(row).name}`"
+                        />
+                        <NButton
                             v-if="can('users.edit')"
+                            :as="Link"
+                            :href="`/admin/users/${userRow(row).id}/edit`"
                             variant="ghost"
                             tone="accent"
                             icon="edit"
                             size="sm"
                             class="row-actions__btn"
                             aria-label="Редактировать"
-                            @click="openEdit(row)"
                         />
                         <NButton
                             v-if="can('users.delete')"
@@ -240,7 +199,7 @@ function confirmDelete() {
                             size="sm"
                             class="row-actions__btn"
                             aria-label="Удалить"
-                            @click="del.ask(row)"
+                            @click="del.ask(userRow(row))"
                         />
                     </div>
                 </template>
@@ -266,33 +225,6 @@ function confirmDelete() {
             </div>
         </div>
 
-        <!-- create | edit drawer -->
-        <NDrawer
-            v-model="drawerOpen"
-            :title="drawerTitle"
-            :subtitle="drawerSubtitle"
-            close-label="Закрыть"
-        >
-            <UserForm
-                :form="form"
-                :all-roles="allRoles"
-                :is-edit="mode === 'edit'"
-                :user="editing"
-            />
-            <template #footer="{ close }">
-                <DrawerFooter
-                    :loading="form.processing"
-                    @cancel="
-                        () => {
-                            form.reset();
-                            close();
-                        }
-                    "
-                    @save="submit"
-                />
-            </template>
-        </NDrawer>
-
         <ConfirmModal
             :open="del.open"
             :loading="del.loading"
@@ -306,9 +238,6 @@ function confirmDelete() {
 </template>
 
 <style scoped>
-/* .page / .row-actions* — shared utilities in resources/js/admin/styles.css */
-
-/* inline toolbar */
 .toolbar {
     display: flex;
     align-items: center;
@@ -330,7 +259,6 @@ function confirmDelete() {
     margin-left: auto;
 }
 
-/* user cell */
 .ucell {
     display: flex;
     align-items: center;
@@ -343,6 +271,14 @@ function confirmDelete() {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-decoration: none;
+}
+.ucell__name:hover {
+    color: var(--accent);
+}
+.ucell__name:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 .email-cell {
     color: var(--text-2);

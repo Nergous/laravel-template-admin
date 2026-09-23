@@ -21,7 +21,7 @@ class RoleManagementTest extends TestCase
         $this->post(route('admin.roles.store'), [
             'name' => 'editor',
             'permissions' => [],
-        ])->assertRedirect(route('admin.roles.index'));
+        ])->assertRedirect();
 
         $this->assertDatabaseHas('roles', ['name' => 'editor']);
     }
@@ -53,7 +53,7 @@ class RoleManagementTest extends TestCase
         $this->put(route('admin.roles.update', $role), [
             'name' => 'editor',
             'permissions' => ['demo.alpha', 'demo.gamma'],
-        ])->assertRedirect(route('admin.roles.index'));
+        ])->assertRedirect(route('admin.roles.show', $role));
 
         $log = ActivityLog::query()
             ->where('subject_id', $role->id)
@@ -78,7 +78,7 @@ class RoleManagementTest extends TestCase
         $this->put(route('admin.roles.update', $role), [
             'name' => 'editor2',
             'permissions' => ['demo.alpha'],
-        ])->assertRedirect(route('admin.roles.index'));
+        ])->assertRedirect(route('admin.roles.show', $role));
 
         $log = ActivityLog::query()
             ->where('subject_id', $role->id)
@@ -104,5 +104,56 @@ class RoleManagementTest extends TestCase
                 ->component('Roles/Index')
                 ->has('roles.data')
             );
+    }
+
+    public function test_role_resource_pages_have_shareable_urls_and_enforce_write_permissions(): void
+    {
+        $this->actingAsAdmin();
+        $role = Role::create(['name' => 'editor', 'guard_name' => 'web']);
+
+        $this->get(route('admin.roles.show', $role))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Roles/Show')
+                ->where('role.id', $role->id)
+                ->where('role.name', 'editor')
+            );
+        $this->get(route('admin.roles.create'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Roles/FormPage')
+                ->where('mode', 'create')
+                ->has('allPermissions')
+            );
+        $this->get(route('admin.roles.edit', $role))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Roles/FormPage')
+                ->where('mode', 'edit')
+                ->where('role.id', $role->id)
+            );
+
+        Permission::findOrCreate('roles.view', 'web');
+        $viewer = User::factory()->create();
+        $viewer->givePermissionTo('roles.view');
+        $this->actingAs($viewer);
+
+        $this->get(route('admin.roles.show', $role))->assertOk();
+        $this->get(route('admin.roles.create'))->assertForbidden();
+        $this->get(route('admin.roles.edit', $role))->assertForbidden();
+    }
+
+    public function test_role_create_redirects_to_the_role_page_and_system_edit_is_admin_only(): void
+    {
+        $this->actingAsAdmin();
+
+        $response = $this->post(route('admin.roles.store'), [
+            'name' => 'shareable',
+            'permissions' => [],
+        ]);
+        $role = Role::findByName('shareable', 'web');
+        $response->assertRedirect(route('admin.roles.show', $role));
+
+        $actor = $this->actingAsUserWith(['roles.view', 'roles.edit']);
+        $this->actingAs($actor);
+        $systemRole = Role::findByName('admin', 'web');
+        $this->get(route('admin.roles.edit', $systemRole))->assertForbidden();
     }
 }

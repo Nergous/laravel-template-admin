@@ -5,9 +5,9 @@ cd /app
 
 # -----------------------------------------------------------------------------
 #  Control variables (can be overridden in the service environment):
-#    RUN_MIGRATIONS=false  — opt in to migrations + base RBAC seeding for first boot/releases
-#    RUN_SEEDS=false       — run `db:seed --force`. OFF BY DEFAULT:
-#                            the seeder creates DEMO users, not needed in production.
+#    RUN_MIGRATIONS=false  — opt in to migrations for first boot/releases.
+#    RUN_SEEDS=false       — include initial users when the database is empty.
+#                            OFF BY DEFAULT: local users have demo passwords.
 #    OPTIMIZE=auto         — cache config/route/view. auto = only if APP_ENV != local.
 #    WAIT_FOR_DB=true      — wait for the DB to be ready before migrations (for the compose stack).
 # -----------------------------------------------------------------------------
@@ -77,23 +77,18 @@ fi
 # public/storage -> storage/app/public (symlink for serving media)
 php artisan storage:link --force --no-interaction || true
 
-# Migrations (web only; queue/scheduler start with RUN_MIGRATIONS=false)
+# Migrations (web only; queue/scheduler start with RUN_MIGRATIONS=false).
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
     php artisan migrate --force --no-interaction
-
-    # The structural RBAC (permission catalog + granting it to the superadmin) is needed in ANY
-    # environment: without it an admin created by the command/seeder ends up WITHOUT permissions and gets a 403
-    # in every section. This is NOT demo data — so it is always seeded together with the
-    # migrations, regardless of RUN_SEEDS. Idempotent (firstOrCreate).
-    php artisan db:seed --class='Database\Seeders\RolePermissionSeeder' --force --no-interaction
 fi
 
-# Demo/real USERS (UserSeeder) — separate, behind a flag. OFF BY DEFAULT:
-# in production the admin is usually created via `php artisan app:create-admin` (which
-# also seeds RBAC itself). RUN_SEEDS=true + ADMIN_PASSWORD creates a real admin
-# automatically; in local — two test users.
+# Base RBAC is initialized only for an empty database, including on later migrations.
+# RUN_SEEDS also includes initial users: two demo accounts locally, or a production
+# admin if ADMIN_PASSWORD is configured. Existing data is never re-seeded on restart.
 if [ "${RUN_SEEDS:-false}" = "true" ]; then
-    php artisan db:seed --class='Database\Seeders\UserSeeder' --force --no-interaction
+    php artisan app:seed-fresh --users --no-interaction
+elif [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
+    php artisan app:seed-fresh --no-interaction
 fi
 
 # Prod caches (config/route/view). In local we don't cache — it gets in the way of hot-reload.

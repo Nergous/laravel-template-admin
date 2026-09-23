@@ -1,25 +1,19 @@
-<script setup>
-import { NInput, NTextarea, NCheckbox, NFormField } from "@/lib/nergous-cit";
-import { formatDateTime } from "@/lib/format.js";
+<script setup lang="ts">
+import { NInput, NTextarea, NCheckbox, NFormField } from "nergous-ui-vue";
+import { formatDateTime } from "@/lib/format";
+import { permissionGroupLabels } from "@/admin/pages/Roles/permissionGroupLabels";
 
-// Presentational role form for the drawer on the Index page. The save/cancel
-// buttons live in the NDrawer footer (DrawerFooter), submit is on the parent page.
+// Presentational form shared by the create/edit role pages.
 const props = defineProps({
-    form: { type: Object, required: true }, // useForm({ name, description, permissions: [names] })
+    form: { type: Object, required: true },
     allPermissions: { type: Object, required: true }, // { users:[{id,name}], media:[...], ... }
     // Role metadata — only on edit. { created_by, updated_by, created_at, updated_at }.
     meta: { type: Object, default: null },
+    nameReadonly: { type: Boolean, default: false },
 });
+const emit = defineEmits(["submit"]);
 
-const GROUP_LABELS = {
-    users: "Пользователи",
-    media: "Медиатека",
-    roles: "Роли",
-    permissions: "Разрешения",
-    other: "Прочее",
-};
-
-function toggle(name, checked) {
+function toggle(name: string, checked: boolean) {
     const set = new Set(props.form.permissions);
     if (checked) set.add(name);
     else set.delete(name);
@@ -28,10 +22,11 @@ function toggle(name, checked) {
 </script>
 
 <template>
-    <form class="rform" @submit.prevent>
+    <form class="rform" @submit.prevent="emit('submit')">
         <NFormField label="Название роли" :error="form.errors.name" required>
             <NInput
                 v-model="form.name"
+                :readonly="nameReadonly"
                 placeholder="например, editor"
                 :error="!!form.errors.name"
             />
@@ -72,7 +67,7 @@ function toggle(name, checked) {
                         :id="`rform-group-${group}`"
                         class="rform__group-title"
                     >
-                        {{ GROUP_LABELS[group] ?? group }}
+                        {{ permissionGroupLabels[group] ?? group }}
                     </div>
                     <div class="rform__perms">
                         <NCheckbox
@@ -87,7 +82,6 @@ function toggle(name, checked) {
             </div>
         </NFormField>
 
-        <!-- Edit: "Details" panel -->
         <div v-if="meta" class="rform__panel">
             <h2 class="rform__panel-title">Сведения</h2>
             <dl class="rform__panel-list">
@@ -151,7 +145,6 @@ function toggle(name, checked) {
     gap: 8px;
 }
 
-/* --- "Details" panel (edit) --- */
 .rform__panel {
     padding: 14px;
     border: 1px solid var(--border);

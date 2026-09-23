@@ -22,7 +22,7 @@ class UserManagementTest extends TestCase
             'email' => 'new@example.com',
             'password' => 'Str0ng!Passw0rd#42',
             'roles' => [],
-        ])->assertRedirect(route('admin.users.index'));
+        ])->assertRedirect();
 
         $this->assertDatabaseHas('users', ['email' => 'new@example.com']);
     }
@@ -97,5 +97,59 @@ class UserManagementTest extends TestCase
                 ->has('users.data')
                 ->has('roles')
             );
+    }
+
+    public function test_user_resource_pages_have_shareable_urls_and_enforce_write_permissions(): void
+    {
+        $this->actingAsAdmin();
+        $target = User::factory()->create(['name' => 'Target User']);
+
+        $this->get(route('admin.users.show', $target))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Users/Show')
+                ->where('user.id', $target->id)
+                ->where('user.name', 'Target User')
+            );
+        $this->get(route('admin.users.create'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Users/FormPage')
+                ->where('mode', 'create')
+                ->has('allRoles')
+            );
+        $this->get(route('admin.users.edit', $target))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Users/FormPage')
+                ->where('mode', 'edit')
+                ->where('user.id', $target->id)
+            );
+
+        Permission::findOrCreate('users.view', 'web');
+        $viewer = User::factory()->create();
+        $viewer->givePermissionTo('users.view');
+        $this->actingAs($viewer);
+
+        $this->get(route('admin.users.show', $target))->assertOk();
+        $this->get(route('admin.users.create'))->assertForbidden();
+        $this->get(route('admin.users.edit', $target))->assertForbidden();
+    }
+
+    public function test_create_and_update_redirect_to_the_user_page(): void
+    {
+        $this->actingAsAdmin();
+
+        $response = $this->post(route('admin.users.store'), [
+            'name' => 'Shareable User',
+            'email' => 'shareable@example.test',
+            'password' => 'Str0ng!Passw0rd#42',
+            'roles' => [],
+        ]);
+        $target = User::where('email', 'shareable@example.test')->firstOrFail();
+        $response->assertRedirect(route('admin.users.show', $target));
+
+        $this->put(route('admin.users.update', $target), [
+            'name' => 'Updated User',
+            'email' => $target->email,
+            'roles' => [],
+        ])->assertRedirect(route('admin.users.show', $target));
     }
 }

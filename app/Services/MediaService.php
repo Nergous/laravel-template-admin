@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\DB;
  *
  * Extracted from the controller because deletion is a multi-step operation
  * (a DB transaction + non-transactional file cleanup), not trivial CRUD.
- * The "when a service, when a controller" boundary is described in CLAUDE.md.
  */
 class MediaService
 {

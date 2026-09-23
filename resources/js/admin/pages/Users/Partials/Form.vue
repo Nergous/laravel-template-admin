@@ -1,43 +1,39 @@
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from "vue";
-import { NInput, NAvatar, NIcon, NFormField, NButton } from "@/lib/nergous-cit";
-import { formatDateShort, formatDateTime } from "@/lib/format.js";
+import type { PropType } from "vue";
+import type { AdminRole } from "@/admin/types";
+import { NInput, NAvatar, NIcon, NFormField, NButton } from "nergous-ui-vue";
+import { formatDateShort, formatDateTime } from "@/lib/format";
 
 const props = defineProps({
-    // useForm({ name, email, password, roles:[names] })
     form: { type: Object, required: true },
-    // [{ name, description }] — full list of assignable roles.
-    allRoles: { type: Array, required: true },
+    allRoles: { type: Array as PropType<AdminRole[]>, required: true },
     isEdit: { type: Boolean, default: false },
-    // On edit we show the profile header + the "Details" panel.
     user: { type: Object, default: null },
 });
+const emit = defineEmits(["submit"]);
 
-function toggleRole(name) {
+function toggleRole(name: string) {
     const set = new Set(props.form.roles);
     set.has(name) ? set.delete(name) : set.add(name);
     props.form.roles = Array.from(set);
 }
-function isSelected(name) {
+function isSelected(name: string) {
     return props.form.roles.includes(name);
 }
 
-/* ---------- password generator ---------- */
-// Mirrors the server policy (Password::defaults() in AppServiceProvider):
-// min 15, mixed case, numbers, symbols. Generates 20 chars with a margin.
-// Confusable characters (I/l/O/0/1) are excluded for hand-typing.
+// Match the server password policy and exclude characters that are easy to confuse.
 const PASSWORD_LENGTH = 20;
 const UPPER = "ABCDEFGHJKMNPQRSTUVWXYZ";
 const LOWER = "abcdefghijkmnpqrstuvwxyz";
 const DIGITS = "23456789";
 const SYMBOLS = "!@#$%^&*-_=+?";
 
-// Show the generated password so it can be shared with the user.
-// Clearing the field restores password masking.
+// Keep generated passwords visible until the field is cleared.
 const generated = ref(false);
 const copied = ref(false);
 
-function pickRandom(set, count) {
+function pickRandom(set: string, count: number): string[] {
     return Array.from(
         crypto.getRandomValues(new Uint32Array(count)),
         (n) => set[n % set.length],
@@ -100,8 +96,7 @@ const passwordHint = computed(() => {
 </script>
 
 <template>
-    <form class="uform" @submit.prevent>
-        <!-- Edit: profile header -->
+    <form class="uform" @submit.prevent="emit('submit')">
         <div v-if="isEdit && user" class="uform__profile">
             <NAvatar :name="user.name" :size="52" />
             <div class="uform__profile-meta">
@@ -198,7 +193,6 @@ const passwordHint = computed(() => {
             </div>
         </NFormField>
 
-        <!-- Edit: "Details" panel -->
         <div v-if="isEdit && user" class="uform__panel">
             <h4 class="uform__panel-title">Сведения</h4>
             <div class="uform__panel-row">
@@ -242,7 +236,6 @@ const passwordHint = computed(() => {
     gap: 16px;
 }
 
-/* --- profile (edit) --- */
 .uform__profile {
     display: flex;
     align-items: center;
@@ -265,7 +258,6 @@ const passwordHint = computed(() => {
     margin-top: 2px;
 }
 
-/* --- password + generator --- */
 .uform__password {
     display: flex;
     align-items: flex-start;
@@ -276,7 +268,6 @@ const passwordHint = computed(() => {
     min-width: 0;
 }
 
-/* --- roles as option cards --- */
 .uform__roles {
     display: flex;
     flex-direction: column;
@@ -353,7 +344,6 @@ const passwordHint = computed(() => {
     margin-top: 1px;
 }
 
-/* --- "Details" panel (edit) --- */
 .uform__panel {
     padding: 14px;
     border: 1px solid var(--border);

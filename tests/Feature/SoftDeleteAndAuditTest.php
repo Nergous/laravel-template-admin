@@ -23,7 +23,7 @@ class SoftDeleteAndAuditTest extends TestCase
             'email' => 'reuse@example.com',
             'password' => 'Str0ng!Passw0rd#42',
             'roles' => [],
-        ])->assertRedirect(route('admin.users.index'));
+        ])->assertRedirect();
 
         $this->assertSame(1, User::where('email', 'reuse@example.com')->count());
         $this->assertSame(2, User::withTrashed()->where('email', 'reuse@example.com')->count());

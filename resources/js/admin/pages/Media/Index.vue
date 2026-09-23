@@ -1,5 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onBeforeUnmount } from "vue";
+import type { PropType } from "vue";
+import type { MediaItem, Pagination } from "@/admin/types";
 import { router } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
@@ -18,48 +20,43 @@ import {
     NInput,
     NFormField,
     useToast,
-} from "@/lib/nergous-cit";
+} from "nergous-ui-vue";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
-import { can } from "@/lib/can.js";
-import { formatBytes, pluralize } from "@/lib/format.js";
+import { can } from "@/lib/can";
+import { formatBytes, pluralize } from "@/lib/format";
 
 const props = defineProps({
-    // Inertia paginator. Each row: { id, filename, original_name, mime_type,
-    // type ('image'|'video'|'audio'|'document'|'other'), size (bytes), url, thumb_url, created_at }.
-    media: { type: Object, required: true },
+    media: { type: Object as PropType<Pagination<MediaItem>>, required: true },
 });
 
 const toast = useToast();
 
-/* ── Local row list ──────────────────────────────────────────────────────
-   Starts from the server page; media fetched by polling after upload are
-   prepended to it, and deleted items are removed from it. */
+// Keep polled uploads and local deletions alongside the server's initial page.
 const rows = ref([...props.media.data]);
 
-/* ── Labels and icons by type ─────────────────────────────────────────── */
-const TYPE_LABEL = {
+const TYPE_LABEL: Record<string, string> = {
     image: "Фото",
     video: "Видео",
     audio: "Аудио",
     document: "Документ",
     other: "Файл",
 };
-// Icons are limited to the NIcon set — we pick the closest meaningful ones.
-const TYPE_ICON = {
+// Use icons available in the design system.
+const TYPE_ICON: Record<string, string> = {
     image: "asset",
     video: "layers",
     audio: "activity",
     document: "copy",
     other: "asset",
 };
-function typeLabel(m) {
+function typeLabel(m: MediaItem) {
     return TYPE_LABEL[m.type] || TYPE_LABEL.other;
 }
-function typeIcon(m) {
+function typeIcon(m: MediaItem) {
     return TYPE_ICON[m.type] || TYPE_ICON.other;
 }
-// Badge label like JPG / MP4 / PDF — from the name extension, otherwise from the MIME subtype.
-function typeBadge(m) {
+// Prefer the filename extension for short file-type badges.
+function typeBadge(m: MediaItem) {
     const name = m.original_name || m.filename || "";
     const ext = name.includes(".") ? name.split(".").pop() : "";
     if (ext) return ext.toUpperCase().slice(0, 5);
@@ -67,7 +64,6 @@ function typeBadge(m) {
     return sub.toUpperCase().slice(0, 5);
 }
 
-/* ── Type filter + view toggle ────────────────────────────────────────── */
 const filter = ref("all");
 const filterOpts = [
     { value: "all", label: "Все" },
@@ -87,9 +83,8 @@ const visible = computed(() =>
         ? rows.value
         : rows.value.filter((m) => m.type === filter.value),
 );
-// The lightbox works only with images — indices are computed within their subset.
+// Lightbox indices refer to images only.
 const images = computed(() => visible.value.filter((m) => m.type === "image"));
-// Neutral item shape for NLightbox: { url, caption }.
 const lbItems = computed(() =>
     images.value.map((m) => ({
         url: m.url,
@@ -97,18 +92,15 @@ const lbItems = computed(() =>
     })),
 );
 
-/* ── Upload: two phases — "Uploading" (real XHR bytes) → "Processing"
-   (indeterminate indicator while polling pulls the files processed by the
-   queue). Small files upload instantly, the real work (thumbnail generation)
-   runs in the queue — so we no longer show a static 100%. */
+// Upload progress covers transfer; polling tracks subsequent queue processing.
 const uploading = ref(false);
 const phase = ref("uploading"); // 'uploading' | 'processing'
 const pct = ref(0);
-const expectedCount = ref(0); // how many files were queued
-const receivedCount = ref(0); // how many have already been pulled by polling
-let pollTimer = null;
+const expectedCount = ref(0);
+const receivedCount = ref(0);
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
-// How many files are still processing (for the label), but never below zero.
+// The queue count can lag behind received files; never show a negative value.
 const processingLeft = computed(() =>
     Math.max(0, expectedCount.value - receivedCount.value),
 );
@@ -122,12 +114,14 @@ function largestId() {
     return rows.value.reduce((max, m) => (m.id > max ? m.id : max), 0);
 }
 
-function upload(files) {
+function upload(files: File[]) {
     if (!files?.length) return;
     // Cancel the previous upload's polling, otherwise a quick repeat drop leaves
     // an orphaned timer whose counters get clobbered by the new batch.
     stopPolling();
-    const token = document.querySelector('meta[name="csrf-token"]')?.content;
+    const token = document.querySelector<HTMLMetaElement>(
+        'meta[name="csrf-token"]',
+    )?.content;
     const fd = new FormData();
     files.forEach((f) => fd.append("media[]", f));
 
@@ -146,7 +140,7 @@ function upload(files) {
             pct.value = Math.round((e.loaded / e.total) * 100);
     };
     xhr.onload = () => {
-        // onload fires for any completed response — 4xx/5xx land here too.
+        // onload also fires for 4xx and 5xx responses.
         if (xhr.status < 200 || xhr.status >= 300) {
             uploadFailed(xhr);
             return;
@@ -158,9 +152,9 @@ function upload(files) {
             const json = JSON.parse(xhr.responseText || "{}");
             if (typeof json.queued === "number") queued = json.queued;
         } catch {
-            /* no JSON — use the number of selected files as the expectation */
+            // Fall back to the selected-file count when the response has no JSON.
         }
-        // Move to the second phase: the indeterminate "Processing…".
+        // The queue may continue after the upload reaches 100%.
         phase.value = "processing";
         startPolling(queued);
     };
@@ -170,21 +164,20 @@ function upload(files) {
 
 // Report an upload error and reset the indicator. The text comes from the server's
 // JSON response (validation/limit), otherwise a generic message.
-function uploadFailed(xhr) {
+function uploadFailed(xhr?: XMLHttpRequest) {
     let msg = "Проверьте размер и формат файлов и попробуйте снова.";
     try {
         const json = JSON.parse(xhr?.responseText || "{}");
         if (json.message) msg = json.message;
     } catch {
-        /* no JSON — keep the generic message */
+        // Keep the generic message if the response has no JSON.
     }
     stopPolling();
     toast.error("Не удалось загрузить файлы", msg);
 }
 
-// Poll /poll until all expected media are pulled in
-// or until we exhaust the attempt limit (the queue may have rejected a file).
-function startPolling(expected) {
+// Stop polling when all queued files arrive or the attempt limit is reached.
+function startPolling(expected: number) {
     expectedCount.value = expected;
     receivedCount.value = 0;
     let attempts = 0;
@@ -197,16 +190,16 @@ function startPolling(expected) {
             const res = await fetch(`/admin/media/poll?after_id=${after}`, {
                 headers: { Accept: "application/json" },
             });
-            const fresh = await res.json(); // newest first
+            const fresh = (await res.json()) as MediaItem[];
             if (Array.isArray(fresh) && fresh.length) {
-                // poll returns by descending id — we prepend them in ascending order.
+                // Poll results arrive newest first; prepend them in ascending order.
                 const known = new Set(rows.value.map((m) => m.id));
                 const add = fresh.filter((m) => !known.has(m.id));
                 for (const m of [...add].reverse()) rows.value.unshift(m);
                 receivedCount.value += add.length;
             }
         } catch {
-            /* transient network error — we'll retry on the next tick */
+            // Retry transient network errors on the next tick.
         }
 
         if (receivedCount.value >= expected) {
@@ -238,9 +231,8 @@ function stopPolling() {
 }
 onBeforeUnmount(stopPolling);
 
-/* ── Lightbox ─────────────────────────────────────────────────────────── */
 const lbIndex = ref(-1);
-function openItem(m) {
+function openItem(m: MediaItem) {
     if (m.type === "image") {
         lbIndex.value = images.value.findIndex((x) => x.id === m.id);
     } else if (m.url) {
@@ -249,26 +241,22 @@ function openItem(m) {
     }
 }
 
-/* ── Thumbnail with an icon fallback on a broken link ─────────────────── */
-const broken = ref(new Set());
-function onImgError(id) {
+const broken = ref(new Set<number>());
+function onImgError(id: number) {
     const next = new Set(broken.value);
     next.add(id);
     broken.value = next;
 }
-function showThumb(m) {
+function showThumb(m: MediaItem) {
     return m.type === "image" && !!m.thumb_url && !broken.value.has(m.id);
 }
 
-/* ── File selection (for bulk actions) ────────────────────────────────────
-   We keep the selected ids in a Set. Set reactivity requires reassignment —
-   the same trick as broken above. The selection survives a filter change, so
-   "Select all" operates only on the visible subset. */
-const selected = ref(new Set());
-function isSelected(id) {
+// Keep selected IDs across filters; reassign the Set to trigger Vue updates.
+const selected = ref(new Set<number>());
+function isSelected(id: number) {
     return selected.value.has(id);
 }
-function toggleSelect(id) {
+function toggleSelect(id: number) {
     const next = new Set(selected.value);
     if (next.has(id)) next.delete(id);
     else next.add(id);
@@ -299,23 +287,22 @@ function clearSelection() {
     selected.value = new Set();
 }
 // Remove ids from the selection (after deleting the corresponding rows).
-function deselect(ids) {
+function deselect(ids: number[]) {
     if (!selected.value.size) return;
     const drop = new Set(ids);
     const next = new Set([...selected.value].filter((id) => !drop.has(id)));
     selected.value = next;
 }
 
-/* ── Renaming a file (the display name, original_name) ────────────────── */
 const renOpen = ref(false);
-const renId = ref(null);
+const renId = ref<number | null>(null);
 const renName = ref("");
 const renError = ref("");
 const renLoading = ref(false);
 
-function askRename(m) {
+function askRename(m: MediaItem) {
     renId.value = m.id;
-    renName.value = m.original_name || m.filename.split("/").pop();
+    renName.value = m.original_name || m.filename.split("/").pop() || "";
     renError.value = "";
     renOpen.value = true;
 }
@@ -350,9 +337,8 @@ function confirmRename() {
     );
 }
 
-/* ── Deleting a single file ───────────────────────────────────────────── */
 const delOpen = ref(false);
-const delId = ref(null);
+const delId = ref<number | null>(null);
 const delLoading = ref(false);
 // Name of the file being deleted, for the modal label (original_name → filename).
 const delName = computed(() => {
@@ -364,12 +350,13 @@ const delMessage = computed(() =>
         ? `Удалить файл «${delName.value}»? Действие необратимо.`
         : "Удалить этот файл? Действие необратимо.",
 );
-function askDelete(id) {
+function askDelete(id: number) {
     delId.value = id;
     delOpen.value = true;
 }
 function confirmDelete() {
     const id = delId.value;
+    if (id === null) return;
     delLoading.value = true;
     router.delete(`/admin/media/${id}`, {
         preserveScroll: true,
@@ -385,7 +372,6 @@ function confirmDelete() {
     });
 }
 
-/* ── Bulk deletion of selected files ──────────────────────────────────── */
 const bulkOpen = ref(false);
 const bulkLoading = ref(false);
 const bulkMessage = computed(() => {
@@ -418,8 +404,7 @@ function confirmBulkDelete() {
     });
 }
 
-/* ── Pagination ───────────────────────────────────────────────────────── */
-function goPage(p) {
+function goPage(p: number) {
     router.get(
         "/admin/media",
         { page: p },
@@ -440,14 +425,12 @@ function goPage(p) {
                     @files="upload"
                 />
                 <div v-if="uploading" class="upload-progress">
-                    <!-- Phase 1: real byte upload (determinate bar). -->
                     <NProgress
                         v-if="phase === 'uploading'"
                         :value="pct"
                         label="Загрузка"
                         show-value
                     />
-                    <!-- Phase 2: the queue generates thumbnails — indeterminate status. -->
                     <div
                         v-else
                         class="upload-processing"
@@ -462,7 +445,6 @@ function goPage(p) {
                 </div>
             </NCard>
 
-            <!-- Control bar: select all + type filter + view toggle -->
             <div v-if="rows.length" class="toolbar">
                 <div class="toolbar__group">
                     <NCheckbox
@@ -486,7 +468,6 @@ function goPage(p) {
                 />
             </div>
 
-            <!-- Bulk actions bar: appears when something is selected -->
             <div
                 v-if="can('media.delete') && selectedCount"
                 class="selbar"
@@ -512,7 +493,6 @@ function goPage(p) {
                 </div>
             </div>
 
-            <!-- Card grid -->
             <div
                 v-if="visible.length"
                 class="media"
@@ -541,7 +521,7 @@ function goPage(p) {
                             <img
                                 v-if="showThumb(m)"
                                 class="mcard__img"
-                                :src="m.thumb_url"
+                                :src="m.thumb_url || undefined"
                                 :alt="m.original_name || m.filename"
                                 loading="lazy"
                                 @error="onImgError(m.id)"
@@ -551,7 +531,6 @@ function goPage(p) {
                             </span>
                         </button>
 
-                        <!-- Selection checkbox: visible on hover and while the card is selected -->
                         <span
                             v-if="can('media.delete')"
                             class="mcard__check"
@@ -700,7 +679,6 @@ function goPage(p) {
 </template>
 
 <style scoped>
-/* .page / .page__pager — shared utilities in resources/js/admin/styles.css */
 .upload-progress {
     margin-top: 16px;
 }
@@ -731,7 +709,6 @@ function goPage(p) {
     flex-wrap: wrap;
 }
 
-/* ── Bulk actions bar ─────────────────────────────────────────────────── */
 .selbar {
     display: flex;
     align-items: center;
@@ -756,7 +733,6 @@ function goPage(p) {
     flex-wrap: wrap;
 }
 
-/* ── Grid ─────────────────────────────────────────────────────────────── */
 .media--grid {
     display: grid;
     /* The minimum column width scales slightly with density:
@@ -773,7 +749,6 @@ function goPage(p) {
     gap: 10px;
 }
 
-/* ── Card ─────────────────────────────────────────────────────────────── */
 .mcard {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -911,7 +886,6 @@ function goPage(p) {
     margin-top: 4px;
 }
 
-/* ── List ─────────────────────────────────────────────────────────────── */
 .media--list .mcard {
     display: flex;
     align-items: stretch;

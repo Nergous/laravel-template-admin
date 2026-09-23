@@ -15,18 +15,18 @@
     {{-- theme and density anti-flash — before CSS, with a nonce (CSP) --}}
     <script nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}">
         try {
-            var t = localStorage.getItem('nergouscit-theme');
-            var d = localStorage.getItem('nergouscit-density');
-            if (t) document.documentElement.setAttribute('data-theme', t);
-            if (d) document.documentElement.setAttribute('data-density', d);
+            var t = localStorage.getItem('nergous-ui-vue-theme');
+            var d = localStorage.getItem('nergous-ui-vue-density');
+            if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+            if (['compact', 'comfortable', 'spacious'].includes(d)) document.documentElement.setAttribute('data-density', d);
         } catch (e) {}
     </script>
 
-    @vite(['resources/js/admin/app.js'])
+    @vite(['resources/js/admin/app.ts'])
     @inertiaHead
 </head>
 
-<body class="nergouscit-reset">
+<body class="nergous-ui-vue-reset">
     @inertia
 </body>
 

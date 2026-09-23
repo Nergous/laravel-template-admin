@@ -5,6 +5,29 @@ All notable changes to the project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [semantic versioning](https://semver.org/).
 
+## [2.1.0] — 2026-09-23
+
+### Added
+
+- Added shareable detail pages and dedicated create/edit pages for users and roles,
+  with permission checks and navigation from their lists.
+- Added `app:seed-fresh` for Docker startup: an empty database receives base RBAC
+  once and, when `RUN_SEEDS=true`, initial users. Existing application data is left
+  untouched on subsequent starts.
+
+### Changed
+
+- Switched the admin UI from the vendored component snapshot to the published
+  `nergous-ui-vue` npm package.
+- Migrated the frontend entry point, utilities, composables, and Vite config to
+  TypeScript; added type checking and formatting checks to CI.
+- Updated the user and role management documentation and removed obsolete local
+  design-system synchronization notes.
+
+### Removed
+
+- Removed the vendored UI component snapshot from `resources/js/lib`.
+
 ## [2.0.0] — 2026-09-15
 
 ### Added
@@ -38,7 +61,8 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 - **Dependencies & toolchain modernized** (batched Dependabot backlog — #22, #23, #24, #25):
   - **Build:** migrated to **Vite 8** (new Rolldown bundler) + `laravel-vite-plugin` 3, with a
-    re-sync of the vendored `nergous-cit` snapshot so its `package.json` `exports` resolve under
+    re-sync of the vendored design-system snapshot (now published as `nergous-ui-vue`)
+    so its `package.json` `exports` resolve under
     Rolldown's stricter resolution. Frontend: `vue` 3.5.39, `@inertiajs/vue3` 3.5.
   - **PHP:** `spatie/laravel-permission` 7 → **8**; dev tooling `laravel/pint` 1.29.3,
     `laravel/pail` 1.2.7, `laravel/sail` 1.63, `nunomaduro/collision` 8.9.4, `laravel/tinker` 3.
@@ -94,8 +118,8 @@ and the project adheres to [semantic versioning](https://semver.org/).
   bulk `DELETE`. The action is gated by a dedicated `activity-log.delete` permission and is
   accompanied by a flash message with the number of deleted records
   (`DELETE /admin/activity-log`, `admin.activity-log.clear`).
-- **`npm run ds:pull`** — updating the vendored snapshot of the nergous-cit design system
-  from the canonical repository [`Nergous/nergous-cit`](https://github.com/Nergous/nergous-cit).
+- **`npm run ds:pull`** — updating the vendored design-system snapshot from the
+  canonical repository, now [`Nergous/nergous-ui-vue`](https://github.com/Nergous/nergous-ui-vue).
 
 ### Changed
 
@@ -122,9 +146,10 @@ and the project adheres to [semantic versioning](https://semver.org/).
 ## [1.0.0] — 2026-06-30
 
 The first release of the Laravel admin panel template: an Inertia + Vue 3 SPA, the
-nergous-cit design system, RBAC (spatie/laravel-permission), a media library with
+design system (now `nergous-ui-vue`), RBAC (spatie/laravel-permission), a media library with
 asynchronous processing, an activity log, settings, and an optional bot module.
 
+[2.1.0]: https://github.com/Nergous/laravel-template-admin/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.2...v2.0.0
 [1.2.2]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.0...v1.2.1

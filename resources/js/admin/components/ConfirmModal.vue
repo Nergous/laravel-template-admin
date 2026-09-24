@@ -1,5 +1,5 @@
-<script setup>
-import { NModal, NButton } from "@/lib/nergous-cit";
+<script setup lang="ts">
+import { NModal, NButton } from "nergous-ui-vue";
 
 defineProps({
     open: { type: Boolean, default: false },

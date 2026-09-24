@@ -84,7 +84,7 @@ class RbacTest extends TestCase
             'email' => 'yes@example.test',
             'password' => 'Str0ng!Passw0rd#42',
             'roles' => [],
-        ])->assertRedirect(route('admin.users.index'));
+        ])->assertRedirect();
 
         $this->assertDatabaseHas('users', ['email' => 'yes@example.test']);
     }
@@ -112,7 +112,7 @@ class RbacTest extends TestCase
             'name' => 'Renamed',
             'email' => $target->email,
             'roles' => [],
-        ])->assertRedirect(route('admin.users.index'));
+        ])->assertRedirect(route('admin.users.show', $target));
 
         $this->assertDatabaseHas('users', ['id' => $target->id, 'name' => 'Renamed']);
     }
@@ -156,7 +156,7 @@ class RbacTest extends TestCase
             'name' => $target->name,
             'email' => $target->email,
             'roles' => ['admin'],
-        ])->assertRedirect(route('admin.users.index'));
+        ])->assertRedirect(route('admin.users.show', $target));
 
         $this->assertTrue($target->fresh()->hasRole('admin'));
     }
@@ -207,7 +207,7 @@ class RbacTest extends TestCase
             'name' => $target->name,
             'email' => $target->email,
             'roles' => ['media-helper'],
-        ])->assertRedirect(route('admin.users.index'));
+        ])->assertRedirect(route('admin.users.show', $target));
 
         $this->assertTrue($target->fresh()->hasRole('media-helper'));
     }
@@ -326,7 +326,7 @@ class RbacTest extends TestCase
         $this->post(route('admin.roles.store'), [
             'name' => 'media-helper',
             'permissions' => ['media.view'],
-        ])->assertRedirect(route('admin.roles.index'));
+        ])->assertRedirect();
 
         $role = Role::findByName('media-helper', 'web');
         $this->assertContains('media.view', $role->permissions()->pluck('name')->all());

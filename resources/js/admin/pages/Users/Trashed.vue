@@ -1,30 +1,29 @@
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue";
+import type { PropType } from "vue";
 import { Link, router } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
-import {
-    NDataTable,
-    NPagination,
-    NButton,
-    NEmptyState,
-} from "@/lib/nergous-cit";
+import { NDataTable, NPagination, NButton, NEmptyState } from "nergous-ui-vue";
+import type { Column, Row } from "nergous-ui-vue";
+import type { AdminUser, Pagination } from "@/admin/types";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
-import { formatDateTime } from "@/lib/format.js";
+import { formatDateTime } from "@/lib/format";
 
 defineProps({
-    users: { type: Object, required: true },
+    users: { type: Object as PropType<Pagination<AdminUser>>, required: true },
 });
 
-const selected = ref([]);
+const selected = ref<number[]>([]);
 
-const columns = [
+const columns: Column[] = [
     { key: "name", label: "Имя" },
     { key: "email", label: "Email" },
     { key: "deleted_at", label: "Удалён", width: "180px" },
     { key: "actions", label: "", width: "200px", align: "right" },
 ];
+const userRow = (row: Row): AdminUser => row as AdminUser;
 
-function reloadPage(p) {
+function reloadPage(p: number) {
     router.get(
         "/admin/users/trashed",
         { page: p },
@@ -32,7 +31,7 @@ function reloadPage(p) {
     );
 }
 
-function restoreOne(id) {
+function restoreOne(id: number) {
     router.patch(`/admin/users/restore/${id}`, {}, { preserveScroll: true });
 }
 function bulkRestore() {
@@ -47,8 +46,8 @@ function bulkRestore() {
 }
 
 const forceConfirm = ref(false);
-const forceOneId = ref(null); // null = bulk force
-function askForceOne(id) {
+const forceOneId = ref<number | null>(null); // null = bulk force
+function askForceOne(id: number) {
     forceOneId.value = id;
     forceConfirm.value = true;
 }
@@ -111,7 +110,7 @@ function confirmForce() {
                     >
                 </template>
                 <template #cell-deleted_at="{ row }">{{
-                    formatDateTime(row.deleted_at)
+                    formatDateTime(userRow(row).deleted_at)
                 }}</template>
                 <template #cell-actions="{ row }">
                     <div class="row-actions row-actions--end">
@@ -119,7 +118,7 @@ function confirmForce() {
                             variant="ghost"
                             size="sm"
                             icon="upload"
-                            @click="restoreOne(row.id)"
+                            @click="restoreOne(userRow(row).id)"
                             >Восстановить</NButton
                         >
                         <NButton
@@ -128,7 +127,7 @@ function confirmForce() {
                             size="sm"
                             icon="trash"
                             aria-label="Удалить навсегда"
-                            @click="askForceOne(row.id)"
+                            @click="askForceOne(userRow(row).id)"
                         />
                     </div>
                 </template>
@@ -170,7 +169,6 @@ function confirmForce() {
 </template>
 
 <style scoped>
-/* .page / .page__pager / .row-actions* — shared utilities in resources/js/admin/styles.css */
 .page__head {
     display: flex;
     align-items: center;

@@ -28,15 +28,15 @@ FROM node:26-alpine AS assets
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY vite.config.js jsconfig.json ./
+COPY vite.config.ts tsconfig.json ./
 COPY resources ./resources
 COPY public ./public
 RUN npm run build
 
 # ---------- patched FrankenPHP binary ----------
-# The current stable image still ships older transitive Go modules. Rebuild the
-# same official module set while pinning the fixed versions; Trivy verifies the
-# resulting binary in CI, so these pins can be removed after upstream catches up.
+# The current stable image still ships older transitive Go modules. Rebuild with
+# only the modules used by docker/Caddyfile while pinning the fixed versions;
+# Trivy verifies the resulting binary in CI.
 FROM dunglas/frankenphp:1-builder-php8.4-alpine AS frankenphp-builder
 COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
 RUN CGO_ENABLED=1 \
@@ -49,8 +49,6 @@ RUN CGO_ENABLED=1 \
         --with github.com/dunglas/frankenphp=./ \
         --with github.com/dunglas/frankenphp/caddy=./caddy/ \
         --with github.com/dunglas/caddy-cbrotli \
-        --with github.com/dunglas/mercure/caddy \
-        --with github.com/dunglas/vulcain/caddy \
         --with github.com/getkin/kin-openapi/openapi3@v0.144.0 \
         --with golang.org/x/crypto/ssh@v0.55.0 \
         --with google.golang.org/grpc@v1.83.2

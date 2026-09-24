@@ -1,21 +1,12 @@
-<script setup>
-/**
- * AuthLayout — two-panel split used by auth screens (login, future password
- * reset). The left panel hosts the form (default slot); the right panel shows
- * page-specific marketing copy via the #aside slot and collapses below 860px.
- *
- * Importing useTheme here ensures the persisted light/dark + density tokens are
- * applied to <html> even on pages that render no sidebar/topbar.
- */
+<script setup lang="ts">
 import { Head } from "@inertiajs/vue3";
-import { useTheme } from "@/lib/nergous-cit";
+import { useTheme } from "nergous-ui-vue";
 
-// `title` feeds the document <title> via app.js's title template; auth pages
-// render no topbar, so this is their only title source.
 defineProps({
     title: { type: String, default: "" },
 });
 
+// Apply the persisted theme on auth pages, which do not render AdminLayout.
 useTheme();
 </script>
 

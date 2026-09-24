@@ -21,9 +21,8 @@ use Inertia\Response;
  * props, and redirects. Domain rules and orchestration (transactions, syncRoles,
  * preventing self-demotion/self-deletion) live in App\Services\UserService.
  *
- * Roles are assigned via a roles[] array (spatie role names). Creation and
- * editing live in a drawer on the Index page, so the resource methods
- * create/edit/show merely redirect.
+ * Roles are assigned via a roles[] array (spatie role names). Resource pages
+ * provide stable URLs for viewing, creating, and editing users.
  */
 class AdminUserController extends Controller
 {
@@ -47,44 +46,50 @@ class AdminUserController extends Controller
             ->paginate(10)
             ->withQueryString();
 
-        $allRoles = Role::orderBy('name')->get(['name', 'description']);
-        $roles = $allRoles->pluck('name', 'name')->toArray();
+        $roles = Role::orderBy('name')->pluck('name', 'name')->toArray();
         $trashedCount = User::onlyTrashed()->count();
 
         return Inertia::render('Users/Index', [
             'users' => $users,
             'roles' => $roles, // ['admin'=>'admin', ...] — for the filter
-            // Full list of roles with descriptions — for the option cards in the drawer.
-            'allRoles' => $allRoles,
             'trashedCount' => $trashedCount,
             ...$sort->toArray(), // currentSort + currentDirection from the validated Sort
             'filters' => $request->only('search', 'role'),
         ]);
     }
 
-    public function create(): RedirectResponse
+    public function create(Request $request): Response
     {
-        // Creation lives in a drawer on the Index page.
-        return redirect()->route('admin.users.index');
+        abort_unless($request->user()?->can('users.create'), 403);
+
+        return Inertia::render('Users/FormPage', [
+            'mode' => 'create',
+            'allRoles' => Role::orderBy('name')->get(['id', 'name', 'description']),
+        ]);
     }
 
     /** Creates a user and assigns roles to them (roles[]). */
     public function store(UserRequest $request): RedirectResponse
     {
-        $this->users->create(
+        $user = $this->users->create(
             $request->only('name', 'email', 'password'),
             $request->input('roles', []),
         );
 
         return redirect()
-            ->route('admin.users.index')
+            ->route('admin.users.show', $user)
             ->with('success', 'Пользователь успешно создан');
     }
 
-    public function edit(User $user): RedirectResponse
+    public function edit(Request $request, User $user): Response
     {
-        // Editing lives in a drawer on the Index page.
-        return redirect()->route('admin.users.index');
+        abort_unless($request->user()?->can('users.edit'), 403);
+
+        return Inertia::render('Users/FormPage', [
+            'mode' => 'edit',
+            'user' => $user->load(['roles:id,name', 'creator:id,name', 'editor:id,name']),
+            'allRoles' => Role::orderBy('name')->get(['id', 'name', 'description']),
+        ]);
     }
 
     /**
@@ -105,7 +110,7 @@ class AdminUserController extends Controller
         );
 
         return redirect()
-            ->route('admin.users.index')
+            ->route('admin.users.show', $user)
             ->with('success', 'Пользователь успешно обновлён');
     }
 
@@ -119,9 +124,11 @@ class AdminUserController extends Controller
             ->with('success', 'Пользователь удалён');
     }
 
-    public function show(User $user): RedirectResponse
+    public function show(User $user): Response
     {
-        return redirect()->route('admin.users.edit', $user);
+        return Inertia::render('Users/Show', [
+            'user' => $user->load(['roles:id,name', 'creator:id,name', 'editor:id,name']),
+        ]);
     }
 
     /**

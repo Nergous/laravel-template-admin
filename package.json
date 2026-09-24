@@ -4,20 +4,24 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
+        "typecheck": "vue-tsc --noEmit",
         "dev": "vite",
-        "format": "prettier --write \"resources/js/**/*.{js,vue}\"",
-        "format:check": "prettier --check \"resources/js/**/*.{js,vue}\"",
-        "ds:pull": "tiged --mode=git --force Nergous/nergous-cit resources/js/lib/nergous-cit"
+        "format": "prettier --write \"resources/js/**/*.{ts,vue}\" vite.config.ts tsconfig.json",
+        "format:check": "prettier --check \"resources/js/**/*.{ts,vue}\" vite.config.ts tsconfig.json"
     },
     "devDependencies": {
+        "@types/node": "^26.5.1",
         "concurrently": "^10.0.5",
         "laravel-vite-plugin": "^3.2.0",
         "prettier": "^3.9.6",
-        "vite": "^8.3.0"
+        "typescript": "^6.0.2",
+        "vite": "^8.3.0",
+        "vue-tsc": "^3.3.11"
     },
     "dependencies": {
         "@inertiajs/vue3": "^3.7.1",
         "@vitejs/plugin-vue": "^6.0.8",
+        "nergous-ui-vue": "1.0.4",
         "vue": "^3.5.42"
     }
 }

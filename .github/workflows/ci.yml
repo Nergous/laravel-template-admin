@@ -104,6 +104,9 @@ jobs:
       - name: Prettier (check only)
         run: npm run format:check
 
+      - name: TypeScript (check only)
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
 

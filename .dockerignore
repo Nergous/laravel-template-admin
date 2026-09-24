@@ -63,14 +63,8 @@ figma
 docs
 design-system
 
-# --- agent's internal instructions and audit reports (not needed in the prod image) ---
+# --- local instructions and audit reports (not needed in the prod image) ---
 
 CLAUDE.md
+AGENTS.md
 audit
-
-# --- Bot module ---
-
-modules/max-bot/venv
-modules/max-bot/__pycache__
-modules/max-bot/.pytest_cache
-modules/max-bot/.env

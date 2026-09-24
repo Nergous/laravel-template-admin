@@ -21,7 +21,7 @@ but **the check point depends on the type of action**:
 **will pass** the route middleware for `POST /admin/users` (it's under `users.view`)
 and will be rejected only in `UserRequest::authorize()` → **403**. This is by design.
 
-The duplication in Vue (`can(perm)`, `resources/js/lib/can.js`) is **only for
+The duplication in Vue (`can(perm)`, `resources/js/lib/can.ts`) is **only for
 conditional rendering** (hiding a button). The server remains the source of truth: if
 a permission is hidden in the UI but the request is sent anyway, a 403 is returned.
 
@@ -62,7 +62,9 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | GET       | `/users`                                             | `users.view`   | —                  | list                                               |
 | POST      | `/users`                                             | `users.view`   | **`users.create`** | `UserRequest`                                      |
 | PUT/PATCH | `/users/{user}`                                      | `users.view`   | **`users.edit`**   | `UserRequest`                                      |
-| GET       | `/users/create`,`/users/{user}`,`/users/{user}/edit` | `users.view`   | —                  | stub redirects to index/edit (forms are drawers)   |
+| GET       | `/users/create`                                      | `users.view`   | **`users.create`** | create page                                        |
+| GET       | `/users/{user}`                                      | `users.view`   | —                  | shareable detail page                              |
+| GET       | `/users/{user}/edit`                                 | `users.view`   | **`users.edit`**   | edit page                                          |
 | DELETE    | `/users/{user}`                                      | `users.delete` | —                  | you can't delete yourself → 422                    |
 | GET       | `/users/trashed`                                     | `users.delete` | —                  | trash                                              |
 | PATCH     | `/users/restore/{id}`                                | `users.delete` | —                  | 404 if not in trash                                |
@@ -75,7 +77,9 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | Method    | URI                                             | Route permission | Action permission                                    | Notes                                     |
 | --------- | ----------------------------------------------- | -------------- | ---------------------------------------------------- | ----------------------------------------- |
 | GET       | `/roles`                                        | `roles.view`   | —                                                    | list                                      |
-| GET       | `/roles/create`, `/roles/{role}`, `/roles/{role}/edit` | `roles.view`   | —                                             | stub redirects to index (forms are a drawer) |
+| GET       | `/roles/create`                                | `roles.view`   | **`roles.create`**                                   | create page                               |
+| GET       | `/roles/{role}`                                | `roles.view`   | —                                                    | shareable detail page                     |
+| GET       | `/roles/{role}/edit`                           | `roles.view`   | **`roles.edit`** (+ admin-only for a system role)    | edit page                                 |
 | POST      | `/roles`                                        | `roles.view`   | **`roles.create`**                                   | `RoleRequest`                             |
 | PUT/PATCH | `/roles/{role}`                                 | `roles.view`   | **`roles.edit`** (+ admin-only for a system role)    | `RoleRequest`                             |
 | DELETE    | `/roles/{role}`                                 | `roles.delete` | —                                                    | can't delete a system / assigned role → 422 |

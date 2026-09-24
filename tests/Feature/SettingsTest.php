@@ -15,7 +15,7 @@ class SettingsTest extends TestCase
     {
         $settings = [
             'general' => [
-                'app_name' => 'nergous-cit',
+                'app_name' => 'nergous-ui-vue',
                 'timezone' => 'Europe/Moscow',
                 'favicon' => '',
             ],

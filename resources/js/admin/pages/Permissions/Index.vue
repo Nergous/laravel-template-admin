@@ -1,52 +1,73 @@
-<script setup>
-// Permissions/Index — "role × permission" matrix.
-// Columns are roles, rows are permissions grouped by resource.
-// Toggling a cell sends PATCH /admin/permissions/matrix; local state
-// updates optimistically and syncs when props are reloaded.
+<script setup lang="ts">
 import { reactive, ref, watch, computed } from "vue";
+import type { PropType } from "vue";
 import { router, useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
-import { NIcon, NButton, NInput, NDrawer, NFormField } from "@/lib/nergous-cit";
+import { NIcon, NButton, NInput, NDrawer, NFormField } from "nergous-ui-vue";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
 import DrawerFooter from "@/admin/components/DrawerFooter.vue";
-import { useConfirm } from "@/admin/composables/useConfirm.js";
-import { can } from "@/lib/can.js";
-import { swatchColor } from "@/lib/swatch.js";
+import { useConfirm } from "@/admin/composables/useConfirm";
+import { can } from "@/lib/can";
+import { swatchColor } from "@/lib/swatch";
 
 const props = defineProps({
-    // Columns: [{ id, name, label, is_system, locked }]
-    roles: { type: Array, default: () => [] },
-    // Rows: [{ resource, label, permissions: [{ id, name, action, label }] }]
-    groups: { type: Array, default: () => [] },
-    // { roleId: ["users.view", ...] } — which permission names the role has.
-    matrix: { type: Object, default: () => ({}) },
+    roles: {
+        type: Array as PropType<
+            {
+                id: number;
+                name: string;
+                label: string;
+                is_system: boolean;
+                locked: boolean;
+            }[]
+        >,
+        default: () => [],
+    },
+    groups: {
+        type: Array as PropType<
+            {
+                resource: string;
+                label: string;
+                permissions: {
+                    id: number;
+                    name: string;
+                    action: string;
+                    label: string;
+                }[];
+            }[]
+        >,
+        default: () => [],
+    },
+    matrix: {
+        type: Object as PropType<Record<number, string[]>>,
+        default: () => ({}),
+    },
 });
 
-// Local mirror of the matrix: a Set of permission names per role.id.
-// Update optimistically on click; rebuild when fresh props arrive.
-const state = reactive({ grants: {} });
+// Mirror the server matrix for optimistic updates.
+const state = reactive<{ grants: Record<number, Set<string>> }>({ grants: {} });
 function rebuild() {
-    const next = {};
+    const next: Record<number, Set<string>> = {};
     for (const role of props.roles) {
         next[role.id] = new Set(props.matrix[role.id] ?? []);
     }
     state.grants = next;
 }
 rebuild();
-// Inertia replaces props.matrix with a new object on every response, so a shallow
-// watch by reference is enough — no deep traversal needed. Optimistic edits
-// mutate the local Sets (state.grants), not props, and never land here.
+// Refresh local grants when Inertia replaces the server matrix.
 watch(() => props.matrix, rebuild);
 
-function isGranted(roleId, name) {
+function isGranted(roleId: number, name: string) {
     return state.grants[roleId]?.has(name) ?? false;
 }
 
-function toggle(role, permission) {
-    if (role.locked) return; // system admin role — not editable
+function toggle(
+    role: { id: number; locked: boolean },
+    permission: { name: string },
+) {
+    if (role.locked) return;
     const set = state.grants[role.id];
     const granted = !set.has(permission.name);
-    // optimistic
     if (granted) set.add(permission.name);
     else set.delete(permission.name);
     router.patch(
@@ -55,7 +76,7 @@ function toggle(role, permission) {
         {
             preserveScroll: true,
             preserveState: true,
-            // on a server error props don't change — roll back manually
+            // Roll back the local grant when the server rejects the change.
             onError: () => {
                 if (granted) set.delete(permission.name);
                 else set.add(permission.name);
@@ -64,14 +85,11 @@ function toggle(role, permission) {
     );
 }
 
-// grid-template-columns: first column for the permission code + N equal columns for roles.
+// Reserve the first grid column for permission names.
 const gridCols = computed(
     () => `minmax(180px, 1.6fr) repeat(${props.roles.length}, 1fr)`,
 );
 
-// --- Creating a permission ---
-// The controller redirects back to index, so the matrix re-renders
-// with the fresh row after a successful submit.
 const createOpen = ref(false);
 const form = useForm({ name: "" });
 
@@ -90,9 +108,9 @@ function submitCreate() {
     });
 }
 
-// --- Deleting a permission ---
 const del = useConfirm();
 function confirmDelete() {
+    if (!del.payload) return;
     del.loading = true;
     router.delete(`/admin/permissions/${del.payload.id}`, {
         preserveScroll: true,
@@ -107,7 +125,6 @@ function confirmDelete() {
         subtitle="Матрица доступа · ресурс.действие"
     >
         <div class="page">
-            <!-- Intro banner -->
             <div class="intro">
                 <span class="intro__ico"><NIcon name="bolt" :size="18" /></span>
                 <p class="intro__text">
@@ -118,7 +135,6 @@ function confirmDelete() {
                 </p>
             </div>
 
-            <!-- Toolbar above the matrix -->
             <div v-if="can('permissions.create')" class="toolbar">
                 <NButton
                     variant="primary"
@@ -129,7 +145,6 @@ function confirmDelete() {
                 >
             </div>
 
-            <!-- Matrix card -->
             <div class="matrix-card">
                 <div class="matrix-scroll">
                     <div
@@ -138,7 +153,6 @@ function confirmDelete() {
                         aria-label="Матрица доступа: роли и разрешения"
                         :style="{ '--cols': gridCols }"
                     >
-                        <!-- Header: "Permission" + role columns -->
                         <div class="row row--head" role="row">
                             <div class="cell cell--corner" role="columnheader">
                                 Разрешение
@@ -160,7 +174,6 @@ function confirmDelete() {
                             </div>
                         </div>
 
-                        <!-- Groups by resource -->
                         <template v-for="group in groups" :key="group.resource">
                             <div class="row row--group" role="row">
                                 <div class="cell cell--group" role="rowheader">
@@ -236,14 +249,12 @@ function confirmDelete() {
                 </div>
             </div>
 
-            <!-- Note below the matrix -->
             <p class="note">
                 Полупрозрачная колонка «admin» — системная роль: её права всегда
                 включены и не редактируются.
             </p>
         </div>
 
-        <!-- Permission creation drawer (same pattern as Users) -->
         <NDrawer
             v-model="createOpen"
             title="Новое разрешение"
@@ -294,9 +305,6 @@ function confirmDelete() {
 </template>
 
 <style scoped>
-/* .page — shared utility in resources/js/admin/styles.css */
-
-/* --- Toolbar above the matrix --- */
 .toolbar {
     display: flex;
     align-items: center;
@@ -307,7 +315,6 @@ function confirmDelete() {
     margin-left: auto;
 }
 
-/* --- Intro banner --- */
 .intro {
     display: flex;
     align-items: center;
@@ -344,7 +351,6 @@ function confirmDelete() {
     color: var(--accent);
 }
 
-/* --- Matrix card --- */
 .matrix-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -486,7 +492,7 @@ function confirmDelete() {
     justify-content: center;
 }
 
-/* --- Cell checkbox (same visual as NCheckbox) --- */
+/* Cell checkbox (same visual as NCheckbox). */
 .cbx {
     position: relative;
     width: 20px;
@@ -531,14 +537,12 @@ function confirmDelete() {
     cursor: not-allowed;
 }
 
-/* --- Note --- */
 .note {
     margin: 0;
     font-size: 12.5px;
     color: var(--text-3);
 }
 
-/* --- Permission creation drawer --- */
 .create-form {
     display: flex;
     flex-direction: column;

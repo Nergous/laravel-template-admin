@@ -1,18 +1,14 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue";
 import { useForm, usePage } from "@inertiajs/vue3";
 import AuthLayout from "@/admin/layouts/AuthLayout.vue";
-import {
-    NBrand,
-    NInput,
-    NCheckbox,
-    NButton,
-    NFormField,
-} from "@/lib/nergous-cit";
+import { NBrand, NInput, NCheckbox, NButton, NFormField } from "nergous-ui-vue";
 
-// Read the globally-shared appName (HandleInertiaRequests) so the brand matches
-// the rest of the app from a single source instead of a page-local prop.
-const appName = computed(() => usePage().props.appName || "Admin");
+// Use the shared app name for the login brand.
+const appName = computed(
+    () =>
+        usePage<import("@/admin/types").SharedProps>().props.appName || "Admin",
+);
 
 const form = useForm({
     email: "",

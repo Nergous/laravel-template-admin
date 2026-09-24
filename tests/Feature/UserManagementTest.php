@@ -113,6 +113,44 @@ class UserManagementTest extends TestCase
         $this->assertSoftDeleted('users', ['id' => $unmatched->id]);
     }
 
+    public function test_admin_can_move_all_filtered_users_to_trash_across_pages(): void
+    {
+        $this->actingAsAdmin();
+        $targets = User::factory()->count(12)->create([
+            'name' => 'Bulk target',
+        ]);
+        $unmatched = User::factory()->create(['name' => 'Keep active']);
+
+        $this->delete(route('admin.users.bulk-destroy'), [
+            'all' => true,
+            'search' => 'Bulk target',
+        ])->assertRedirect(route('admin.users.index'));
+
+        foreach ($targets as $target) {
+            $this->assertSoftDeleted('users', ['id' => $target->id]);
+        }
+        $this->assertDatabaseHas('users', [
+            'id' => $unmatched->id,
+            'deleted_at' => null,
+        ]);
+    }
+
+    public function test_bulk_delete_skips_the_acting_user(): void
+    {
+        $admin = $this->actingAsAdmin();
+        $target = User::factory()->create();
+
+        $this->delete(route('admin.users.bulk-destroy'), [
+            'ids' => [$admin->id, $target->id],
+        ])->assertRedirect(route('admin.users.index'));
+
+        $this->assertDatabaseHas('users', [
+            'id' => $admin->id,
+            'deleted_at' => null,
+        ]);
+        $this->assertSoftDeleted('users', ['id' => $target->id]);
+    }
+
     public function test_admin_cannot_delete_themselves(): void
     {
         $admin = $this->actingAsAdmin();

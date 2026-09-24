@@ -58,6 +58,9 @@ Route::prefix('/admin')->group(function () {
             Route::delete('users/force/{id}', [AdminUserController::class, 'forceDelete'])
                 ->name('admin.users.force-delete');
 
+            Route::delete('users/bulk', [AdminUserController::class, 'bulkDestroy'])
+                ->name('admin.users.bulk-destroy');
+
             Route::delete('users/{user}', [AdminUserController::class, 'destroy'])
                 ->name('admin.users.destroy');
         });

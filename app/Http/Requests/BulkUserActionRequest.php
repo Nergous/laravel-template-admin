@@ -6,9 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 /**
- * Bulk operations on trashed users: restoration and
- * permanent deletion. Used in AdminUserController::bulkRestore()
- * and bulkForceDelete().
+ * Bulk operations on active and trashed users.
  */
 class BulkUserActionRequest extends FormRequest
 {
@@ -22,6 +20,7 @@ class BulkUserActionRequest extends FormRequest
         return [
             'all' => ['sometimes', 'boolean'],
             'search' => ['nullable', 'string', 'max:255'],
+            'role' => ['nullable', 'string', 'exists:roles,name'],
             'ids' => [
                 Rule::requiredIf(fn () => ! $this->boolean('all')),
                 'array',

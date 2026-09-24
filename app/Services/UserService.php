@@ -85,6 +85,30 @@ class UserService
     }
 
     /**
+     * Moves selected users to trash, excluding the acting user.
+     *
+     * @param  array<int, int>  $ids
+     */
+    public function bulkDelete(array $ids, ?User $actor): int
+    {
+        return $this->applyDelete(
+            User::query()->whereIn('id', $ids),
+            $actor,
+        );
+    }
+
+    /** Moves every user matching the current list filters to trash. */
+    public function bulkDeleteAll(?string $search, ?string $role, ?User $actor): int
+    {
+        return $this->applyDelete(
+            User::query()
+                ->search($search)
+                ->filterByRole($role),
+            $actor,
+        );
+    }
+
+    /**
      * Restores a user from the trash.
      *
      * @param  int  $id  Identifier of the user in the trash
@@ -164,6 +188,23 @@ class UserService
 
         $query->lazyById()->each(function (User $user) use ($action, &$count) {
             $action($user);
+            $count++;
+        });
+
+        return $count;
+    }
+
+    /** Soft-deletes a query in chunks while preserving model events. */
+    private function applyDelete(Builder $query, ?User $actor): int
+    {
+        if ($actor !== null) {
+            $query->where('id', '!=', $actor->id);
+        }
+
+        $count = 0;
+
+        $query->lazyById()->each(function (User $user) use (&$count) {
+            $user->delete();
             $count++;
         });
 

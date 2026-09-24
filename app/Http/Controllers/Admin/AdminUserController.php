@@ -124,6 +124,22 @@ class AdminUserController extends Controller
             ->with('success', 'Пользователь удалён');
     }
 
+    /** Moves selected users, or every user matching current filters, to trash. */
+    public function bulkDestroy(BulkUserActionRequest $request): RedirectResponse
+    {
+        $count = $request->boolean('all')
+            ? $this->users->bulkDeleteAll(
+                $request->validated('search'),
+                $request->validated('role'),
+                $request->user(),
+            )
+            : $this->users->bulkDelete($request->validated('ids'), $request->user());
+
+        return redirect()
+            ->route('admin.users.index')
+            ->with('success', "Перемещено в корзину: {$count}");
+    }
+
     public function show(User $user): Response
     {
         return Inertia::render('Users/Show', [

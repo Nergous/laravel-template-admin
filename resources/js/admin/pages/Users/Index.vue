@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { PropType } from "vue";
 import { Link, router } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
@@ -56,6 +56,50 @@ const { reload, onSearch, onSort } = useIndexFilters("/admin/users", () => ({
 }));
 
 const rows = computed(() => props.users.data);
+const selected = ref<number[]>([]);
+const allMatchingSelected = ref(false);
+const tableSelected = computed(() =>
+    allMatchingSelected.value
+        ? props.users.data.map((user) => user.id)
+        : selected.value,
+);
+const selectedCount = computed(() =>
+    allMatchingSelected.value ? props.users.total : selected.value.length,
+);
+
+function updateSelected(ids: Array<string | number>) {
+    allMatchingSelected.value = false;
+    selected.value = ids.map(Number);
+}
+
+function selectAllMatching() {
+    allMatchingSelected.value = true;
+}
+
+function clearSelection() {
+    selected.value = [];
+    allMatchingSelected.value = false;
+}
+
+function selectionLabel() {
+    return `${selectedCount.value} выбрано`;
+}
+
+function selectionPayload():
+    { ids: number[] } | { all: true; search?: string; role?: string } {
+    if (!allMatchingSelected.value) return { ids: selected.value };
+
+    const payload: { all: true; search?: string; role?: string } = {
+        all: true,
+    };
+    const currentSearch = search.value.trim();
+    if (currentSearch) payload.search = currentSearch;
+    if (role.value) payload.role = role.value;
+
+    return payload;
+}
+
+watch([search, role], clearSelection);
 
 const columns: Column[] = [
     { key: "name", label: "Пользователь", sortable: true },
@@ -74,6 +118,26 @@ function confirmDelete() {
     router.delete(`/admin/users/${del.payload.id}`, {
         preserveScroll: true,
         onFinish: () => del.close(),
+    });
+}
+
+const bulkOpen = ref(false);
+const bulkLoading = ref(false);
+
+function askBulkDelete() {
+    if (selectedCount.value > 0) bulkOpen.value = true;
+}
+
+function confirmBulkDelete() {
+    bulkLoading.value = true;
+    router.delete("/admin/users/bulk", {
+        data: selectionPayload(),
+        preserveScroll: true,
+        onSuccess: clearSelection,
+        onFinish: () => {
+            bulkLoading.value = false;
+            bulkOpen.value = false;
+        },
     });
 }
 </script>
@@ -126,12 +190,40 @@ function confirmDelete() {
                 :rows="rows"
                 :page-size="0"
                 :hover="false"
+                :selectable="can('users.delete')"
+                :selected="tableSelected"
+                :selection-label="selectionLabel"
+                clear-label="Снять выделение"
+                select-all-label="Выбрать текущую страницу"
+                select-row-label="Выбрать пользователя"
                 manual-sort
                 :sort-key="currentSort"
                 :sort-dir="currentDirection"
                 empty-text="Нет данных"
+                @update:selected="updateSelected"
                 @sort-change="onSort"
             >
+                <template #bulk>
+                    <NButton
+                        v-if="
+                            !allMatchingSelected &&
+                            users.total > selected.length
+                        "
+                        variant="ghost"
+                        size="sm"
+                        @click="selectAllMatching"
+                    >
+                        Выбрать все {{ users.total }}
+                    </NButton>
+                    <NButton
+                        variant="danger"
+                        size="sm"
+                        icon="trash"
+                        @click="askBulkDelete"
+                    >
+                        В корзину
+                    </NButton>
+                </template>
                 <template #cell-name="{ row }">
                     <div class="ucell">
                         <NAvatar :name="userRow(row).name" :size="36" />
@@ -217,8 +309,13 @@ function confirmDelete() {
                 <NPagination
                     :page="users.current_page"
                     :pages="users.last_page"
+                    jumpable
                     prev-label="Назад"
                     next-label="Вперёд"
+                    jump-label="Страница"
+                    jump-button-label="Перейти"
+                    total-label="из"
+                    jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по страницам"
                     @update:page="(p) => reload({ page: p })"
                 />
@@ -233,6 +330,17 @@ function confirmDelete() {
             @confirm="confirmDelete"
             @cancel="del.close"
             @update:open="del.open = $event"
+        />
+
+        <ConfirmModal
+            :open="bulkOpen"
+            title="Переместить в корзину"
+            :message="`Переместить выбранных пользователей (${selectedCount}) в корзину?`"
+            confirm-label="В корзину"
+            :loading="bulkLoading"
+            @confirm="confirmBulkDelete"
+            @cancel="bulkOpen = false"
+            @update:open="bulkOpen = $event"
         />
     </AdminLayout>
 </template>

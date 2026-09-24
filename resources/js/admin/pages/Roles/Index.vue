@@ -170,8 +170,13 @@ function confirmDelete() {
                     <NPagination
                         :page="roles.current_page"
                         :pages="roles.last_page"
+                        jumpable
                         prev-label="Назад"
                         next-label="Вперёд"
+                        jump-label="Страница"
+                        jump-button-label="Перейти"
+                        total-label="из"
+                        jump-error-label="Введите корректный номер страницы"
                         aria-label="Навигация по страницам"
                         @update:page="(p) => reload({ page: p })"
                     />

@@ -213,8 +213,13 @@ function confirm() {
                 <NPagination
                     :page="page"
                     :pages="lastPage"
+                    jumpable
                     prev-label="Назад"
                     next-label="Вперёд"
+                    jump-label="Страница"
+                    jump-button-label="Перейти"
+                    total-label="из"
+                    jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по медиатеке"
                     @update:page="load"
                 />

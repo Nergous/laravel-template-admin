@@ -191,8 +191,13 @@ function confirmForce() {
                 <NPagination
                     :page="users.current_page"
                     :pages="users.last_page"
+                    jumpable
                     prev-label="Назад"
                     next-label="Вперёд"
+                    jump-label="Страница"
+                    jump-button-label="Перейти"
+                    total-label="из"
+                    jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по страницам"
                     @update:page="reloadPage"
                 />

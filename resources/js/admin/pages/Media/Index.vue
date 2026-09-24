@@ -606,8 +606,13 @@ function goPage(p: number) {
                 <NPagination
                     :page="media.current_page"
                     :pages="media.last_page"
+                    jumpable
                     prev-label="Назад"
                     next-label="Вперёд"
+                    jump-label="Страница"
+                    jump-button-label="Перейти"
+                    total-label="из"
+                    jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по страницам"
                     @update:page="goPage"
                 />

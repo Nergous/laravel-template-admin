@@ -5,6 +5,14 @@ All notable changes to the project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [semantic versioning](https://semver.org/).
 
+## [2.1.1] — 2026-09-23
+
+### Fixed
+
+- Removed unused Mercure and Vulcain modules from the FrankenPHP build. The
+  latest Mercure release required Go 1.27 while the builder image supplied Go
+  1.26, preventing the production image from building in CI.
+
 ## [2.1.0] — 2026-09-23
 
 ### Added
@@ -149,6 +157,7 @@ The first release of the Laravel admin panel template: an Inertia + Vue 3 SPA, t
 design system (now `nergous-ui-vue`), RBAC (spatie/laravel-permission), a media library with
 asynchronous processing, an activity log, settings, and an optional bot module.
 
+[2.1.1]: https://github.com/Nergous/laravel-template-admin/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Nergous/laravel-template-admin/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.2...v2.0.0
 [1.2.2]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.1...v1.2.2

@@ -5,6 +5,23 @@ All notable changes to the project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [semantic versioning](https://semver.org/).
 
+## [2.1.2] — 2026-09-24
+
+### Added
+
+- Added four screenshots and feature descriptions to the README, covering user
+  lists, shareable user details, role editing, and the permissions matrix in light
+  and dark themes (#21).
+
+### Changed
+
+- Updated frontend dependencies, including Inertia Vue 3.7.1, Vue 3.5.42, Vite
+  8.3.0, and Laravel Vite Plugin 3.2.0, while preserving the TypeScript setup and
+  the pinned `nergous-ui-vue` package (#38).
+- Updated Composer dependencies, including Laravel 12.69.2, Inertia Laravel
+  3.3.4, Spatie Laravel Permission 8.3.0, and development tooling (#39).
+- Updated `actions/setup-node` from v6 to v7 (#41).
+
 ## [2.1.1] — 2026-09-23
 
 ### Fixed
@@ -157,6 +174,7 @@ The first release of the Laravel admin panel template: an Inertia + Vue 3 SPA, t
 design system (now `nergous-ui-vue`), RBAC (spatie/laravel-permission), a media library with
 asynchronous processing, an activity log, settings, and an optional bot module.
 
+[2.1.2]: https://github.com/Nergous/laravel-template-admin/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/Nergous/laravel-template-admin/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Nergous/laravel-template-admin/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/Nergous/laravel-template-admin/compare/v1.2.2...v2.0.0

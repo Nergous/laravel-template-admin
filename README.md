@@ -4,11 +4,52 @@ An admin-panel template built on **Laravel 12** + **Inertia 3** + **Vue 3.5** (S
 
 - SPA on Inertia + Vue with the **nergous-ui-vue** design system (dark theme, interface density, command palette);
 - **RBAC** via [spatie/laravel-permission](https://spatie.be/docs/laravel-permission) — roles, permissions, a granular access matrix, and a management UI;
+- Dedicated user and role pages for viewing, creating, and editing records, with shareable detail URLs;
 - A media library with asynchronous uploads, WebP conversion (the `UploadMedia` job + queue), and display-name editing;
 - An activity log (`activity_log` + the `LogsActivity` trait) with a JSON diff of changes;
 - Application settings (typed key/value).
 
 Use it as a starting point for new projects: clone → remove the demo seeders → add your own entities (see ["How to add your own entity"](#how-to-add-your-own-entity)).
+
+## Interface preview
+
+Screenshots of the running admin panel with the template's demo accounts in an
+isolated SQLite database. The interface is in Russian; both light and dark themes
+and three interface densities are available.
+
+**Users — search, role filters, sorting, and links to view or edit each account.**
+
+![Users list in the light theme with search, role filtering, and account actions](docs/images/users-light.jpg)
+
+<details>
+<summary>User details — share a record with another administrator</summary>
+
+Each user has a stable detail URL, a copy-link action, assigned roles, and a
+separate editing page. Roles follow the same view/create/edit pattern.
+
+![User detail page with a copy-link action, assigned role, and record information](docs/images/user-details-light.jpg)
+
+</details>
+
+<details>
+<summary>Role editor — grouped permissions, dark theme, and compact density</summary>
+
+Edit a role's description and permissions on a dedicated page. Permissions are
+grouped by resource; the screenshot shows the compact (S) density.
+
+![Role editor in the dark theme with permissions grouped by resource](docs/images/role-edit-dark.jpg)
+
+</details>
+
+<details>
+<summary>Access matrix — compare permissions across roles</summary>
+
+Manage role access from one matrix. The system administrator's permissions stay
+enabled and protected from editing.
+
+![Permissions matrix in the dark theme comparing administrator and operator access](docs/images/permissions-dark.jpg)
+
+</details>
 
 ---
 

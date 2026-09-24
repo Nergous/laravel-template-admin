@@ -34,6 +34,11 @@ const props = defineProps({
         type: String as PropType<"asc" | "desc">,
         default: "desc",
     },
+    perPage: { type: Number, default: 10 },
+    perPageOptions: {
+        type: Array as PropType<number[]>,
+        default: () => [10, 25, 50, 100],
+    },
     filters: {
         type: Object as PropType<{ search?: string; role?: string }>,
         default: () => ({}),
@@ -53,9 +58,16 @@ const { reload, onSearch, onSort } = useIndexFilters("/admin/users", () => ({
     role: role.value,
     sort: props.currentSort,
     direction: props.currentDirection,
+    per_page: props.perPage,
 }));
 
 const rows = computed(() => props.users.data);
+// Keep the pager visible while a smaller page size could still split the list.
+const showPager = computed(
+    () =>
+        props.users.last_page > 1 ||
+        props.users.total > Math.min(...props.perPageOptions),
+);
 const selected = ref<number[]>([]);
 const allMatchingSelected = ref(false);
 const tableSelected = computed(() =>
@@ -305,10 +317,13 @@ function confirmBulkDelete() {
                 </template>
             </NDataTable>
 
-            <div v-if="users.last_page > 1" class="page__pager">
+            <div v-if="showPager" class="page__pager">
                 <NPagination
                     :page="users.current_page"
                     :pages="users.last_page"
+                    :page-size="perPage"
+                    :page-sizes="perPageOptions"
+                    page-size-label="Показывать по"
                     jumpable
                     prev-label="Назад"
                     next-label="Вперёд"
@@ -318,6 +333,9 @@ function confirmBulkDelete() {
                     jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по страницам"
                     @update:page="(p) => reload({ page: p })"
+                    @update:page-size="
+                        (size) => reload({ per_page: size, page: 1 })
+                    "
                 />
             </div>
         </div>

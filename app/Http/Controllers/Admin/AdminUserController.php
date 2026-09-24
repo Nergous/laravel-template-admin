@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Pagination\PerPage;
 use App\Http\Requests\BulkUserActionRequest;
 use App\Http\Requests\UserRequest;
 use App\Http\Sorts\UserSort;
@@ -32,7 +33,7 @@ class AdminUserController extends Controller
      * List of users with search, role filter, sorting,
      * a list of roles for the filter, and a trash counter.
      */
-    public function index(Request $request, UserSort $sort): Response
+    public function index(Request $request, UserSort $sort, PerPage $perPage): Response
     {
         $query = User::query()->with(['roles', 'creator:id,name', 'editor:id,name']);
 
@@ -43,7 +44,7 @@ class AdminUserController extends Controller
         $users = $query
             ->filterByRole($request->role)
             ->orderBy($sort->getSort(), $sort->getDirection())
-            ->paginate(10)
+            ->paginate($perPage->get())
             ->withQueryString();
 
         $roles = Role::orderBy('name')->pluck('name', 'name')->toArray();
@@ -54,6 +55,7 @@ class AdminUserController extends Controller
             'roles' => $roles, // ['admin'=>'admin', ...] — for the filter
             'trashedCount' => $trashedCount,
             ...$sort->toArray(), // currentSort + currentDirection from the validated Sort
+            ...$perPage->toArray(), // perPage + perPageOptions for the page-size selector
             'filters' => $request->only('search', 'role'),
         ]);
     }
@@ -150,7 +152,7 @@ class AdminUserController extends Controller
     /**
      * Trash — a list of soft-deleted users.
      */
-    public function trashed(Request $request, UserSort $sort): Response
+    public function trashed(Request $request, UserSort $sort, PerPage $perPage): Response
     {
         $query = User::onlyTrashed()->with('roles');
 
@@ -160,12 +162,13 @@ class AdminUserController extends Controller
 
         $users = $query
             ->orderBy($sort->getSort(), $sort->getDirection())
-            ->paginate(10)
+            ->paginate($perPage->get())
             ->withQueryString();
 
         return Inertia::render('Users/Trashed', [
             'users' => $users,
             ...$sort->toArray(), // currentSort + currentDirection from the validated Sort
+            ...$perPage->toArray(),
             'filters' => $request->only('search'),
         ]);
     }

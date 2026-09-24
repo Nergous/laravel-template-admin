@@ -21,7 +21,7 @@
     "dependencies": {
         "@inertiajs/vue3": "^3.7.1",
         "@vitejs/plugin-vue": "^6.0.8",
-        "nergous-ui-vue": "1.0.5",
+        "nergous-ui-vue": "1.0.6",
         "vue": "^3.5.42"
     }
 }

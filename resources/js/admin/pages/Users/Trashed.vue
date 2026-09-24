@@ -11,6 +11,11 @@ import { formatDateTime } from "@/lib/format";
 
 const props = defineProps({
     users: { type: Object as PropType<Pagination<AdminUser>>, required: true },
+    perPage: { type: Number, default: 10 },
+    perPageOptions: {
+        type: Array as PropType<number[]>,
+        default: () => [10, 25, 50, 100],
+    },
     filters: {
         type: Object as PropType<{ search?: string }>,
         default: () => ({}),
@@ -62,10 +67,18 @@ const columns: Column[] = [
 ];
 const userRow = (row: Row): AdminUser => row as AdminUser;
 
-function reloadPage(p: number) {
+// Keep the pager visible while a smaller page size could still split the list.
+const showPager = computed(
+    () =>
+        props.users.last_page > 1 ||
+        props.users.total > Math.min(...props.perPageOptions),
+);
+
+function reloadPage(page: number, perPage = props.perPage) {
+    const search = props.filters.search?.trim();
     router.get(
         "/admin/users/trashed",
-        { page: p },
+        { ...(search ? { search } : {}), per_page: perPage, page },
         { preserveState: true, preserveScroll: true, replace: true },
     );
 }
@@ -187,10 +200,13 @@ function confirmForce() {
                 </template>
             </NDataTable>
 
-            <div v-if="users.last_page > 1" class="page__pager">
+            <div v-if="showPager" class="page__pager">
                 <NPagination
                     :page="users.current_page"
                     :pages="users.last_page"
+                    :page-size="perPage"
+                    :page-sizes="perPageOptions"
+                    page-size-label="Показывать по"
                     jumpable
                     prev-label="Назад"
                     next-label="Вперёд"
@@ -200,6 +216,7 @@ function confirmForce() {
                     jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по страницам"
                     @update:page="reloadPage"
+                    @update:page-size="(size) => reloadPage(1, size)"
                 />
             </div>
         </div>

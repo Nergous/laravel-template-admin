@@ -9,7 +9,7 @@
 
     {{-- Favicon: from settings (media library), otherwise a static file --}}
     @php($favicon = \App\Models\Setting::value('general', 'favicon'))
-    <link rel="icon" href="{{ $favicon ?: '/favicon.ico' }}">
+    <link rel="icon" href="{{ $favicon ?: '/favicon.svg' }}">
 
 
     {{-- theme and density anti-flash — before CSS, with a nonce (CSP) --}}

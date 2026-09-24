@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { PropType } from "vue";
 import { Link, router } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
@@ -9,11 +9,50 @@ import type { AdminUser, Pagination } from "@/admin/types";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
 import { formatDateTime } from "@/lib/format";
 
-defineProps({
+const props = defineProps({
     users: { type: Object as PropType<Pagination<AdminUser>>, required: true },
+    filters: {
+        type: Object as PropType<{ search?: string }>,
+        default: () => ({}),
+    },
 });
 
 const selected = ref<number[]>([]);
+const allMatchingSelected = ref(false);
+const tableSelected = computed(() =>
+    allMatchingSelected.value
+        ? props.users.data.map((user) => user.id)
+        : selected.value,
+);
+const selectedCount = computed(() =>
+    allMatchingSelected.value ? props.users.total : selected.value.length,
+);
+
+function updateSelected(ids: Array<string | number>) {
+    allMatchingSelected.value = false;
+    selected.value = ids.map(Number);
+}
+
+function selectAllMatching() {
+    allMatchingSelected.value = true;
+}
+
+function clearSelection() {
+    selected.value = [];
+    allMatchingSelected.value = false;
+}
+
+function selectionLabel() {
+    return `${selectedCount.value} выбрано`;
+}
+
+function selectionPayload():
+    { ids: number[] } | { all: true; search?: string } {
+    if (!allMatchingSelected.value) return { ids: selected.value };
+
+    const search = props.filters.search?.trim();
+    return search ? { all: true, search } : { all: true };
+}
 
 const columns: Column[] = [
     { key: "name", label: "Имя" },
@@ -35,14 +74,10 @@ function restoreOne(id: number) {
     router.patch(`/admin/users/restore/${id}`, {}, { preserveScroll: true });
 }
 function bulkRestore() {
-    router.post(
-        "/admin/users/trashed/bulk-restore",
-        { ids: selected.value },
-        {
-            preserveScroll: true,
-            onSuccess: () => (selected.value = []),
-        },
-    );
+    router.post("/admin/users/trashed/bulk-restore", selectionPayload(), {
+        preserveScroll: true,
+        onSuccess: clearSelection,
+    });
 }
 
 const forceConfirm = ref(false);
@@ -63,9 +98,9 @@ function confirmForce() {
         });
     } else {
         router.delete("/admin/users/trashed/bulk-force", {
-            data: { ids: selected.value },
+            data: selectionPayload(),
             preserveScroll: true,
-            onSuccess: () => (selected.value = []),
+            onSuccess: clearSelection,
             onFinish: () => (forceConfirm.value = false),
         });
     }
@@ -87,13 +122,25 @@ function confirmForce() {
                 :rows="users.data"
                 :page-size="0"
                 selectable
-                v-model:selected="selected"
-                :selection-label="(n) => `${n} выбрано`"
+                :selected="tableSelected"
+                :selection-label="selectionLabel"
                 clear-label="Снять выделение"
                 select-all-label="Выбрать все"
                 select-row-label="Выбрать строку"
+                @update:selected="updateSelected"
             >
                 <template #bulk>
+                    <NButton
+                        v-if="
+                            !allMatchingSelected &&
+                            users.total > selected.length
+                        "
+                        variant="ghost"
+                        size="sm"
+                        @click="selectAllMatching"
+                    >
+                        Выбрать все {{ users.total }}
+                    </NButton>
                     <NButton
                         variant="secondary"
                         size="sm"
@@ -158,7 +205,7 @@ function confirmForce() {
             :message="
                 forceOneId !== null
                     ? 'Безвозвратно удалить пользователя? Действие необратимо.'
-                    : `Безвозвратно удалить выбранных пользователей (${selected.length})? Действие необратимо.`
+                    : `Безвозвратно удалить выбранных пользователей (${selectedCount})? Действие необратимо.`
             "
             confirm-label="Удалить навсегда"
             @confirm="confirmForce"

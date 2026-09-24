@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use App\Support\RbacGuard;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -111,7 +112,19 @@ class UserService
      */
     public function bulkRestore(array $ids): int
     {
-        return $this->applyToTrashed($ids, fn (User $user) => $user->restore());
+        return $this->applyToTrashed(
+            User::onlyTrashed()->whereIn('id', $ids),
+            fn (User $user) => $user->restore(),
+        );
+    }
+
+    /** Restores every trashed user matching the current list filter. */
+    public function bulkRestoreAll(?string $search): int
+    {
+        return $this->applyToTrashed(
+            User::onlyTrashed()->search($search),
+            fn (User $user) => $user->restore(),
+        );
     }
 
     /**
@@ -122,25 +135,39 @@ class UserService
      */
     public function bulkForceDelete(array $ids): int
     {
-        return $this->applyToTrashed($ids, fn (User $user) => $user->forceDelete());
+        return $this->applyToTrashed(
+            User::onlyTrashed()->whereIn('id', $ids),
+            fn (User $user) => $user->forceDelete(),
+        );
+    }
+
+    /** Permanently deletes every trashed user matching the current list filter. */
+    public function bulkForceDeleteAll(?string $search): int
+    {
+        return $this->applyToTrashed(
+            User::onlyTrashed()->search($search),
+            fn (User $user) => $user->forceDelete(),
+        );
     }
 
     /**
-     * Applies an action to each trashed user with the given ids.
+     * Applies an action to each user from a trash query.
      * Iterates over models (not a mass-update) so that restore/forceDelete
      * fire events and end up in the activity log (LogsActivity).
      *
-     * @param  array<int, int>  $ids
      * @param  callable(User): void  $action
      * @return int How many users were processed.
      */
-    private function applyToTrashed(array $ids, callable $action): int
+    private function applyToTrashed(Builder $query, callable $action): int
     {
-        $users = User::onlyTrashed()->whereIn('id', $ids)->get();
+        $count = 0;
 
-        $users->each($action);
+        $query->lazyById()->each(function (User $user) use ($action, &$count) {
+            $action($user);
+            $count++;
+        });
 
-        return $users->count();
+        return $count;
     }
 
     /**

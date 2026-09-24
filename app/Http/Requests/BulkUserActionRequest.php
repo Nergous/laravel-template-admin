@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Bulk operations on trashed users: restoration and
@@ -19,7 +20,13 @@ class BulkUserActionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'ids' => ['required', 'array'],
+            'all' => ['sometimes', 'boolean'],
+            'search' => ['nullable', 'string', 'max:255'],
+            'ids' => [
+                Rule::requiredIf(fn () => ! $this->boolean('all')),
+                'array',
+                'min:1',
+            ],
             'ids.*' => ['integer', 'exists:users,id'],
         ];
     }
@@ -28,6 +35,7 @@ class BulkUserActionRequest extends FormRequest
     {
         return [
             'ids.required' => 'Выберите хотя бы одного пользователя',
+            'ids.min' => 'Выберите хотя бы одного пользователя',
             'ids.*.exists' => 'Один или несколько пользователей не найдены',
         ];
     }

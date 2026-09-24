@@ -73,6 +73,46 @@ class UserManagementTest extends TestCase
         $this->assertDatabaseMissing('users', ['id' => $target->id]);
     }
 
+    public function test_admin_can_restore_all_trashed_users_across_pages(): void
+    {
+        $this->actingAsAdmin();
+        $targets = User::factory()->count(12)->create();
+        $targets->each->delete();
+
+        $this->post(route('admin.users.bulk-restore'), ['all' => true])
+            ->assertRedirect(route('admin.users.trashed'));
+
+        foreach ($targets as $target) {
+            $this->assertDatabaseHas('users', [
+                'id' => $target->id,
+                'deleted_at' => null,
+            ]);
+        }
+    }
+
+    public function test_bulk_force_delete_all_respects_the_current_search_filter(): void
+    {
+        $this->actingAsAdmin();
+        $matched = User::factory()->create([
+            'name' => 'Удалить совпадение',
+            'email' => 'matched@example.test',
+        ]);
+        $unmatched = User::factory()->create([
+            'name' => 'Оставить пользователя',
+            'email' => 'unmatched@example.test',
+        ]);
+        $matched->delete();
+        $unmatched->delete();
+
+        $this->delete(route('admin.users.bulk-force-delete'), [
+            'all' => true,
+            'search' => 'совпадение',
+        ])->assertRedirect(route('admin.users.trashed'));
+
+        $this->assertDatabaseMissing('users', ['id' => $matched->id]);
+        $this->assertSoftDeleted('users', ['id' => $unmatched->id]);
+    }
+
     public function test_admin_cannot_delete_themselves(): void
     {
         $admin = $this->actingAsAdmin();

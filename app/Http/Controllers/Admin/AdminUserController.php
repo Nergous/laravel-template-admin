@@ -185,11 +185,13 @@ class AdminUserController extends Controller
     /**
      * Bulk restore from the trash.
      *
-     * @param  BulkUserActionRequest  $request  ids (int[]) — user identifiers
+     * @param  BulkUserActionRequest  $request  Selected ids or all users matching the current filter
      */
     public function bulkRestore(BulkUserActionRequest $request): RedirectResponse
     {
-        $count = $this->users->bulkRestore($request->ids);
+        $count = $request->boolean('all')
+            ? $this->users->bulkRestoreAll($request->validated('search'))
+            : $this->users->bulkRestore($request->validated('ids'));
 
         return redirect()
             ->route('admin.users.trashed')
@@ -199,11 +201,13 @@ class AdminUserController extends Controller
     /**
      * Bulk permanent deletion from the trash.
      *
-     * @param  BulkUserActionRequest  $request  ids (int[]) — user identifiers
+     * @param  BulkUserActionRequest  $request  Selected ids or all users matching the current filter
      */
     public function bulkForceDelete(BulkUserActionRequest $request): RedirectResponse
     {
-        $count = $this->users->bulkForceDelete($request->ids);
+        $count = $request->boolean('all')
+            ? $this->users->bulkForceDeleteAll($request->validated('search'))
+            : $this->users->bulkForceDelete($request->validated('ids'));
 
         return redirect()
             ->route('admin.users.trashed')

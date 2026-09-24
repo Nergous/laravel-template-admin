@@ -7,6 +7,7 @@ use App\Http\Requests\RoleRequest;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\RoleService;
+use App\Support\RbacGuard;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -24,9 +25,7 @@ use Spatie\Permission\Models\Permission;
  *
  * System roles (is_system) are protected: their name cannot be changed and deletion
  * is forbidden. Actions on roles are written to the activity log (ActivityLog).
- * Creation and editing live in a drawer on the Index page, so the resource methods
- * create/edit/show merely redirect, while index returns everything the drawer needs
- * (permissions + metadata).
+ * Resource pages provide stable URLs for viewing, creating, and editing roles.
  */
 class AdminRoleController extends Controller
 {
@@ -38,7 +37,6 @@ class AdminRoleController extends Controller
     public function index(Request $request): Response
     {
         $query = Role::query()
-            ->with('permissions:id,name')
             ->withCount(['permissions', 'users']);
 
         if ($request->filled('search')) {
@@ -47,62 +45,57 @@ class AdminRoleController extends Controller
 
         $roles = $query->orderBy('name')->paginate(15)->withQueryString();
 
-        // Author names for all roles on the page — in a single query (for the drawer).
-        $authorNames = User::whereIn(
-            'id',
-            collect($roles->items())
-                ->flatMap(fn (Role $role) => [$role->created_by, $role->updated_by])
-                ->filter()->unique()
-        )->pluck('name', 'id');
-
-        // Enrich each row with what the create/edit drawer needs:
-        // the permission list (names) and authorship metadata.
+        // Send only the data used by the overview; the detail/form pages load more.
         $roles->setCollection($roles->getCollection()->map(fn (Role $role) => [
             'id' => $role->id,
             'name' => $role->name,
             'description' => $role->description,
             'is_system' => (bool) $role->is_system,
+            'can_edit' => $request->user()?->can('roles.edit') && RbacGuard::canManageRole($request->user(), $role),
             'permissions_count' => $role->permissions_count,
             'users_count' => $role->users_count,
-            'permission_names' => $role->permissions->pluck('name')->values(),
-            'creator_name' => $role->created_by ? ($authorNames[$role->created_by] ?? null) : null,
-            'editor_name' => $role->updated_by ? ($authorNames[$role->updated_by] ?? null) : null,
-            'created_at' => optional($role->created_at)->toIso8601String(),
-            'updated_at' => optional($role->updated_at)->toIso8601String(),
         ]));
 
         return Inertia::render('Roles/Index', [
             'roles' => $roles,
             'permissionsTotal' => Permission::count(),
-            'allPermissions' => $this->groupedPermissions(),
             'filters' => $request->only('search'),
         ]);
     }
 
-    public function create(): RedirectResponse
+    public function create(Request $request): Response
     {
-        // Creation lives in a drawer on the Index page.
-        return redirect()->route('admin.roles.index');
+        abort_unless($request->user()?->can('roles.create'), 403);
+
+        return Inertia::render('Roles/FormPage', [
+            'mode' => 'create',
+            'allPermissions' => $this->groupedPermissions(),
+        ]);
     }
 
     /** Creates a role, assigns permissions, and logs the action. */
     public function store(RoleRequest $request): RedirectResponse
     {
-        $this->roles->create(
+        $role = $this->roles->create(
             ['name' => $request->name, 'description' => $request->input('description')],
             $request->input('permissions', []),
             $request->user(),
         );
 
         return redirect()
-            ->route('admin.roles.index')
+            ->route('admin.roles.show', $role)
             ->with('success', 'Роль создана');
     }
 
-    public function edit(Role $role): RedirectResponse
+    public function edit(Request $request, Role $role): Response
     {
-        // Editing lives in a drawer on the Index page.
-        return redirect()->route('admin.roles.index');
+        abort_unless($request->user()?->can('roles.edit') && RbacGuard::canManageRole($request->user(), $role), 403);
+
+        return Inertia::render('Roles/FormPage', [
+            'mode' => 'edit',
+            'role' => $this->roleDetails($role),
+            'allPermissions' => $this->groupedPermissions(),
+        ]);
     }
 
     /** Updates a role and its permissions (a system role's name cannot be changed — rule in the service), and logs the action. */
@@ -116,7 +109,7 @@ class AdminRoleController extends Controller
         );
 
         return redirect()
-            ->route('admin.roles.index')
+            ->route('admin.roles.show', $role)
             ->with('success', 'Роль обновлена');
     }
 
@@ -130,9 +123,32 @@ class AdminRoleController extends Controller
             ->with('success', 'Роль удалена');
     }
 
-    public function show(Role $role): RedirectResponse
+    public function show(Role $role): Response
     {
-        return redirect()->route('admin.roles.edit', $role);
+        return Inertia::render('Roles/Show', [
+            'role' => $this->roleDetails($role),
+        ]);
+    }
+
+    private function roleDetails(Role $role): array
+    {
+        $role->load('permissions:id,name')->loadCount('users');
+        $authors = User::whereIn('id', array_filter([$role->created_by, $role->updated_by]))
+            ->pluck('name', 'id');
+
+        return [
+            'id' => $role->id,
+            'name' => $role->name,
+            'description' => $role->description,
+            'is_system' => (bool) $role->is_system,
+            'can_edit' => request()->user()?->can('roles.edit') && RbacGuard::canManageRole(request()->user(), $role),
+            'users_count' => $role->users_count,
+            'permission_names' => $role->permissions->pluck('name')->values(),
+            'creator_name' => $role->created_by ? ($authors[$role->created_by] ?? null) : null,
+            'editor_name' => $role->updated_by ? ($authors[$role->updated_by] ?? null) : null,
+            'created_at' => optional($role->created_at)->toIso8601String(),
+            'updated_at' => optional($role->updated_at)->toIso8601String(),
+        ];
     }
 
     /**

@@ -30,6 +30,7 @@ Thumbs.db
 
 design-system
 claude.md
+/AGENTS.md
 
 # Runtime output (keep directory placeholders versioned).
 /storage/framework/cache/*

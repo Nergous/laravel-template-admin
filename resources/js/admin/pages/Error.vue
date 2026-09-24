@@ -1,7 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue";
 import { Head } from "@inertiajs/vue3";
-import { NButton, NIcon } from "@/lib/nergous-cit";
+import { NButton, NIcon } from "nergous-ui-vue";
 
 // The server handler (bootstrap/app.php) renders this page when debug is off
 // for 403/404/419/429/500/503. The labels live here (the DS is locale-agnostic),
@@ -10,7 +10,7 @@ const props = defineProps({
     status: { type: Number, default: 500 },
 });
 
-const MAP = {
+const MAP: Record<number, { icon: string; title: string; text: string }> = {
     403: {
         icon: "lock",
         title: "Доступ запрещён",

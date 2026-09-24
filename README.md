@@ -1,12 +1,12 @@
 # Laravel Admin Template
 
-An admin-panel template built on **Laravel 12** + **Inertia 3** + **Vue 3.5** (SPA) with its own **nergous-cit** design system:
+An admin-panel template built on **Laravel 12** + **Inertia 3** + **Vue 3.5** (SPA) with the **nergous-ui-vue** design system:
 
-- SPA on Inertia + Vue with the **nergous-cit** design system (dark theme, interface density, command palette) — with no runtime dependencies beyond `vue` + `inertia`;
+- SPA on Inertia + Vue with the **nergous-ui-vue** design system (dark theme, interface density, command palette);
 - **RBAC** via [spatie/laravel-permission](https://spatie.be/docs/laravel-permission) — roles, permissions, a granular access matrix, and a management UI;
 - A media library with asynchronous uploads, WebP conversion (the `UploadMedia` job + queue), and display-name editing;
 - An activity log (`activity_log` + the `LogsActivity` trait) with a JSON diff of changes;
-- Application settings (typed key/value) and an optional "Bot messages" module.
+- Application settings (typed key/value).
 
 Use it as a starting point for new projects: clone → remove the demo seeders → add your own entities (see ["How to add your own entity"](#how-to-add-your-own-entity)).
 
@@ -15,8 +15,8 @@ Use it as a starting point for new projects: clone → remove the demo seeders �
 ## Stack
 
 - **PHP** ^8.4 · **Laravel** ^12
-- **Inertia** ^3 (`inertiajs/inertia-laravel`) · **Vue** ^3.5 — SPA (a single Blade template, everything else in Vue)
-- **Vite** 8 · the **nergous-cit** design system (`resources/js/lib/nergous-cit`, a zero-deps Vue library) — a vendored snapshot from the standalone [`Nergous/nergous-cit`](https://github.com/Nergous/nergous-cit) repository; updated with `npm run ds:pull`
+- **Inertia** ^3 (`inertiajs/inertia-laravel`) · **Vue** ^3.5 + **TypeScript** — SPA (a single Blade template, everything else in Vue)
+- **Vite** 8 · **nergous-ui-vue** 1.0.4 from npm, a Vue component library with no runtime dependencies beyond Vue
 - **spatie/laravel-permission** ^8 (RBAC)
 - **SQLite** by default (compatible with MySQL/MariaDB/PostgreSQL)
 - Queues: the `database` driver — for asynchronous media processing
@@ -71,7 +71,7 @@ After `--seed`, the following will be available:
 | `composer dev`   | In parallel: artisan serve, queue listen, pail (logs), vite                                                                                                                     |
 | `composer test`  | Clears the config cache and runs PHPUnit (`tests/Feature` and `tests/Unit`)                                                                                                     |
 
-The frontend is built with Vite: `npm run dev` — a dev server with HMR, `npm run build` — a production build.
+The frontend is built with Vite: `npm run dev` — a dev server with HMR, `npm run typecheck` — strict TypeScript/Vue check, `npm run build` — a production build.
 
 ### Creating an administrator
 
@@ -113,7 +113,8 @@ docker compose -f compose.dev.yaml up --build
 - Application: <http://localhost:8000> · Vite HMR: <http://localhost:5173>
 - `vendor/` and `node_modules/` are installed automatically on first start
   (into named volumes, to avoid conflicting with host permissions).
-- In dev, `RUN_SEEDS=true` — demo roles and test users are created.
+- In dev, `RUN_SEEDS=true` — demo roles and test users are created only when the
+  database is empty. Restarts leave existing users and permissions untouched.
 
 ### Production (self-contained stack)
 
@@ -141,13 +142,16 @@ docker compose up -d --build
   client's real IP (rather than the proxy's address), set `TRUSTED_PROXIES` = the proxy's
   subnet/IP; by default proxies are not trusted, so `X-Forwarded-For` cannot be spoofed
   (this protects the login throttle). In production the session cookie is marked `Secure` automatically.
-- Migrations and base RBAC seeding run only with `RUN_MIGRATIONS=true` (default `false`).
-  Enable this for first boot or a release, then return it to `false` before ordinary
-  rebuilds. Re-seeding resets the built-in admin/operator permission assignments;
-  review custom grants before opting in. `queue` and `scheduler` do not migrate. `queue:work` is optional — if you don't need asynchronous file processing, set `QUEUE_CONNECTION=sync`.
-- **Base RBAC** (roles + permissions) is seeded automatically together with the migrations
-  when `app` starts — in any environment. **Demo/production USERS**, however, are controlled
-  by `RUN_SEEDS` (default `false` — not created in production). Create an admin:
+- Migrations run with `RUN_MIGRATIONS=true` (default `false`). Enable this for first
+  boot or a release, then return it to `false` before ordinary rebuilds. Base RBAC
+  is seeded only if the migrated database has no application data; subsequent
+  restarts and releases preserve existing roles and permissions. `queue` and
+  `scheduler` do not migrate. `queue:work` is optional — if you don't need
+  asynchronous file processing, set `QUEUE_CONNECTION=sync`.
+- **Base RBAC** (roles + permissions) is initialized once for an empty database.
+  **Demo/production USERS** are included on that first initialization only when
+  `RUN_SEEDS=true` (default `false` in production). If the database already has
+  application data, both kinds of seeds are skipped. Create an admin:
   `docker compose exec -it app php artisan app:create-admin ...` (`-it` is required — the
   command prompts for a password interactively), or set `RUN_SEEDS=true` +
   `ADMIN_PASSWORD` so the production admin is created automatically. Either way, the admin
@@ -186,7 +190,7 @@ docker compose down -v                           # tear down along with data
 | Media library    | `/admin/media`        | `media.view`        |
 | Activity log     | `/admin/activity-log` | `activity-log.view` |
 | Settings         | `/admin/settings`     | `settings.view`     |
-> The "Permission" column is access to the section (viewing). Actions are gated **granularly**: create/edit — `*.create`/`*.edit` (in `FormRequest::authorize()`), delete — `*.delete` (middleware on destroy routes). For media: upload — `media.upload`, rename — `media.edit`, delete — `media.delete`. Settings: write — `settings.edit`. If you create a custom role with `*.view` but without `*.delete`, the server-side protection still kicks in (403), but you should also hide the delete buttons in the UI via `can('*.delete')` (see `resources/js/lib/can.js`).
+> The "Permission" column is access to the section (viewing). Actions are gated **granularly**: create/edit — `*.create`/`*.edit` (in `FormRequest::authorize()`), delete — `*.delete` (middleware on destroy routes). For media: upload — `media.upload`, rename — `media.edit`, delete — `media.delete`. Settings: write — `settings.edit`. If you create a custom role with `*.view` but without `*.delete`, the server-side protection still kicks in (403), but you should also hide the delete buttons in the UI via `can('*.delete')` (see `resources/js/lib/can.ts`).
 
 ### Base permissions
 
@@ -256,8 +260,8 @@ A quick recipe for the current stack (Inertia + Vue):
    (transactions, syncing relations, logging, invariants): the controller then stays
    thin — it validates input and renders, while the service makes the decisions. For simple CRUD
    a service is optional: the controller can work with the model directly (like
-   `AdminSettingsController`). The "when to use a service" boundary is
-   in [CLAUDE.md](CLAUDE.md). Throw rule violations via
+   `AdminSettingsController`). Use a service when an operation coordinates
+   transactions, related models, external work, or domain invariants. Throw rule violations via
    `Illuminate\Validation\ValidationException::withMessages([...])` — Laravel returns a
    `redirect back` with the error under the right key itself, and the controller needs no `try/catch`.
    Service references: `UserService`/`RoleService`/`PermissionService`/`MediaService`
@@ -269,16 +273,18 @@ A quick recipe for the current stack (Inertia + Vue):
    (`Route::middleware('permission:xxx.view')->group(...)`), while `store`/`update` live
    **in the same `*.view` group** but are actually gated in `FormRequest::authorize()` by the
    HTTP method (POST → `xxx.create`, PUT/PATCH → `xxx.edit`). Deletion goes in a separate
-   group/middleware under `xxx.delete`. (More details: the header of `routes/web.php` and CLAUDE.md.)
+   group/middleware under `xxx.delete`. See [the permission matrix](docs/api/permissions-matrix.md)
+   for the complete route rules.
 5. **Permissions** — add them in `RolePermissionSeeder` (the `module.action` scheme) or via the
    `/admin/permissions` UI. Add the group label for the access matrix in
    `lang/ru/permissions.php` (`resources`: prefix → label), otherwise the group shows up as an
    unlocalized key.
 6. **Inertia page** — Vue component(s) under `resources/js/admin/pages/Xxx/` (e.g. `Index.vue`);
-   import design-system elements from the `@/lib/nergous-cit` barrel and wrap the content in `AdminLayout`.
-   The reference for a small CRUD form in a drawer is `pages/Users/Index.vue` + `Partials/Form.vue`
-   (note: the page pulls local, non-DS helpers `ConfirmModal`/`useConfirm`/`can`/`format`
-   from `resources/js/admin/`, and URLs are written as strings — there's no Ziggy in the project).
+   import design-system elements from `nergous-ui-vue` and wrap the content in `AdminLayout`.
+   Users and roles provide a shareable `Show.vue` URL and separate create/edit routes using
+   `FormPage.vue` + `Partials/Form.vue`. The list pages use local helpers
+   `ConfirmModal`/`useConfirm`/`can`/`format` from `resources/js/admin/`; URLs are
+   written as strings because the project does not use Ziggy.
 7. **Sidebar item** — add an entry to the `sections` array in `resources/js/admin/layouts/AdminLayout.vue`
    (the `perm` field gates visibility via `can()`); if needed, a counter for the badge in
    `App\Http\Middleware\HandleInertiaRequests::share()` (`counts`, gated by `*.view`).
@@ -340,7 +346,7 @@ Everything is edited in a single file — `app/Http/Middleware/SecurityHeaders.p
   `ImageOptimizer` silently stores the original without a thumbnail. Install `gd` with WebP support.
 - **The CSP isn't visible in dev** — it is enabled **only** in `production` (in dev, Vite HMR loads
   from a third-party origin). Test it against a built bundle: `npm run build` + `APP_ENV=production`.
-- **`npm run build` fails with an obscure error** — the Node version is below Vite 7's requirements
+- **`npm run build` fails with an obscure error** — the Node version is below Vite 8's requirements
   (you need ≥ 20.19 / 22.12).
 
 ## Structure
@@ -348,7 +354,7 @@ Everything is edited in a single file — `app/Http/Middleware/SecurityHeaders.p
 ```
 laravel-template-admin/
 ├── app/
-│   ├── Console/Commands/        # CreateAdmin (app:create-admin), BackfillThumbnails
+│   ├── Console/Commands/        # CreateAdmin, BackfillThumbnails, SeedFreshDatabase
 │   ├── Http/
 │   │   ├── Controllers/Admin/   # Dashboard, Users, Roles, Permissions, Media, ActivityLog, Settings, Search
 │   │   ├── Controllers/Auth/    # LoginController
@@ -367,11 +373,10 @@ laravel-template-admin/
 ├── lang/ru/                     # activity.php, permissions.php (localization)
 ├── resources/
 │   ├── js/
-│   │   ├── admin/               # Inertia app: app.js, pages/, layouts/, components/, composables/
+│   │   ├── admin/               # Inertia app: app.ts, pages/, layouts/, components/, composables/
 │   │   └── lib/
-│   │       ├── nergous-cit/     # design system (Vue components, tokens, composables)
-│   │       ├── can.js           # can(perm) — UI permission check using shared props
-│   │       └── format.js, swatch.js  # formatting and role color-hash
+│   │       ├── can.ts           # can(perm) — UI permission check using shared props
+│   │       └── format.ts, swatch.ts  # formatting and role color-hash
 │   └── views/admin.blade.php    # the single Blade template — the Inertia entry point
 └── routes/web.php               # admin panel only
 ```

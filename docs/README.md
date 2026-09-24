@@ -24,8 +24,3 @@ otherwise have to be inferred from the sources.
 > cheaper to describe by hand. If the project grows an external public API, set it
 > up under a separate `/api/v1` (see `api/response-conventions.md`) and only then
 > bring in a generator.
-
-## Template synchronization
-
-[design-system-sync-2026-09-14.md](design-system-sync-2026-09-14.md) records the
-standalone nergous-cit / vendored snapshot synchronization and UI verification.

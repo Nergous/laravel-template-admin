@@ -22,7 +22,7 @@ pages via `usePage().props`:
 | Prop          | Contents                                                                                                                   |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `auth.user`   | the current user (or `null`)                                                                                              |
-| `auth.can`    | a flat list of the user's **permission names**; read by the `can(perm)` helper (`resources/js/lib/can.js`) for conditional rendering |
+| `auth.can`    | a flat list of the user's **permission names**; read by the `can(perm)` helper (`resources/js/lib/can.ts`) for conditional rendering |
 | `counts`      | lazy aggregates for the sidebar/bell badges                                                                                |
 | `flash`       | flash messages (`success`/`error`/`warning`/`info`) → toasts                                                               |
 | `appName`     | the application name (from settings)                                                                                       |

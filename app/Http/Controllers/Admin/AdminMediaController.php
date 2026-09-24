@@ -119,8 +119,8 @@ class AdminMediaController extends Controller
     /**
      * Browse the library as JSON for the media picker (search + pagination).
      *
-     * Unlike index() (a full Inertia page), this feeds a modal opened from other
-     * screens — e.g. attaching media to a bot message. Returns a paginator payload:
+     * Unlike index() (a full Inertia page), this feeds media pickers on other
+     * screens. Returns a paginator payload:
      * { data: [...], current_page, last_page }.
      */
     public function browse(Request $request): JsonResponse

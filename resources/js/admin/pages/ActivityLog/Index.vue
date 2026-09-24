@@ -1,5 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from "vue";
+import type { PropType } from "vue";
+import type { AuditLog, Pagination } from "@/admin/types";
 import { router, useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
@@ -12,20 +14,22 @@ import {
     NFormField,
     NInput,
     NButton,
-} from "@/lib/nergous-cit";
-import { can } from "@/lib/can.js";
-import { formatRelative, formatDateTime } from "@/lib/format.js";
+} from "nergous-ui-vue";
+import { can } from "@/lib/can";
+import { formatRelative, formatDateTime } from "@/lib/format";
 
 const props = defineProps({
-    logs: { type: Object, required: true },
-    filters: { type: Object, default: () => ({}) },
+    logs: { type: Object as PropType<Pagination<AuditLog>>, required: true },
+    filters: {
+        type: Object as PropType<{ action?: string }>,
+        default: () => ({}),
+    },
 });
 
-// Today (ISO) — upper bound of the cutoff date: we clear events strictly earlier
-// than the selected day, so the "future" cannot be cleared.
+// Limit the clear-journal date to today in the user's local timezone.
 const todayIso = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD, local date
 
-// Chip filter bar. Each chip maps to an `action` enum value; "Все" clears it.
+// An empty action shows all events.
 const CHIPS = [
     { value: "", label: "Все" },
     { value: "created", label: "Создано" },
@@ -36,9 +40,11 @@ const CHIPS = [
     { value: "force_deleted", label: "Удалено навсегда" },
 ];
 
-// tone + icon per action. NActivityRow tones: ok | info | danger | warn | accent.
-// NIcon set offers: plus, edit, trash, check, copy.
-const VISUAL = {
+// Keep action labels in the page; the activity component stays presentational.
+const VISUAL: Record<
+    string,
+    { tone: "ok" | "info" | "danger" | "accent"; icon: string }
+> = {
     created: { tone: "ok", icon: "plus" },
     updated: { tone: "info", icon: "edit" },
     deleted: { tone: "danger", icon: "trash" },
@@ -50,16 +56,16 @@ const FALLBACK = { tone: "info", icon: "edit" };
 
 const activeAction = computed(() => props.filters?.action ?? "");
 
-function visual(action) {
+function visual(action: string) {
     return VISUAL[action] ?? FALLBACK;
 }
 
-function metaFor(log) {
+function metaFor(log: AuditLog) {
     const n = Number(log.changesCount ?? 0);
     return n > 0 ? `${n} изм.` : "";
 }
 
-function selectAction(value) {
+function selectAction(value: string) {
     router.get(
         "/admin/activity-log",
         { action: value || undefined },
@@ -67,7 +73,7 @@ function selectAction(value) {
     );
 }
 
-function goToPage(page) {
+function goToPage(page: number) {
     router.get(
         "/admin/activity-log",
         { action: activeAction.value || undefined, page },
@@ -75,12 +81,10 @@ function goToPage(page) {
     );
 }
 
-/* ---------- detail drawer ---------- */
 const detailOpen = ref(false);
-const selected = ref(null);
+const selected = ref<AuditLog | null>(null);
 
-// Normalize `changes` map → array of { field, oldValue, newValue } for the diff
-// table. Backend shape: { field: [oldValue, newValue] } | null.
+// Turn the server's field-to-pair map into rows for the diff table.
 const changeRows = computed(() => {
     const map = selected.value?.changes;
     if (!map || typeof map !== "object") return [];
@@ -93,18 +97,17 @@ const changeRows = computed(() => {
 const hasChanges = computed(() => changeRows.value.length > 0);
 
 // «—» for null/undefined/empty-string; everything else rendered as text.
-function displayValue(value) {
+function displayValue(value: unknown) {
     if (value === null || value === undefined || value === "") return "—";
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
 }
 
-function openDetail(log) {
+function openDetail(log: AuditLog) {
     selected.value = log;
     detailOpen.value = true;
 }
 
-/* ---------- clear journal ---------- */
 const clearOpen = ref(false);
 const clearForm = useForm({ before: "" });
 
@@ -195,7 +198,6 @@ function submitClear() {
             </div>
         </div>
 
-        <!-- event detail drawer -->
         <NDrawer
             v-model="detailOpen"
             title="Событие журнала"
@@ -203,7 +205,6 @@ function submitClear() {
             close-label="Закрыть"
         >
             <template v-if="selected">
-                <!-- summary block -->
                 <dl class="detail">
                     <div class="detail__row">
                         <dt class="detail__key">Кто</dt>
@@ -234,7 +235,6 @@ function submitClear() {
                     </div>
                 </dl>
 
-                <!-- diff -->
                 <section class="diff">
                     <h4 id="diff-title" class="diff__title">Изменения</h4>
                     <table
@@ -274,7 +274,6 @@ function submitClear() {
             </template>
         </NDrawer>
 
-        <!-- clear journal modal -->
         <NModal
             :model-value="clearOpen"
             title="Очистить журнал"
@@ -316,7 +315,6 @@ function submitClear() {
 </template>
 
 <style scoped>
-/* .page / .page__pager — shared utilities in resources/js/admin/styles.css */
 .toolbar {
     display: flex;
     align-items: flex-start;
@@ -386,7 +384,6 @@ function submitClear() {
     border-radius: var(--radius-md, 8px);
 }
 
-/* ----- drawer detail ----- */
 .detail {
     display: flex;
     flex-direction: column;

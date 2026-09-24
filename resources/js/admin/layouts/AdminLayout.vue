@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { Head, Link, usePage, router } from "@inertiajs/vue3";
 import {
@@ -13,23 +13,35 @@ import {
     NCommandPalette,
     NDrawer,
     NSpinner,
-} from "@/lib/nergous-cit";
-import { useFlashToasts } from "@/admin/composables/useFlashToasts.js";
-import { useHotkeys } from "@/admin/composables/useHotkeys.js";
-import { can } from "@/lib/can.js";
+} from "nergous-ui-vue";
+import { useFlashToasts } from "@/admin/composables/useFlashToasts";
+import { useHotkeys } from "@/admin/composables/useHotkeys";
+import { can } from "@/lib/can";
+import type { Command, Density } from "nergous-ui-vue";
+import type { SharedProps } from "@/admin/types";
+
+interface NavItem {
+    id: string;
+    label: string;
+    icon: string;
+    href: string;
+    perm: string | null;
+    exact?: boolean;
+    badge?: number;
+}
 
 defineProps({
     title: { type: String, default: "" },
     subtitle: { type: String, default: "" },
 });
 
-const page = usePage();
+const page = usePage<SharedProps>();
 const { theme, density, toggle, setDensity } = useTheme();
 useFlashToasts();
 
-const collapsed = ref(false); // desktop: icon-only rail
+const collapsed = ref(false);
 const isMobile = ref(false); // < 768px viewport
-const drawerOpen = ref(false); // mobile: off-canvas drawer visibility
+const drawerOpen = ref(false);
 const user = computed(() => page.props.auth.user);
 
 const MOBILE_BP = 768;
@@ -71,7 +83,7 @@ const counts = computed(() => page.props.counts ?? {});
 
 const notifCount = computed(() => counts.value.recentActivity ?? 0);
 
-const sections = computed(() => [
+const sections = computed<{ label: string; items: NavItem[] }[]>(() => [
     {
         label: "Обзор",
         items: [
@@ -94,7 +106,7 @@ const sections = computed(() => [
                 icon: "users",
                 href: "/admin/users",
                 perm: "users.view",
-                badge: counts.value.users,
+                badge: counts.value.users ?? undefined,
             },
             {
                 id: "roles",
@@ -102,7 +114,7 @@ const sections = computed(() => [
                 icon: "shield",
                 href: "/admin/roles",
                 perm: "roles.view",
-                badge: counts.value.roles,
+                badge: counts.value.roles ?? undefined,
             },
             {
                 id: "permissions",
@@ -110,7 +122,7 @@ const sections = computed(() => [
                 icon: "lock",
                 href: "/admin/permissions",
                 perm: "permissions.view",
-                badge: counts.value.permissions,
+                badge: counts.value.permissions ?? undefined,
             },
         ],
     },
@@ -123,7 +135,7 @@ const sections = computed(() => [
                 icon: "asset",
                 href: "/admin/media",
                 perm: "media.view",
-                badge: counts.value.media,
+                badge: counts.value.media ?? undefined,
             },
         ],
     },
@@ -161,7 +173,7 @@ const groups = computed(() =>
 
 const activeId = computed(() => {
     const path = page.url.split("?")[0];
-    let best = null;
+    let best: NavItem | null = null;
     for (const it of allItems.value) {
         const match = it.exact ? path === it.href : path.startsWith(it.href);
         if (match && (!best || it.href.length > best.href.length)) best = it;
@@ -174,7 +186,7 @@ function logout() {
 }
 
 const paletteOpen = ref(false);
-const commands = ref([]);
+const commands = ref<Command[]>([]);
 
 const baseCommands = computed(() => {
     const nav = allItems.value
@@ -199,10 +211,10 @@ const baseCommands = computed(() => {
 // Search is debounced: the request fires after a typing pause, not on every keystroke.
 const SEARCH_DEBOUNCE = 200; // ms
 const SEARCH_MIN_LEN = 2;
-let searchTimer = null;
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-function search(q) {
-    clearTimeout(searchTimer);
+function search(q: string) {
+    if (searchTimer) clearTimeout(searchTimer);
     const term = q.trim();
     if (term.length < SEARCH_MIN_LEN) {
         const t = term.toLowerCase();
@@ -216,19 +228,26 @@ function search(q) {
     searchTimer = setTimeout(() => runSearch(term), SEARCH_DEBOUNCE);
 }
 
-async function runSearch(q) {
+async function runSearch(q: string) {
     try {
         const res = await fetch(`/admin/search?q=${encodeURIComponent(q)}`, {
             headers: { Accept: "application/json" },
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        commands.value = (json.results ?? json).map((r) => ({
-            label: r.label,
-            hint: r.meta,
-            icon: r.icon ?? "search",
-            action: () => router.visit(r.url),
-        }));
+        commands.value = (json.results ?? json).map(
+            (r: {
+                label: string;
+                meta: string;
+                icon?: string;
+                url: string;
+            }) => ({
+                label: r.label,
+                hint: r.meta,
+                icon: r.icon ?? "search",
+                action: () => router.visit(r.url),
+            }),
+        );
     } catch {
         commands.value = [];
     }
@@ -242,7 +261,21 @@ watch(paletteOpen, (open) => {
 useHotkeys({ "mod+k": () => (paletteOpen.value = true) });
 
 const notifOpen = ref(false);
-const notif = ref({ count: 0, items: [] });
+const notif = ref<{
+    count: number;
+    items: {
+        id: number;
+        url: string;
+        user: string;
+        time: string;
+        action: string;
+        subject: string;
+    }[];
+}>({ count: 0, items: [] });
+
+function changeDensity(value: string | number) {
+    setDensity(value as Density);
+}
 const notifLoading = ref(false);
 
 async function loadNotifications() {
@@ -399,7 +432,7 @@ function openNotifications() {
                         :model-value="density"
                         :options="densityOpts"
                         aria-label="Плотность интерфейса"
-                        @update:model-value="setDensity"
+                        @update:model-value="changeDensity"
                     />
                     <NButton
                         variant="secondary"
@@ -535,7 +568,6 @@ function openNotifications() {
     color: var(--text-2);
 }
 
-/* --- Notification bell in the topbar: badge with the count of unseen events --- */
 .tb-bell {
     position: relative;
     display: inline-flex;
@@ -561,7 +593,6 @@ function openNotifications() {
     border: 2px solid var(--surface);
 }
 
-/* --- Sidebar footer: theme toggle + user card --- */
 .sbf__theme {
     display: flex;
     align-items: center;

@@ -7,8 +7,8 @@ use Illuminate\Foundation\Http\FormRequest;
 /**
  * Form Request for renaming a media file (the display name, original_name).
  *
- * The physical file on disk is not touched — its path (filename) is referenced
- * by attachments and already-sent bot messages. Used in AdminMediaController::update().
+ * The physical file on disk is not touched, so references to its path remain
+ * valid. Used in AdminMediaController::update().
  */
 class RenameMediaRequest extends FormRequest
 {

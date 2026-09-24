@@ -17,9 +17,9 @@ class HandleInertiaRequests extends Middleware
      * The root Blade template for the current section.
      *
      * The admin panel and the public part are separate Inertia applications: each has its own
-     * bundle (resources/js/<section>/app.js) and its own root-view. Currently only
+     * bundle (resources/js/<section>/app.ts) and its own root-view. Currently only
      * the admin panel is implemented. When the public part appears — create
-     * resources/views/public.blade.php + resources/js/public/app.js and
+     * resources/views/public.blade.php + resources/js/public/app.ts and
      * uncomment the branch below.
      *
      * @see https://inertiajs.com/server-side-setup#root-template

@@ -1,16 +1,38 @@
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue";
+import type { PropType } from "vue";
 import { Link } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
-import { NCard, NStatCard, NActivityRow, NEmptyState } from "@/lib/nergous-cit";
-import { can } from "@/lib/can.js";
-import { formatNumber } from "@/lib/format.js";
-import { swatchColor } from "@/lib/swatch.js";
+import { NCard, NStatCard, NActivityRow, NEmptyState } from "nergous-ui-vue";
+import { can } from "@/lib/can";
+import { formatNumber } from "@/lib/format";
+import { swatchColor } from "@/lib/swatch";
 
 const props = defineProps({
-    stats: { type: Object, required: true }, // { users, roles, permissions, media } each {value, sub}
-    roleDistribution: { type: Array, default: () => [] }, // [{ name, count }]
-    recentActivity: { type: Array, default: () => [] },
+    stats: {
+        type: Object as PropType<
+            Record<string, { value: number; sub: string }>
+        >,
+        required: true,
+    },
+    roleDistribution: {
+        type: Array as PropType<{ name: string; count: number }[]>,
+        default: () => [],
+    },
+    recentActivity: {
+        type: Array as PropType<
+            {
+                id: number;
+                user: string | null;
+                action: string;
+                subject_label: string;
+                subject_type: string;
+                changes_count: number;
+                created_human: string;
+            }[]
+        >,
+        default: () => [],
+    },
 });
 
 const cards = [
@@ -25,7 +47,10 @@ const cards = [
 const visibleCards = computed(() => cards.filter((c) => props.stats[c.key]));
 
 // Domain/locale mapping lives in the page; NActivityRow stays presentational.
-const ACT = {
+const ACT: Record<
+    string,
+    { verb: string; tone: "ok" | "info" | "danger" | "warn"; icon: string }
+> = {
     created: { verb: "создано", tone: "ok", icon: "plus" },
     updated: { verb: "изменено", tone: "info", icon: "edit" },
     deleted: { verb: "удалено", tone: "danger", icon: "trash" },
@@ -35,8 +60,10 @@ const ACT = {
 };
 
 // Maps action → presentation (verb/tone/icon); unknown falls back to a neutral default.
-const actOf = (a) => ACT[a.action] || {};
-const actMeta = (a) => (a.changes_count ? `${a.changes_count} изм.` : "");
+const actOf = (a: { action: string }) =>
+    ACT[a.action] || { verb: "", tone: "info" as const, icon: "edit" };
+const actMeta = (a: { changes_count: number }) =>
+    a.changes_count ? `${a.changes_count} изм.` : "";
 
 const bars = computed(() => {
     const total = props.roleDistribution.reduce((s, r) => s + r.count, 0) || 1;

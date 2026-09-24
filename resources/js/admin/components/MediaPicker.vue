@@ -1,9 +1,7 @@
-<script setup>
-// MediaPicker — a modal to pick one or several files from the media library.
-// Browses /admin/media/browse (JSON, paginated, searchable), keeps a multi-select
-// that survives paging, and emits the chosen media objects on confirm. Reusable:
-// gated by media.view on the server, so show the trigger only when can('media.view').
+<script setup lang="ts">
 import { ref, computed, watch } from "vue";
+import type { PropType } from "vue";
+import type { MediaItem } from "@/admin/types";
 import {
     NModal,
     NInput,
@@ -13,55 +11,50 @@ import {
     NPagination,
     NEmptyState,
     useToast,
-} from "@/lib/nergous-cit";
-import { formatBytes } from "@/lib/format.js";
+} from "nergous-ui-vue";
+import { formatBytes } from "@/lib/format";
 
 const props = defineProps({
-    // v-model: open state.
     modelValue: { type: Boolean, default: false },
-    // Already-attached media objects ({ id, url, thumb_url, type, original_name, size }),
-    // used to seed the selection when the modal opens.
-    preselected: { type: Array, default: () => [] },
-    // Max files that can be selected by the consuming form.
+    preselected: { type: Array as PropType<MediaItem[]>, default: () => [] },
     max: { type: Number, default: 10 },
 });
 const emit = defineEmits(["update:modelValue", "select"]);
 
 const toast = useToast();
 
-/* ── Type glyphs (no thumbnail → an icon by category) — same mapping as Media/Index ── */
-const TYPE_ICON = {
+// Show a type icon when a file has no usable thumbnail.
+const TYPE_ICON: Record<string, string> = {
     image: "asset",
     video: "layers",
     audio: "activity",
     document: "copy",
     other: "asset",
 };
-function typeIcon(m) {
+function typeIcon(m: MediaItem) {
     return TYPE_ICON[m.type] || TYPE_ICON.other;
 }
-function typeBadge(m) {
+function typeBadge(m: MediaItem) {
     const name = m.original_name || "";
     const ext = name.includes(".") ? name.split(".").pop() : "";
     return (ext || m.type || "").toUpperCase().slice(0, 5);
 }
 
-/* ── Browse state ─────────────────────────────────────────────────────── */
-const items = ref([]);
+const items = ref<MediaItem[]>([]);
 const page = ref(1);
 const lastPage = ref(1);
 const loading = ref(false);
 const search = ref("");
-let searchTimer = null;
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
-/* ── Selection (id → media object); a Map so it survives paging. ───────── */
-const selected = ref(new Map());
+// Keep selected media across browse pages.
+const selected = ref(new Map<number, MediaItem>());
 const selectedCount = computed(() => selected.value.size);
 
-function isSelected(id) {
+function isSelected(id: number) {
     return selected.value.has(id);
 }
-function toggle(m) {
+function toggle(m: MediaItem) {
     const next = new Map(selected.value);
     if (next.has(m.id)) {
         next.delete(m.id);
@@ -78,14 +71,13 @@ function toggle(m) {
     selected.value = next;
 }
 
-/* ── Broken thumbnails fall back to the type glyph ────────────────────── */
-const broken = ref(new Set());
-function onImgError(id) {
+const broken = ref(new Set<number>());
+function onImgError(id: number) {
     const next = new Set(broken.value);
     next.add(id);
     broken.value = next;
 }
-function showThumb(m) {
+function showThumb(m: MediaItem) {
     return m.type === "image" && !!m.thumb_url && !broken.value.has(m.id);
 }
 
@@ -123,7 +115,7 @@ watch(
     () => props.modelValue,
     (open) => {
         if (!open) return;
-        const seed = new Map();
+        const seed = new Map<number, MediaItem>();
         for (const m of props.preselected) seed.set(m.id, m);
         selected.value = seed;
         broken.value = new Set();
@@ -183,7 +175,7 @@ function confirm() {
                             <img
                                 v-if="showThumb(m)"
                                 class="mp__img"
-                                :src="m.thumb_url"
+                                :src="m.thumb_url || undefined"
                                 :alt="m.original_name"
                                 loading="lazy"
                                 @error="onImgError(m.id)"

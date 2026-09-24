@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Setting;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Vite;
@@ -67,7 +68,7 @@ class SecurityHeaders
             "default-src 'self'",
             "script-src 'self' 'nonce-{$nonce}'",
             "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data:",
+            trim("img-src 'self' data: ".implode(' ', $this->settingsImageOrigins())),
             "font-src 'self'",
             "connect-src 'self'",
             "object-src 'none'",
@@ -75,5 +76,36 @@ class SecurityHeaders
             "form-action 'self'",
             "frame-ancestors 'none'",
         ]);
+    }
+
+    /**
+     * Origins of absolute image URLs chosen in the settings (favicon, OG image).
+     * The settings form accepts http(s) links, so the policy must allow exactly
+     * those hosts — otherwise the favicon and the OG preview break in production.
+     *
+     * @return list<string>
+     */
+    protected function settingsImageOrigins(): array
+    {
+        try {
+            $urls = [Setting::value('general', 'favicon'), Setting::value('seo', 'og_image')];
+        } catch (\Throwable) {
+            return [];
+        }
+
+        $origins = [];
+        foreach ($urls as $url) {
+            $parts = is_string($url) ? parse_url($url) : false;
+
+            if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])
+                || ! in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
+                continue;
+            }
+
+            $origin = strtolower($parts['scheme']).'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
+            $origins[$origin] = $origin;
+        }
+
+        return array_values($origins);
     }
 }

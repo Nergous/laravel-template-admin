@@ -66,6 +66,34 @@
 .entity-page__card {
     min-width: 0;
 }
+.entity-page--wide {
+    max-width: 1180px;
+}
+/* Detail and edit pages keep main content on the left and record details on the right. */
+.entity-page__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+}
+.entity-page--wide .entity-page__layout {
+    grid-template-columns: minmax(0, 1fr) 280px;
+}
+.entity-page__main {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+}
+.entity-page__aside .entity-page__details {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+}
+@media (max-width: 960px) {
+    .entity-page--wide .entity-page__layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
 .entity-page__profile {
     display: flex;
     align-items: center;

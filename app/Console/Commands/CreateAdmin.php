@@ -75,13 +75,22 @@ class CreateAdmin extends Command
         // exists BEFORE assigning the role. Idempotent, so safe on every run.
         $this->callSilent('db:seed', ['--class' => RolePermissionSeeder::class, '--force' => true]);
 
-        $user = User::updateOrCreate(
-            ['email' => $email],
-            [
-                'name' => $name,
-                'password' => Hash::make($password),
-            ]
-        );
+        // An account with this email in the trash is restored instead of
+        // creating a second user with the same email.
+        $user = User::where('email', $email)->first()
+            ?? User::onlyTrashed()->where('email', $email)->latest('deleted_at')->first()
+            ?? new User(['email' => $email]);
+        $user->forceFill([
+            'name' => $name,
+            'password' => Hash::make($password),
+            'is_active' => true,
+        ]);
+
+        if ($user->trashed()) {
+            $user->restore();
+        } else {
+            $user->save();
+        }
 
         $role = Role::firstOrCreate(['name' => RbacGuard::superadminRole(), 'guard_name' => 'web']);
         $user->syncRoles([$role]);

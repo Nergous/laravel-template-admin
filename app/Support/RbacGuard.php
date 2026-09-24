@@ -66,4 +66,31 @@ class RbacGuard
 
         return self::isAdmin($actor) || ! $role->is_system;
     }
+
+    /**
+     * Whether the actor can edit, block, delete, or restore the target user.
+     *
+     * An admin manages everyone; anyone manages their own account (the role
+     * rules still apply to it). Otherwise the target must hold no system role
+     * and no permission the actor lacks — so a users.edit holder cannot take
+     * over an administrator by changing their email or password.
+     */
+    public static function canManageUser(?User $actor, User $target): bool
+    {
+        if ($actor === null) {
+            return false;
+        }
+
+        if (self::isAdmin($actor) || $actor->is($target)) {
+            return true;
+        }
+
+        if ($target->roles()->where('is_system', true)->exists()) {
+            return false;
+        }
+
+        return $target->getAllPermissions()
+            ->pluck('name')
+            ->every(fn (string $permission) => $actor->can($permission));
+    }
 }

@@ -3,14 +3,26 @@ import { computed, ref } from "vue";
 import type { PropType } from "vue";
 import { Link, router } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
-import { NDataTable, NPagination, NButton, NEmptyState } from "nergous-ui-vue";
+import {
+    NDataTable,
+    NPagination,
+    NButton,
+    NEmptyState,
+    NInput,
+} from "nergous-ui-vue";
 import type { Column, Row } from "nergous-ui-vue";
 import type { AdminUser, Pagination } from "@/admin/types";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
+import { useIndexFilters } from "@/admin/composables/useIndexFilters";
 import { formatDateTime } from "@/lib/format";
 
 const props = defineProps({
     users: { type: Object as PropType<Pagination<AdminUser>>, required: true },
+    currentSort: { type: String, default: "id" },
+    currentDirection: {
+        type: String as PropType<"asc" | "desc">,
+        default: "desc",
+    },
     perPage: { type: Number, default: 10 },
     perPageOptions: {
         type: Array as PropType<number[]>,
@@ -21,6 +33,17 @@ const props = defineProps({
         default: () => ({}),
     },
 });
+
+const search = ref(props.filters.search ?? "");
+const { reload, onSearch, onSort } = useIndexFilters(
+    "/admin/users/trashed",
+    () => ({
+        search: search.value,
+        sort: props.currentSort,
+        direction: props.currentDirection,
+        per_page: props.perPage,
+    }),
+);
 
 const selected = ref<number[]>([]);
 const allMatchingSelected = ref(false);
@@ -60,9 +83,9 @@ function selectionPayload():
 }
 
 const columns: Column[] = [
-    { key: "name", label: "Имя" },
+    { key: "name", label: "Имя", sortable: true },
     { key: "email", label: "Email" },
-    { key: "deleted_at", label: "Удалён", width: "180px" },
+    { key: "deleted_at", label: "Удалён", width: "180px", sortable: true },
     { key: "actions", label: "", width: "200px", align: "right" },
 ];
 const userRow = (row: Row): AdminUser => row as AdminUser;
@@ -75,12 +98,7 @@ const showPager = computed(
 );
 
 function reloadPage(page: number, perPage = props.perPage) {
-    const search = props.filters.search?.trim();
-    router.get(
-        "/admin/users/trashed",
-        { ...(search ? { search } : {}), per_page: perPage, page },
-        { preserveState: true, preserveScroll: true, replace: true },
-    );
+    reload({ page, per_page: perPage });
 }
 
 function restoreOne(id: number) {
@@ -94,6 +112,7 @@ function bulkRestore() {
 }
 
 const forceConfirm = ref(false);
+const forceLoading = ref(false);
 const forceOneId = ref<number | null>(null); // null = bulk force
 function askForceOne(id: number) {
     forceOneId.value = id;
@@ -104,17 +123,22 @@ function askForceBulk() {
     forceConfirm.value = true;
 }
 function confirmForce() {
+    forceLoading.value = true;
+    const done = () => {
+        forceConfirm.value = false;
+        forceLoading.value = false;
+    };
     if (forceOneId.value !== null) {
         router.delete(`/admin/users/force/${forceOneId.value}`, {
             preserveScroll: true,
-            onFinish: () => (forceConfirm.value = false),
+            onFinish: done,
         });
     } else {
         router.delete("/admin/users/trashed/bulk-force", {
             data: selectionPayload(),
             preserveScroll: true,
             onSuccess: clearSelection,
-            onFinish: () => (forceConfirm.value = false),
+            onFinish: done,
         });
     }
 }
@@ -128,6 +152,20 @@ function confirmForce() {
         <div class="page">
             <div class="page__head">
                 <Link href="/admin/users" class="page__back">← К списку</Link>
+                <div class="page__search">
+                    <NInput
+                        v-model="search"
+                        icon="search"
+                        placeholder="Поиск по имени или email…"
+                        aria-label="Поиск в корзине"
+                        @update:model-value="
+                            () => {
+                                clearSelection();
+                                onSearch();
+                            }
+                        "
+                    />
+                </div>
             </div>
 
             <NDataTable
@@ -140,7 +178,11 @@ function confirmForce() {
                 clear-label="Снять выделение"
                 select-all-label="Выбрать все"
                 select-row-label="Выбрать строку"
+                manual-sort
+                :sort-key="currentSort"
+                :sort-dir="currentDirection"
                 @update:selected="updateSelected"
+                @sort-change="onSort"
             >
                 <template #bulk>
                     <NButton
@@ -230,6 +272,7 @@ function confirmForce() {
                     : `Безвозвратно удалить выбранных пользователей (${selectedCount})? Действие необратимо.`
             "
             confirm-label="Удалить навсегда"
+            :loading="forceLoading"
             @confirm="confirmForce"
             @cancel="forceConfirm = false"
             @update:open="forceConfirm = $event"
@@ -242,6 +285,12 @@ function confirmForce() {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.page__search {
+    flex: 0 1 320px;
+    min-width: 220px;
 }
 .page__back {
     color: var(--text-2);

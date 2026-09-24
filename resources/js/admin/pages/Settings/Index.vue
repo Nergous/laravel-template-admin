@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import type { PropType } from "vue";
+import { ref } from "vue";
 import type { MediaItem } from "@/admin/types";
 import { useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
@@ -9,20 +8,21 @@ import {
     NCard,
     NInput,
     NTextarea,
-    NSelect,
+    NSelectWithSearch,
     NSwitch,
     NButton,
     NIcon,
-    NModal,
     NFormField,
 } from "nergous-ui-vue";
+import MediaPicker from "@/admin/components/MediaPicker.vue";
+import { useUnsavedGuard } from "@/admin/composables/useUnsavedGuard";
 
 const props = defineProps({
     settings: { type: Object, required: true },
-    images: { type: Array as PropType<MediaItem[]>, default: () => [] },
 });
 
 const form = useForm({ settings: props.settings });
+useUnsavedGuard(() => form.isDirty);
 
 const tab = ref("general");
 const tabs = [
@@ -38,22 +38,73 @@ const panelProps = (value: string) => ({
     "aria-labelledby": `settings-${value}`,
 });
 
-const timezoneOptions = [
-    { value: "UTC", label: "UTC" },
-    { value: "Europe/Moscow", label: "Europe/Moscow (MSK)" },
-    { value: "Europe/Kyiv", label: "Europe/Kyiv" },
-    { value: "Europe/London", label: "Europe/London" },
-    { value: "Europe/Berlin", label: "Europe/Berlin" },
-    { value: "America/New_York", label: "America/New_York" },
-    { value: "Asia/Almaty", label: "Asia/Almaty" },
-];
+// Every IANA zone the browser knows; the server validates with timezone:all.
+function zoneList(): string[] {
+    const intl = Intl as typeof Intl & {
+        supportedValuesOf?: (key: "timeZone") => string[];
+    };
+    const zones = intl.supportedValuesOf?.("timeZone") ?? [
+        "Europe/Moscow",
+        "Europe/Kaliningrad",
+        "Europe/Samara",
+        "Asia/Yekaterinburg",
+        "Asia/Novosibirsk",
+        "Asia/Krasnoyarsk",
+        "Asia/Irkutsk",
+        "Asia/Yakutsk",
+        "Asia/Vladivostok",
+        "Asia/Magadan",
+        "Asia/Kamchatka",
+    ];
+    const set = new Set(["UTC", ...zones]);
+    const current = form.settings.general.timezone;
+    if (current) set.add(current);
+    return [...set];
+}
+function offsetLabel(zone: string): string {
+    try {
+        const part = new Intl.DateTimeFormat("en-US", {
+            timeZone: zone,
+            timeZoneName: "shortOffset",
+        })
+            .formatToParts(new Date())
+            .find((p) => p.type === "timeZoneName");
+        return part ? part.value.replace("GMT", "UTC") : "";
+    } catch {
+        return "";
+    }
+}
+const timezoneOptions = zoneList().map((zone) => ({
+    value: zone,
+    label: zone === "UTC" ? "UTC" : `${zone} (${offsetLabel(zone)})`,
+}));
+
+// Validation errors of a hidden tab are invisible; open the first tab with one.
+function tabWithError(errors: Record<string, string>): string | null {
+    for (const t of tabs) {
+        if (
+            Object.keys(errors).some((k) =>
+                k.startsWith(`settings.${t.value}.`),
+            )
+        )
+            return t.value;
+    }
+    return null;
+}
 
 function save() {
-    form.put("/admin/settings", { preserveScroll: true });
+    form.put("/admin/settings", {
+        preserveScroll: true,
+        onError: (errors) => {
+            const target = tabWithError(errors);
+            if (target && target !== tab.value) tab.value = target;
+        },
+    });
 }
 
 function cancel() {
     form.reset();
+    form.clearErrors();
 }
 
 const pickerOpen = ref(false);
@@ -61,25 +112,22 @@ const pickerOpen = ref(false);
 const pickerTarget = ref({
     group: "seo",
     key: "og_image",
-    title: "OG-изображения",
+    title: "Выбор OG-изображения",
 });
 
 function openPicker(group: string, key: string, title: string) {
     pickerTarget.value = { group, key, title };
     pickerOpen.value = true;
 }
-function selectImage(img: MediaItem) {
+function selectImage(items: MediaItem[]) {
+    const img = items[0];
+    if (!img) return;
     const { group, key } = pickerTarget.value;
     form.settings[group][key] = img.url;
-    pickerOpen.value = false;
 }
 function clearImage(group: string, key: string) {
     form.settings[group][key] = "";
 }
-const pickedUrl = computed(() => {
-    const { group, key } = pickerTarget.value;
-    return form.settings[group]?.[key] ?? "";
-});
 </script>
 
 <template>
@@ -119,12 +167,15 @@ const pickedUrl = computed(() => {
 
                     <NFormField
                         label="Часовой пояс"
+                        hint="Даты в админке показываются в этом поясе; в базе они хранятся в UTC"
                         :error="form.errors['settings.general.timezone']"
                         tag="div"
                     >
-                        <NSelect
+                        <NSelectWithSearch
                             v-model="form.settings.general.timezone"
                             :options="timezoneOptions"
+                            search-placeholder="Найти часовой пояс…"
+                            no-results-text="Ничего не найдено"
                             :error="!!form.errors['settings.general.timezone']"
                         />
                     </NFormField>
@@ -158,7 +209,7 @@ const pickedUrl = computed(() => {
                                         openPicker(
                                             'general',
                                             'favicon',
-                                            'favicon',
+                                            'Выбор favicon',
                                         )
                                     "
                                 >
@@ -256,7 +307,7 @@ const pickedUrl = computed(() => {
                                         openPicker(
                                             'seo',
                                             'og_image',
-                                            'OG-изображения',
+                                            'Выбор OG-изображения',
                                         )
                                     "
                                 >
@@ -294,7 +345,10 @@ const pickedUrl = computed(() => {
                         <label class="toggle-row">
                             <div class="toggle-row__text">
                                 <b>Карта сайта (sitemap.xml)</b>
-                                <span>Автогенерация</span>
+                                <span
+                                    >Флаг для публичной части: генерацию
+                                    подключает разработчик сайта</span
+                                >
                             </div>
                             <NSwitch
                                 v-model="form.settings.seo.sitemap"
@@ -333,12 +387,15 @@ const pickedUrl = computed(() => {
                                     form.settings.security.session_lifetime
                                 "
                                 type="number"
+                                min="1"
+                                max="43200"
                                 placeholder="120"
                             />
                         </NFormField>
 
                         <NFormField
                             label="Лимит попыток входа"
+                            hint="В минуту с одного адреса и email"
                             :error="
                                 form.errors['settings.security.login_throttle']
                             "
@@ -346,6 +403,8 @@ const pickedUrl = computed(() => {
                             <NInput
                                 v-model="form.settings.security.login_throttle"
                                 type="number"
+                                min="1"
+                                max="1000"
                                 placeholder="5"
                             />
                         </NFormField>
@@ -376,37 +435,14 @@ const pickedUrl = computed(() => {
             </div>
         </Transition>
 
-        <NModal
+        <MediaPicker
             v-model="pickerOpen"
-            :title="`Выбор ${pickerTarget.title}`"
-            width="680px"
-            close-label="Закрыть"
-        >
-            <div v-if="images.length" class="og-grid">
-                <button
-                    v-for="img in images"
-                    :key="img.id"
-                    type="button"
-                    class="og-grid__item"
-                    :class="{ on: pickedUrl === img.url }"
-                    :aria-pressed="pickedUrl === img.url"
-                    :aria-label="
-                        img.original_name || 'Изображение из медиатеки'
-                    "
-                    @click="selectImage(img)"
-                >
-                    <img
-                        :src="img.thumb_url || undefined"
-                        alt=""
-                        loading="lazy"
-                    />
-                </button>
-            </div>
-            <div v-else class="og-empty">
-                В медиатеке пока нет изображений. Загрузите их в разделе
-                «Медиатека».
-            </div>
-        </NModal>
+            type="image"
+            :max="1"
+            :title="pickerTarget.title"
+            confirm-label="Выбрать"
+            @select="selectImage"
+        />
     </AdminLayout>
 </template>
 
@@ -539,61 +575,6 @@ const pickedUrl = computed(() => {
 .og-picker__actions {
     display: flex;
     gap: 8px;
-}
-
-.og-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 10px;
-    max-height: 56vh;
-    overflow-y: auto;
-}
-.og-grid__item {
-    position: relative;
-    aspect-ratio: 16 / 10;
-    padding: 0;
-    border: 2px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    background: var(--surface-3);
-    cursor: pointer;
-    transition: border-color 0.14s ease;
-}
-.og-grid__item img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
-.og-grid__item:hover {
-    border-color: var(--border-2);
-}
-.og-grid__item.on {
-    border-color: var(--accent);
-}
-/* Non-color selected indicator (WCAG 1.4.1): a checkmark badge, not just the
-   accent border. aria-pressed already conveys it to screen readers. */
-.og-grid__item.on::after {
-    content: "✓";
-    position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 18px;
-    height: 18px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
-    background: var(--accent);
-    color: var(--accent-on);
-    font-size: 12px;
-    font-weight: 800;
-    line-height: 1;
-}
-.og-empty {
-    padding: 32px;
-    text-align: center;
-    color: var(--text-3);
-    font-size: 13.5px;
 }
 
 .savebar {

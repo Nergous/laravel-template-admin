@@ -38,7 +38,7 @@ class UserServiceTest extends TestCase
             'name' => 'Renamed',
             'email' => $user->email,
             'password' => null,
-        ], [], null);
+        ], [], $user);
 
         $this->assertSame($original, $user->fresh()->password);
         $this->assertSame('Renamed', $user->fresh()->name);

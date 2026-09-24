@@ -25,6 +25,7 @@ const props = defineProps({
                 id: number;
                 user: string | null;
                 action: string;
+                action_label: string;
                 subject_label: string;
                 subject_type: string;
                 changes_count: number;
@@ -46,22 +47,27 @@ const cards = [
 // template doesn't break if the stats set is trimmed (e.g. the media library is removed).
 const visibleCards = computed(() => cards.filter((c) => props.stats[c.key]));
 
-// Domain/locale mapping lives in the page; NActivityRow stays presentational.
+// Tone and icon per action; the verb comes from the server (lang/ru/activity.php).
 const ACT: Record<
     string,
-    { verb: string; tone: "ok" | "info" | "danger" | "warn"; icon: string }
+    { tone: "ok" | "info" | "danger" | "warn"; icon: string }
 > = {
-    created: { verb: "создано", tone: "ok", icon: "plus" },
-    updated: { verb: "изменено", tone: "info", icon: "edit" },
-    deleted: { verb: "удалено", tone: "danger", icon: "trash" },
-    restored: { verb: "восстановлено", tone: "ok", icon: "check" },
-    duplicated: { verb: "дублировано", tone: "warn", icon: "copy" },
-    force_deleted: { verb: "удалено навсегда", tone: "danger", icon: "trash" },
+    created: { tone: "ok", icon: "plus" },
+    updated: { tone: "info", icon: "edit" },
+    deleted: { tone: "danger", icon: "trash" },
+    restored: { tone: "ok", icon: "check" },
+    duplicated: { tone: "warn", icon: "copy" },
+    force_deleted: { tone: "danger", icon: "trash" },
+    login: { tone: "info", icon: "log-out" },
+    login_failed: { tone: "warn", icon: "lock" },
+    cleared: { tone: "danger", icon: "trash" },
+    backup_created: { tone: "ok", icon: "copy" },
+    backup_downloaded: { tone: "info", icon: "copy" },
 };
 
-// Maps action → presentation (verb/tone/icon); unknown falls back to a neutral default.
+// Maps action → presentation (tone/icon); unknown falls back to a neutral default.
 const actOf = (a: { action: string }) =>
-    ACT[a.action] || { verb: "", tone: "info" as const, icon: "edit" };
+    ACT[a.action] || { tone: "info" as const, icon: "edit" };
 const actMeta = (a: { changes_count: number }) =>
     a.changes_count ? `${a.changes_count} изм.` : "";
 
@@ -91,8 +97,12 @@ const bars = computed(() => {
         </div>
 
         <div
+            v-if="can('activity-log.view') || can('roles.view')"
             class="grid-2"
-            :class="{ 'grid-2--single': !can('activity-log.view') }"
+            :class="{
+                'grid-2--single':
+                    !can('activity-log.view') || !can('roles.view'),
+            }"
         >
             <NCard
                 v-if="can('activity-log.view')"
@@ -112,7 +122,7 @@ const bars = computed(() => {
                         :tone="actOf(a).tone || 'info'"
                         :icon="actOf(a).icon || 'edit'"
                         :actor="a.user || 'Система'"
-                        :verb="actOf(a).verb || a.action"
+                        :verb="(a.action_label || a.action).toLowerCase()"
                         :object="a.subject_label || ''"
                         :tag="a.subject_type || ''"
                         :time="a.created_human || ''"
@@ -127,7 +137,7 @@ const bars = computed(() => {
                 />
             </NCard>
 
-            <NCard padding="20px">
+            <NCard v-if="can('roles.view')" padding="20px">
                 <div class="card-head">
                     <h2 class="card-title">Распределение ролей</h2>
                 </div>

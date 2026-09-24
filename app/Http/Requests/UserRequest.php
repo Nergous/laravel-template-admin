@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Role;
+use App\Models\User;
 use App\Support\RbacGuard;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -19,7 +20,14 @@ class UserRequest extends FormRequest
     {
         $permission = $this->isMethod('POST') ? 'users.create' : 'users.edit';
 
-        return $this->user()?->can($permission) === true;
+        if ($this->user()?->can($permission) !== true) {
+            return false;
+        }
+
+        // Editing: the target must not be above the actor (an admin, a system role, more permissions).
+        $target = $this->route('user');
+
+        return ! $target instanceof User || RbacGuard::canManageUser($this->user(), $target);
     }
 
     public function rules(): array
@@ -33,6 +41,8 @@ class UserRequest extends FormRequest
             'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($userId)->whereNull('deleted_at')],
             'roles' => ['nullable', 'array'],
             'roles.*' => ['string', Rule::exists('roles', 'name'), $this->roleAssignableByActor(...)],
+            'is_active' => ['sometimes', 'boolean'],
+            'must_change_password' => ['sometimes', 'boolean'],
         ];
 
         if ($this->isMethod('POST')) {

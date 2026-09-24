@@ -1,14 +1,11 @@
 <script setup lang="ts">
 import { NInput, NTextarea, NCheckbox, NFormField } from "nergous-ui-vue";
-import { formatDateTime } from "@/lib/format";
 import { permissionGroupLabels } from "@/admin/pages/Roles/permissionGroupLabels";
 
 // Presentational form shared by the create/edit role pages.
 const props = defineProps({
     form: { type: Object, required: true },
     allPermissions: { type: Object, required: true }, // { users:[{id,name}], media:[...], ... }
-    // Role metadata — only on edit. { created_by, updated_by, created_at, updated_at }.
-    meta: { type: Object, default: null },
     nameReadonly: { type: Boolean, default: false },
 });
 const emit = defineEmits(["submit"]);
@@ -81,36 +78,6 @@ function toggle(name: string, checked: boolean) {
                 </div>
             </div>
         </NFormField>
-
-        <div v-if="meta" class="rform__panel">
-            <h2 class="rform__panel-title">Сведения</h2>
-            <dl class="rform__panel-list">
-                <div class="rform__panel-row">
-                    <dt class="rform__panel-key">Создал</dt>
-                    <dd class="rform__panel-val">
-                        {{ meta.created_by ?? "—" }}
-                    </dd>
-                </div>
-                <div class="rform__panel-row">
-                    <dt class="rform__panel-key">Изменил</dt>
-                    <dd class="rform__panel-val">
-                        {{ meta.updated_by ?? "—" }}
-                    </dd>
-                </div>
-                <div class="rform__panel-row">
-                    <dt class="rform__panel-key">Создано</dt>
-                    <dd class="rform__panel-val">
-                        {{ formatDateTime(meta.created_at) }}
-                    </dd>
-                </div>
-                <div class="rform__panel-row">
-                    <dt class="rform__panel-key">Обновлено</dt>
-                    <dd class="rform__panel-val">
-                        {{ formatDateTime(meta.updated_at) }}
-                    </dd>
-                </div>
-            </dl>
-        </div>
     </form>
 </template>
 
@@ -143,38 +110,5 @@ function toggle(name: string, checked: boolean) {
     display: flex;
     flex-direction: column;
     gap: 8px;
-}
-
-.rform__panel {
-    padding: 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface-2);
-}
-.rform__panel-title {
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--text-3);
-    margin: 0 0 10px;
-}
-.rform__panel-list {
-    margin: 0;
-}
-.rform__panel-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 13px;
-    padding: 4px 0;
-}
-.rform__panel-key {
-    color: var(--text-3);
-}
-.rform__panel-val {
-    margin: 0;
-    font-weight: 600;
-    color: var(--text);
 }
 </style>

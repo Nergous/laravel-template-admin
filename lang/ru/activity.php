@@ -14,6 +14,11 @@ return [
         'force_deleted' => 'Удалено навсегда',
         'restored' => 'Восстановлено',
         'duplicated' => 'Дублировано',
+        'login' => 'Вход в систему',
+        'login_failed' => 'Неудачный вход',
+        'cleared' => 'Журнал очищен',
+        'backup_created' => 'Создана резервная копия',
+        'backup_downloaded' => 'Скачана резервная копия',
     ],
 
     'subjects' => [
@@ -21,5 +26,6 @@ return [
         'media' => 'Медиа',
         'role' => 'Роль',
         'permission' => 'Разрешение',
+        'system' => 'Система',
     ],
 ];

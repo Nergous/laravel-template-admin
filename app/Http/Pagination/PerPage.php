@@ -30,9 +30,9 @@ class PerPage
     {
         $requested = filter_var($request->query('per_page'), FILTER_VALIDATE_INT);
 
-        $this->perPage = in_array($requested, self::OPTIONS, true)
+        $this->perPage = in_array($requested, static::OPTIONS, true)
             ? $requested
-            : self::DEFAULT;
+            : static::DEFAULT;
     }
 
     public function get(): int
@@ -49,7 +49,7 @@ class PerPage
     {
         return [
             'perPage' => $this->perPage,
-            'perPageOptions' => self::OPTIONS,
+            'perPageOptions' => static::OPTIONS,
         ];
     }
 }

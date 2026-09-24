@@ -54,6 +54,11 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | GET   | `/` (`/admin`)          | `auth`              | —              | dashboard                                        |
 | GET   | `/search`               | `auth`              | inline `can()` | results filtered by `users.view`/`media.view`    |
 | GET   | `/notifications/recent` | `activity-log.view` | —              | JSON "bell" feed                                 |
+| POST  | `/notifications/seen`   | `activity-log.view` | —              | marks the bell as read                           |
+| GET   | `/profile`              | `auth`              | —              | own profile and sessions                         |
+| PUT   | `/profile`, `/profile/password` | `auth`      | —              | own name/email; password needs the current one   |
+| POST  | `/profile/sessions/logout-others` | `auth`    | —              | needs the current password                       |
+| DELETE | `/profile/sessions/{key}` | `auth`            | —              | database session driver only, else 404           |
 
 ### Users
 
@@ -61,7 +66,7 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | --------- | ---------------------------------------------------- | -------------- | ------------------ | -------------------------------------------------- |
 | GET       | `/users`                                             | `users.view`   | —                  | list                                               |
 | POST      | `/users`                                             | `users.view`   | **`users.create`** | `UserRequest`                                      |
-| PUT/PATCH | `/users/{user}`                                      | `users.view`   | **`users.edit`**   | `UserRequest`                                      |
+| PUT/PATCH | `/users/{user}`                                      | `users.view`   | **`users.edit`** + `canManageUser` | `UserRequest`                      |
 | GET       | `/users/create`                                      | `users.view`   | **`users.create`** | create page                                        |
 | GET       | `/users/{user}`                                      | `users.view`   | —                  | shareable detail page                              |
 | GET       | `/users/{user}/edit`                                 | `users.view`   | **`users.edit`**   | edit page                                          |
@@ -90,9 +95,10 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | --------- | ----------------------------------------------------------------------- | -------------------- | ------------------------ | ------------------------------------------------ |
 | GET       | `/permissions`, `/permissions/create`, `/permissions/{permission}/edit` | `permissions.view`   | —                        | matrix / stubs                                   |
 | PATCH     | `/permissions/matrix`                                                   | `permissions.edit`   | — (inline validation)    | cell toggle; the `admin` role is locked → 422    |
+| PATCH     | `/permissions/matrix/bulk`                                              | `permissions.edit`   | — (inline validation)    | row/group toggle; skips roles/permissions the actor may not change |
 | POST      | `/permissions`                                                          | `permissions.view`   | **`permissions.create`** | `PermissionRequest`; auto-grant to the `admin` role |
 | PUT/PATCH | `/permissions/{permission}`                                             | `permissions.view`   | **`permissions.edit`**   | `PermissionRequest`                              |
-| DELETE    | `/permissions/{permission}`                                             | `permissions.delete` | —                        | —                                                |
+| DELETE    | `/permissions/{permission}`                                             | `permissions.delete` | —                        | system permissions → 422                         |
 
 ### Media
 
@@ -103,6 +109,8 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | GET    | `/media/browse`  | `media.view`   | — (inline validation) | JSON picker (search + pagination) |
 | POST   | `/media`         | `media.upload` | (also `media.upload`) | `MediaRequest`, JSON, needs CSRF |
 | PATCH  | `/media/{media}` | `media.edit` | (also `media.edit`) | `RenameMediaRequest`; display name only, redirect + flash |
+| GET    | `/media/{media}` | `media.view`   | —                     | JSON file details                |
+| POST   | `/media/{media}/replace` | `media.edit` | (also `media.edit`) | `ReplaceMediaRequest`, JSON, queued |
 | DELETE | `/media/{media}` | `media.delete` | —                     | —                                |
 | DELETE | `/media/bulk`    | `media.delete` | —                     | `BulkDestroyMediaRequest`        |
 
@@ -111,9 +119,13 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | Method | URI             | Route permission      | Action permission | Notes                                                  |
 | ------ | --------------- | --------------------- | -------------- | ------------------------------------------------------ |
 | GET    | `/activity-log` | `activity-log.view`   | —              | the log                                                |
-| DELETE | `/activity-log` | `activity-log.delete` | —              | clears the log up to the `before` date (earlier events are deleted) |
+| GET    | `/activity-log/export` | `activity-log.view` | —         | CSV with the same filters as the list                  |
+| DELETE | `/activity-log` | `activity-log.delete` | —              | clears the log up to the `before` date (not in the future); the clearing itself is logged |
 | GET    | `/settings`     | `settings.view`       | —              | —                                                      |
 | PUT    | `/settings`     | `settings.edit`       | —              | `UpdateSettingsRequest` (rules from `Setting::SCHEMA`) |
+| GET    | `/backups`      | `backups.view`        | —              | list of dumps                                          |
+| GET    | `/backups/{file}` | `backups.view`      | —              | download (logged)                                      |
+| POST   | `/backups`      | `backups.create`      | —              | runs `app:db-backup` synchronously (logged)            |
 
 ---
 
@@ -128,7 +140,7 @@ a permission is hidden in the UI but the request is sent anyway, a 403 is return
 | **404**                        | model not found (`{user}`/`{role}`/…), user/media not in trash                                                                         |
 | **419**                        | mutation without a valid CSRF token (relevant for `POST /media`)                                                                      |
 | **422**                        | Form Request validation error **or** a domain check (see below)                                                                      |
-| **429**                        | the `throttle:login` limit on `POST /login` exceeded (by default **5/min per IP**, configurable via `security.login_throttle`)       |
+| **429**                        | the `throttle:login` limit on `POST /login` exceeded (by default **5/min per email + IP**, configurable via `security.login_throttle`)       |
 
 ### Domain errors (422, `ValidationException` → redirect back with an error)
 

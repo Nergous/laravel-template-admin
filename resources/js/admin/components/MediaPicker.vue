@@ -18,6 +18,10 @@ const props = defineProps({
     modelValue: { type: Boolean, default: false },
     preselected: { type: Array as PropType<MediaItem[]>, default: () => [] },
     max: { type: Number, default: 10 },
+    /** Restrict the library to one media type (image, video, audio, document). */
+    type: { type: String, default: "" },
+    title: { type: String, default: "Медиатека" },
+    confirmLabel: { type: String, default: "Прикрепить" },
 });
 const emit = defineEmits(["update:modelValue", "select"]);
 
@@ -55,6 +59,13 @@ function isSelected(id: number) {
     return selected.value.has(id);
 }
 function toggle(m: MediaItem) {
+    // Single-select mode: a click replaces the choice.
+    if (props.max === 1) {
+        selected.value = selected.value.has(m.id)
+            ? new Map()
+            : new Map([[m.id, m]]);
+        return;
+    }
     const next = new Map(selected.value);
     if (next.has(m.id)) {
         next.delete(m.id);
@@ -86,6 +97,7 @@ async function load(p = 1) {
     try {
         const params = new URLSearchParams({ page: String(p) });
         if (search.value.trim()) params.set("search", search.value.trim());
+        if (props.type) params.set("type", props.type);
         const res = await fetch(`/admin/media/browse?${params.toString()}`, {
             headers: { Accept: "application/json" },
         });
@@ -136,7 +148,7 @@ function confirm() {
 <template>
     <NModal
         :model-value="modelValue"
-        title="Медиатека"
+        :title="title"
         width="760px"
         close-label="Закрыть"
         @update:model-value="!$event && close()"
@@ -150,7 +162,7 @@ function confirm() {
                     aria-label="Поиск по медиатеке"
                     @update:model-value="onSearchInput"
                 />
-                <span class="mp__count">
+                <span v-if="max > 1" class="mp__count">
                     Выбрано: {{ selectedCount }} / {{ max }}
                 </span>
             </div>
@@ -229,8 +241,15 @@ function confirm() {
         <template #footer>
             <div class="mp__footer">
                 <NButton variant="ghost" @click="close">Отмена</NButton>
-                <NButton variant="primary" @click="confirm">
-                    Прикрепить{{ selectedCount ? ` (${selectedCount})` : "" }}
+                <NButton
+                    variant="primary"
+                    :disabled="max === 1 && selectedCount === 0"
+                    @click="confirm"
+                >
+                    {{ confirmLabel
+                    }}{{
+                        max > 1 && selectedCount ? ` (${selectedCount})` : ""
+                    }}
                 </NButton>
             </div>
         </template>

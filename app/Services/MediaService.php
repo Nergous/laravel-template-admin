@@ -34,6 +34,17 @@ class MediaService
     }
 
     /**
+     * Queues a new file for an existing record (the UploadMedia job in replace
+     * mode updates the row and removes the old files).
+     */
+    public function queueReplacement(Media $media, UploadedFile $file, ?int $userId): void
+    {
+        $tempPath = $file->store('temp', 'local');
+
+        UploadMedia::dispatch($tempPath, $file->getClientOriginalName(), $userId, $media->id);
+    }
+
+    /**
      * Deletes a single record and its associated files (original + thumbnail).
      */
     public function delete(Media $media): void

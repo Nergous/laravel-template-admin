@@ -23,6 +23,8 @@ class AdminDashboardController extends Controller
      */
     public function index(Request $request): Response
     {
+        $user = $request->user();
+
         $roles = Role::withCount('users')
             ->orderByDesc('users_count')
             ->get();
@@ -40,32 +42,36 @@ class AdminDashboardController extends Controller
         // KPI cards: a primary number + a secondary line with a real metric.
         // These are the template's demo metrics (admin entities) — replace them with
         // your own domain's indicators along with the markup in pages/Dashboard.vue.
-        $stats = [
-            'users' => [
+        // Each card is sent only with the matching *.view permission, like the
+        // sidebar badges: the dashboard is open to every signed-in user.
+        $stats = array_filter([
+            'users' => $user->can('users.view') ? [
                 'value' => User::count(),
                 'sub' => '',
-            ],
-            'roles' => [
+            ] : null,
+            'roles' => $user->can('roles.view') ? [
                 'value' => $roles->count(),
                 'sub' => "{$rolesAssigned} с пользователями",
-            ],
-            'permissions' => [
+            ] : null,
+            'permissions' => $user->can('permissions.view') ? [
                 'value' => $permissionsTotal,
                 'sub' => "{$resourceCount} ресурсов",
-            ],
-            'media' => [
+            ] : null,
+            'media' => $user->can('media.view') ? [
                 'value' => Media::count(),
                 'sub' => "{$mediaCategories} категорий",
-            ],
-        ];
+            ] : null,
+        ]);
 
-        // Distribution of users by role (for the horizontal bars).
-        $roleDistribution = $roles
-            ->map(fn (Role $role) => [
-                'name' => $role->name,
-                'count' => $role->users_count,
-            ])
-            ->all();
+        // Distribution of users by role (for the horizontal bars) — needs roles.view.
+        $roleDistribution = $user->can('roles.view')
+            ? $roles
+                ->map(fn (Role $role) => [
+                    'name' => $role->name,
+                    'count' => $role->users_count,
+                ])
+                ->all()
+            : [];
 
         // Recent activity feed — the same audit stream that guards the activity
         // log page. The dashboard is open to anyone under auth, so the feed is
@@ -78,8 +84,9 @@ class AdminDashboardController extends Controller
                 ->get()
                 ->map(fn (ActivityLog $log) => [
                     'id' => $log->id,
-                    'user' => $log->user?->name,
+                    'user' => $log->user?->name ?? $log->actor_label,
                     'action' => $log->action,
+                    'action_label' => $log->actionLabel(),
                     'subject_label' => $log->subject_label,
                     'subject_type' => $log->subjectTypeLabel(),
                     'changes_count' => is_array($log->changes) ? count($log->changes) : 0,

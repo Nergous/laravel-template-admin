@@ -5,6 +5,41 @@ All notable changes to the project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Account blocking, a forced password change on next login and the last-login time for
+  users; a self-service profile page with password change and active sessions.
+- Activity log filters (action, object type, user, dates), CSV export, links to the
+  affected records, and login/failed-login entries.
+- Unread notifications in the bell with "mark as read".
+- Media library: server-side type filter, search, sorting and page size, file details,
+  copying the link and replacing a file in place.
+- Permissions matrix: search, whole-row and whole-group toggles, renaming, and
+  system permissions that cannot be renamed or deleted.
+- Database backups page (`backups.view`, `backups.create`).
+- `resources/views/public.blade.php` with meta tags built from the SEO settings.
+- `media:prune-orphans` (daily) and database/storage/queue checks in `/up`.
+
+### Changed
+
+- Dates are stored in UTC; the timezone setting now only affects display.
+- Search covers roles, finds media by display name and links users to their page.
+- The dashboard shows only the statistics the user may view.
+
+### Fixed
+
+- A user with `users.edit` could edit, block or delete a more privileged account.
+- Passwords and remember tokens could land in the activity log diff.
+- Restoring a user whose email was taken by another account returned a 500.
+- Upload polling could pick up other admins' uploads and miscount files outside the
+  current page; a failed upload job left orphaned files.
+- The permissions matrix did not roll back a cell after a 403 or a network error and
+  let view-only users click cells.
+- Clearing the activity log accepted future dates and left no trace.
+- Settings accepted a zero session lifetime and login limit.
+
 ## [2.1.2] — 2026-09-24
 
 ### Added

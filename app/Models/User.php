@@ -23,6 +23,10 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $name
  * @property string $email
  * @property string $password
+ * @property bool $is_active
+ * @property bool $must_change_password
+ * @property Carbon|null $last_login_at
+ * @property Carbon|null $notifications_seen_at
  * @property Carbon|null $email_verified_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -36,6 +40,19 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'is_active',
+        'must_change_password',
+    ];
+
+    /**
+     * Mirrors the column defaults, so a freshly created model (factories,
+     * services) is active before it is reloaded from the database.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'is_active' => true,
+        'must_change_password' => false,
     ];
 
     protected $hidden = [
@@ -47,12 +64,36 @@ class User extends Authenticatable
         'email_active',
     ];
 
+    /**
+     * Technical columns that change on routine actions (login, opening the
+     * notification bell). LogsActivity skips them so they do not flood the log.
+     *
+     * @var list<string>
+     */
+    protected array $auditExclude = ['last_login_at', 'notifications_seen_at'];
+
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
+            'last_login_at' => 'datetime',
+            'notifications_seen_at' => 'datetime',
+            'is_active' => 'boolean',
+            'must_change_password' => 'boolean',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Updates technical columns without model events, timestamps, or audit
+     * entries (last login, notification read marker).
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public function updateSilently(array $values): void
+    {
+        static::query()->whereKey($this->getKey())->toBase()->update($values);
+        $this->forceFill($values)->syncOriginalAttributes(array_keys($values));
     }
 
     /**
@@ -68,7 +109,8 @@ class User extends Authenticatable
     /**
      * Filter by role name (spatie).
      *
-     * @param  string|null  $role  Role name (spatie); empty — filter is not applied
+     * @param  string|null  $role  Role name (spatie); empty — filter is not applied;
+     *                             self::WITHOUT_ROLES — users without any role
      */
     public function scopeFilterByRole(Builder $query, ?string $role): Builder
     {
@@ -76,6 +118,13 @@ class User extends Authenticatable
             return $query;
         }
 
+        if ($role === self::WITHOUT_ROLES) {
+            return $query->doesntHave('roles');
+        }
+
         return $query->role($role);
     }
+
+    /** Role filter value that selects users without any role. */
+    public const WITHOUT_ROLES = '__none';
 }

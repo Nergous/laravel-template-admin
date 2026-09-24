@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
  * "50%" is searched literally, not as a pattern.
  *
  * Attached to models via use HasSearch; the model declares the columns in its
- * scopeSearch(). Used in the models: User, Media.
+ * scopeSearch(). Used in the models: User, Role, Media.
  *
  * Scale: LIKE '%...%' does not use a B-tree index. If search becomes a
  * bottleneck — on PostgreSQL enable the pg_trgm extension + a GIN index

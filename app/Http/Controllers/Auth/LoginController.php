@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
+use App\Models\ActivityLog;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,11 +32,12 @@ class LoginController extends Controller
     /**
      * Handle a login attempt.
      *
-     * On successful authentication, regenerates the session
-     * and redirects to the requested URL or to the home page.
+     * On successful authentication, regenerates the session, stores the login
+     * time, writes a "login" entry to the activity log, and redirects to the
+     * requested URL (or to the profile when a password change is required).
      *
-     * On invalid credentials, throws a ValidationException
-     * with an error on the email field.
+     * On invalid credentials or a blocked account, throws a ValidationException
+     * with an error on the email field; failed attempts are logged as well.
      *
      * @throws ValidationException If the email or password is incorrect
      */
@@ -42,15 +45,40 @@ class LoginController extends Controller
     {
         $credentials = $request->validated();
 
-        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+        // Blocked accounts are rejected by the credentials check itself, so a
+        // correct password does not reveal whether the account exists.
+        $attempt = [...$credentials, 'is_active' => true];
+
+        if (! Auth::attempt($attempt, $request->boolean('remember'))) {
+            $this->logFailedAttempt($credentials['email']);
+
             throw ValidationException::withMessages([
-                'email' => 'Неверный email или пароль',
+                'email' => 'Неверный email или пароль, либо учётная запись заблокирована',
             ]);
         }
 
         $request->session()->regenerate();
 
+        /** @var User $user */
+        $user = Auth::user();
+        $user->updateSilently(['last_login_at' => now()]);
+        ActivityLog::record($user, 'login');
+
+        if ($user->must_change_password) {
+            return redirect()
+                ->route('admin.profile.show')
+                ->with('warning', 'Администратор попросил сменить пароль перед началом работы');
+        }
+
         return redirect()->intended(route('admin.dashboard'));
+    }
+
+    /** Writes a failed login attempt to the activity log (unknown emails are logged by label). */
+    private function logFailedAttempt(string $email): void
+    {
+        $user = User::where('email', $email)->first();
+
+        ActivityLog::record($user, 'login_failed', null, $user ? null : $email);
     }
 
     /**

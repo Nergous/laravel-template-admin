@@ -231,6 +231,8 @@ docker compose down -v                           # tear down along with data
 | Media library    | `/admin/media`        | `media.view`        |
 | Activity log     | `/admin/activity-log` | `activity-log.view` |
 | Settings         | `/admin/settings`     | `settings.view`     |
+| Backups          | `/admin/backups`      | `backups.view`      |
+| My profile       | `/admin/profile`      | (auth only)         |
 > The "Permission" column is access to the section (viewing). Actions are gated **granularly**: create/edit — `*.create`/`*.edit` (in `FormRequest::authorize()`), delete — `*.delete` (middleware on destroy routes). For media: upload — `media.upload`, rename — `media.edit`, delete — `media.delete`. Settings: write — `settings.edit`. If you create a custom role with `*.view` but without `*.delete`, the server-side protection still kicks in (403), but you should also hide the delete buttons in the UI via `can('*.delete')` (see `resources/js/lib/can.ts`).
 
 ### Base permissions
@@ -243,6 +245,10 @@ The `RolePermissionSeeder` seeder creates:
 - `media.{view,upload,edit,delete}`
 - `activity-log.{view,delete}`
 - `settings.{view,edit}`
+- `backups.{view,create}`
+
+These base permissions are marked `is_system`: routes and FormRequests depend on them, so
+they cannot be renamed or deleted from the matrix. Permissions you add in the UI stay editable.
 
 Roles: `admin` — all permissions; `operator` — media library only (`media.*`). Both are marked `is_system`.
 
@@ -255,6 +261,14 @@ Its structure is defined by the `Setting::SCHEMA` constant (group → key → `[
 `general` group (application name, timezone, favicon), `seo` (meta tags, og-image, indexing), and
 `security` (session lifetime, the `login_throttle` login-attempt limit). Values are cached
 and invalidated on write; validation is handled by `UpdateSettingsRequest`.
+
+Dates are stored in UTC. The `timezone` setting only controls how the admin panel
+*displays* dates (and how date filters/CSV export interpret days).
+
+The SEO group feeds `resources/views/public.blade.php`, a root layout for the public part
+of the site (title template, description, canonical, robots, favicon, Open Graph). Extend it
+from your pages and override per page with `@section('title')`, `@section('description')`,
+`@section('og_image')`. Sitemap generation behind the `sitemap` flag is left to your project.
 
 > **For your own project:** the branding defaults (`app_name`, `meta_title_template`,
 > `canonical_domain`) in `Setting::SCHEMA` are neutral placeholders; replace them here
@@ -269,7 +283,15 @@ and invalidated on write; validation is handled by `UpdateSettingsRequest`.
 - **Command palette and global search** via `Ctrl/Cmd+K` (the `useHotkeys` composable,
   layout-independent; new hotkeys are added through the same composable).
 - **Toasts** for flash messages (`success`/`error`/`warning`/`info`) via `useToast`/`NToaster`.
-- **Notifications** — the latest activity-log actions from the past 24 hours (a badge on the bell in the topbar).
+- **Notifications** — other users' actions from the past week in the bell; the badge counts
+  unread items and opening the bell marks them read.
+- **Accounts** — blocking (`is_active`), a forced password change on next login, last-login
+  time, and a self-service profile with active sessions (`/admin/profile`).
+- **Activity log** — filters by action, object type, user and dates, CSV export, links to
+  the affected records; logins and failed logins are recorded.
+- **Media library** — server-side type filter, search, sorting and page size, file details,
+  copying the link, and replacing the file behind an existing record.
+- **Backups** — list, download and on-demand creation of `app:db-backup` dumps.
 - **Accessibility**: focus trap and scroll lock in overlays (modals/drawers/palette),
   Escape to close, ARIA markup, and `prefers-reduced-motion` support.
 - **Bulk operations** in tables (mass deletion of media; restoring/permanently deleting

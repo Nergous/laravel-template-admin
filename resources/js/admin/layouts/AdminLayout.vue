@@ -16,6 +16,7 @@ import {
 } from "nergous-ui-vue";
 import { useFlashToasts } from "@/admin/composables/useFlashToasts";
 import { useHotkeys } from "@/admin/composables/useHotkeys";
+import { useServerErrors } from "@/admin/composables/useServerErrors";
 import { can } from "@/lib/can";
 import type { Command, Density } from "nergous-ui-vue";
 import type { SharedProps } from "@/admin/types";
@@ -38,6 +39,13 @@ defineProps({
 const page = usePage<SharedProps>();
 const { theme, density, toggle, setDensity } = useTheme();
 useFlashToasts();
+useServerErrors();
+
+// Shortcut hint: ⌘ on Apple platforms, Ctrl elsewhere (the hotkey accepts both).
+const isMac =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+const modKey = isMac ? "⌘" : "Ctrl";
 
 const collapsed = ref(false);
 const isMobile = ref(false); // < 768px viewport
@@ -81,7 +89,15 @@ const densityOpts = [
 // Record counts for the sidebar badges (shared prop from HandleInertiaRequests).
 const counts = computed(() => page.props.counts ?? {});
 
-const notifCount = computed(() => counts.value.recentActivity ?? 0);
+// Unread bell entries; opening the bell marks them read until the next page load.
+const notifSeen = ref(false);
+watch(
+    () => counts.value.recentActivity,
+    () => (notifSeen.value = false),
+);
+const notifCount = computed(() =>
+    notifSeen.value ? 0 : (counts.value.recentActivity ?? 0),
+);
 
 const sections = computed<{ label: string; items: NavItem[] }[]>(() => [
     {
@@ -156,6 +172,13 @@ const sections = computed<{ label: string; items: NavItem[] }[]>(() => [
                 href: "/admin/settings",
                 perm: "settings.view",
             },
+            {
+                id: "backups",
+                label: "Резервные копии",
+                icon: "download",
+                href: "/admin/backups",
+                perm: "backups.view",
+            },
         ],
     },
 ]);
@@ -197,6 +220,39 @@ const baseCommands = computed(() => {
             icon: it.icon,
             action: () => router.visit(it.href),
         }));
+    const quick = [
+        {
+            perm: "users.create",
+            label: "Создать пользователя",
+            icon: "plus",
+            href: "/admin/users/create",
+        },
+        {
+            perm: "roles.create",
+            label: "Создать роль",
+            icon: "plus",
+            href: "/admin/roles/create",
+        },
+        {
+            perm: "media.upload",
+            label: "Загрузить файлы",
+            icon: "upload",
+            href: "/admin/media",
+        },
+        {
+            perm: null,
+            label: "Мой профиль",
+            icon: "user",
+            href: "/admin/profile",
+        },
+    ]
+        .filter((it) => can(it.perm))
+        .map((it) => ({
+            label: it.label,
+            hint: "Действие",
+            icon: it.icon,
+            action: () => router.visit(it.href),
+        }));
     const actions = [
         {
             label: theme.value === "dark" ? "Светлая тема" : "Тёмная тема",
@@ -205,16 +261,19 @@ const baseCommands = computed(() => {
             action: toggle,
         },
     ];
-    return [...nav, ...actions];
+    return [...nav, ...quick, ...actions];
 });
 
 // Search is debounced: the request fires after a typing pause, not on every keystroke.
 const SEARCH_DEBOUNCE = 200; // ms
 const SEARCH_MIN_LEN = 2;
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+// Only the latest request may update the results: older ones are aborted.
+let searchAbort: AbortController | null = null;
 
 function search(q: string) {
     if (searchTimer) clearTimeout(searchTimer);
+    searchAbort?.abort();
     const term = q.trim();
     if (term.length < SEARCH_MIN_LEN) {
         const t = term.toLowerCase();
@@ -229,13 +288,22 @@ function search(q: string) {
 }
 
 async function runSearch(q: string) {
+    searchAbort?.abort();
+    const controller = new AbortController();
+    searchAbort = controller;
+    const t = q.toLowerCase();
+    const local = baseCommands.value.filter((c) =>
+        c.label.toLowerCase().includes(t),
+    );
     try {
         const res = await fetch(`/admin/search?q=${encodeURIComponent(q)}`, {
             headers: { Accept: "application/json" },
+            signal: controller.signal,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        commands.value = (json.results ?? json).map(
+        if (controller.signal.aborted || !paletteOpen.value) return;
+        const found = (json.results ?? json).map(
             (r: {
                 label: string;
                 meta: string;
@@ -248,14 +316,19 @@ async function runSearch(q: string) {
                 action: () => router.visit(r.url),
             }),
         );
+        commands.value = [...local, ...found];
     } catch {
-        commands.value = [];
+        if (!controller.signal.aborted) commands.value = local;
     }
 }
 
 // When the palette opens, show the base commands right away.
 watch(paletteOpen, (open) => {
     if (open) commands.value = baseCommands.value;
+    else {
+        if (searchTimer) clearTimeout(searchTimer);
+        searchAbort?.abort();
+    }
 });
 
 useHotkeys({ "mod+k": () => (paletteOpen.value = true) });
@@ -270,6 +343,7 @@ const notif = ref<{
         time: string;
         action: string;
         subject: string;
+        unread?: boolean;
     }[];
 }>({ count: 0, items: [] });
 
@@ -295,7 +369,26 @@ async function loadNotifications() {
 
 function openNotifications() {
     notifOpen.value = true;
-    loadNotifications();
+    loadNotifications().then(markNotificationsSeen);
+}
+
+async function markNotificationsSeen() {
+    if (!notif.value.count) return;
+    const token = document.querySelector<HTMLMetaElement>(
+        'meta[name="csrf-token"]',
+    )?.content;
+    try {
+        const res = await fetch("/admin/notifications/seen", {
+            method: "POST",
+            headers: {
+                Accept: "application/json",
+                "X-CSRF-TOKEN": token || "",
+            },
+        });
+        if (res.ok) notifSeen.value = true;
+    } catch {
+        // The badge stays; the next open retries.
+    }
 }
 </script>
 
@@ -325,6 +418,7 @@ function openNotifications() {
                 :key="it.id"
                 :href="it.url"
                 class="notif-item"
+                :class="{ 'notif-item--unread': it.unread }"
                 @click="notifOpen = false"
             >
                 <div class="notif-item__top">
@@ -391,13 +485,21 @@ function openNotifications() {
                     class="sbf__user"
                     :class="{ 'sbf--collapsed': collapsed }"
                 >
-                    <NAvatar :name="user.name" :size="30" />
-                    <div v-if="!collapsed" class="sbf__info">
-                        <div class="sbf__name">{{ user.name }}</div>
-                        <div class="sbf__role">{{ user.roles?.[0] ?? "" }}</div>
-                    </div>
+                    <Link
+                        href="/admin/profile"
+                        class="sbf__profile"
+                        title="Мой профиль"
+                        :aria-label="`Мой профиль: ${user.name}`"
+                    >
+                        <NAvatar :name="user.name" :size="30" />
+                        <div v-if="!collapsed" class="sbf__info">
+                            <div class="sbf__name">{{ user.name }}</div>
+                            <div class="sbf__role">
+                                {{ user.roles?.[0] ?? "" }}
+                            </div>
+                        </div>
+                    </Link>
                     <button
-                        v-if="!collapsed"
                         type="button"
                         class="sbf__logout"
                         title="Выйти"
@@ -420,12 +522,15 @@ function openNotifications() {
                 <button
                     type="button"
                     class="admin__cmd"
-                    title="Поиск и команды (⌘K)"
+                    :title="`Поиск и команды (${modKey}+K)`"
                     @click="paletteOpen = true"
                 >
                     <NIcon name="search" :size="16" />
                     <span class="admin__cmd__text">Поиск и команды</span>
-                    <span class="admin__kbd"><kbd>⌘</kbd><kbd>K</kbd></span>
+                    <span class="admin__kbd"
+                        ><kbd>{{ modKey }}</kbd
+                        ><kbd>K</kbd></span
+                    >
                 </button>
                 <template #right>
                     <NSegmented
@@ -628,9 +733,29 @@ function openNotifications() {
     background: var(--surface-3);
 }
 .sbf__user.sbf--collapsed {
+    flex-direction: column;
     justify-content: center;
+    height: auto;
+    gap: 6px;
     padding: 0;
     background: transparent;
+}
+.sbf__profile {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+    color: inherit;
+    text-decoration: none;
+    border-radius: 8px;
+}
+.sbf__profile:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+.sbf--collapsed .sbf__profile {
+    flex: none;
 }
 .sbf__info {
     flex: 1;
@@ -684,6 +809,9 @@ function openNotifications() {
 }
 .notif-item:hover {
     background: var(--surface-2);
+}
+.notif-item--unread {
+    background: var(--accent-soft);
 }
 .notif-item__top {
     display: flex;

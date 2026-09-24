@@ -6,6 +6,11 @@ export interface AdminUser {
     name: string;
     email: string;
     roles: { id?: number; name: string; description?: string | null }[];
+    is_active?: boolean;
+    must_change_password?: boolean;
+    last_login_at?: string | null;
+    /** Whether the current user may edit/delete this account (server rule). */
+    can_manage?: boolean;
     created_at?: string | null;
     updated_at?: string | null;
     deleted_at?: string | null;
@@ -38,6 +43,15 @@ export interface MediaItem {
     url: string;
     thumb_url?: string | null;
     created_at?: string;
+    created_local?: string;
+}
+
+/** File details from GET /admin/media/{id}. */
+export interface MediaDetails extends MediaItem {
+    dimensions: { width: number; height: number } | null;
+    uploaded_by: string | null;
+    updated_by: string | null;
+    updated_at: string | null;
 }
 
 export interface Pagination<T> {
@@ -58,6 +72,7 @@ export interface AuditLog {
     actor: string;
     subject: string;
     subjectType: string;
+    subjectUrl: string | null;
     changesCount: number;
     changes: Record<string, unknown> | null;
     createdAt: string | null;
@@ -65,12 +80,15 @@ export interface AuditLog {
 
 export interface SharedProps extends PageProps {
     appName: string;
+    /** Display time zone (IANA); dates arrive as UTC ISO strings. */
+    timezone: string;
     auth: {
         user: {
             id: number;
             name: string;
             email: string;
             roles: string[];
+            must_change_password: boolean;
         } | null;
         can: string[];
     };

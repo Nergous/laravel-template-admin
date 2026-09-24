@@ -4,7 +4,10 @@ namespace App\Providers;
 
 use App\Models\Setting;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
@@ -69,5 +72,36 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(max(1, $max))->by($email.'|'.$request->ip());
         });
+
+        Event::listen(DiagnosingHealth::class, fn () => $this->diagnoseHealth());
+    }
+
+    /**
+     * Checks behind GET /up (used by Docker/orchestrator health checks). Any
+     * exception turns the response into a 500:
+     *  - the database answers a trivial query;
+     *  - storage (uploads, backups, temp files) is writable;
+     *  - with the database queue, no job has waited longer than 15 minutes —
+     *    a stuck or missing worker otherwise goes unnoticed (uploads never finish).
+     */
+    private function diagnoseHealth(): void
+    {
+        DB::select('select 1');
+
+        if (! is_writable(storage_path('app'))) {
+            throw new \RuntimeException('storage/app is not writable');
+        }
+
+        $queue = config('queue.default');
+        if (config("queue.connections.{$queue}.driver") === 'database') {
+            $oldest = DB::connection(config("queue.connections.{$queue}.connection"))
+                ->table(config("queue.connections.{$queue}.table", 'jobs'))
+                ->whereNull('reserved_at')
+                ->min('available_at');
+
+            if ($oldest !== null && (int) $oldest < now()->subMinutes(15)->getTimestamp()) {
+                throw new \RuntimeException('Queue backlog: a job has waited more than 15 minutes');
+            }
+        }
     }
 }

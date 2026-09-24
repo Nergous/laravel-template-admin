@@ -11,6 +11,23 @@ use Spatie\Permission\PermissionRegistrar;
 class RolePermissionSeeder extends Seeder
 {
     /**
+     * Permissions the application code relies on. They are seeded as system
+     * permissions (permissions.is_system): the admin panel cannot rename or
+     * delete them. Add your own "module.action" permissions here.
+     *
+     * @var list<string>
+     */
+    public const PERMISSIONS = [
+        'users.view', 'users.create', 'users.edit', 'users.delete',
+        'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
+        'permissions.view', 'permissions.create', 'permissions.edit', 'permissions.delete',
+        'media.view', 'media.upload', 'media.edit', 'media.delete',
+        'activity-log.view', 'activity-log.delete',
+        'settings.view', 'settings.edit',
+        'backups.view', 'backups.create',
+    ];
+
+    /**
      * Base roles and permissions of the template.
      *
      * - admin     — all permissions.
@@ -21,17 +38,15 @@ class RolePermissionSeeder extends Seeder
      */
     public function run(): void
     {
-        $permissions = [
-            'users.view', 'users.create', 'users.edit', 'users.delete',
-            'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
-            'permissions.view', 'permissions.create', 'permissions.edit', 'permissions.delete',
-            'media.view', 'media.upload', 'media.edit', 'media.delete',
-            'activity-log.view', 'activity-log.delete',
-            'settings.view', 'settings.edit',
-        ];
+        $permissions = self::PERMISSIONS;
 
         foreach ($permissions as $name) {
-            Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+            $permission = Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
+
+            if (! $permission->is_system) {
+                $permission->is_system = true;
+                $permission->save();
+            }
         }
 
         // The superadmin name comes from config('rbac.superadmin_role'),

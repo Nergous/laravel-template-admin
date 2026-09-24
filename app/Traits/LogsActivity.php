@@ -10,9 +10,16 @@ use Illuminate\Database\Eloquent\Model;
  *
  * Hooks into the Eloquent events created, updated, deleted.
  * For a manual log entry (duplicate, restore) — call self::logManual().
+ *
+ * Secrets never reach the log: attributes from the model's $hidden are skipped,
+ * except the password, which is recorded only as the fact of a change (masked).
+ * A model can also list noisy technical columns in a protected $auditExclude array.
  */
 trait LogsActivity
 {
+    /** Replaces secret values in the log diff. */
+    public const AUDIT_MASK = '••••••';
+
     public static function bootLogsActivity(): void
     {
         static::created(function ($model) {
@@ -20,19 +27,10 @@ trait LogsActivity
         });
 
         static::updated(function ($model) {
-            $dirty = $model->getDirty();
-            unset($dirty['updated_at']); // noise
+            $changes = $model->auditChanges();
 
-            if (empty($dirty)) {
+            if ($changes === []) {
                 return;
-            }
-
-            $changes = [];
-            foreach ($dirty as $key => $newValue) {
-                $changes[$key] = [
-                    $model->getOriginal($key),
-                    $newValue,
-                ];
             }
 
             self::writeLog($model, 'updated', $changes);
@@ -53,6 +51,44 @@ trait LogsActivity
                 self::writeLog($model, 'restored');
             });
         }
+    }
+
+    /**
+     * The diff of the current update for the log: field → [old, new], without
+     * timestamps, hidden secrets, and the model's excluded columns.
+     *
+     * @return array<string, array{0: mixed, 1: mixed}>
+     */
+    public function auditChanges(): array
+    {
+        $hidden = $this->getHidden();
+        $excluded = property_exists($this, 'auditExclude') ? $this->auditExclude : [];
+        $changes = [];
+
+        foreach ($this->getDirty() as $key => $newValue) {
+            if ($key === 'updated_at' || in_array($key, $excluded, true)) {
+                continue;
+            }
+
+            if ($key === 'password') {
+                $changes[$key] = [self::AUDIT_MASK, self::AUDIT_MASK];
+
+                continue;
+            }
+
+            if (in_array($key, $hidden, true)) {
+                continue;
+            }
+
+            $changes[$key] = [$this->getOriginal($key), $newValue];
+        }
+
+        // Only the author column changed (e.g. a skipped secret was the real change).
+        if (array_keys($changes) === ['updated_by']) {
+            return [];
+        }
+
+        return $changes;
     }
 
     /**

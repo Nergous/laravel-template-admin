@@ -6,6 +6,7 @@ use App\Models\ActivityLog;
 use App\Models\Media;
 use App\Models\Role;
 use App\Models\User;
+use App\Providers\SettingsServiceProvider;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
@@ -57,12 +58,16 @@ class HandleInertiaRequests extends Middleware
 
             'appName' => config('app.name'),
 
+            // Display time zone (settings → general.timezone); dates are stored in UTC.
+            'timezone' => fn () => SettingsServiceProvider::displayTimezone(),
+
             'auth' => [
                 'user' => $user ? [
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
                     'roles' => $user->getRoleNames(),
+                    'must_change_password' => (bool) $user->must_change_password,
                 ] : null,
 
                 // Names of all the user's permissions — for conditional rendering in Vue
@@ -70,17 +75,17 @@ class HandleInertiaRequests extends Middleware
                 'can' => $user ? $user->getAllPermissions()->pluck('name')->all() : [],
             ],
 
-            // Record counts for the badges in the sidebar and the bell. The raw
-            // aggregates are global (do not depend on the user) and are cached for 30s;
-            // we only return the sections for which the user has the
-            // *.view permission — otherwise a badge would reveal a number where there is no access.
+            // Record counts for the sidebar badges. The raw aggregates are global
+            // (do not depend on the user) and are cached for 30s; we only return
+            // the sections for which the user has the *.view permission — otherwise
+            // a badge would reveal a number where there is no access. The bell count
+            // is personal: unread actions of other users (see ActivityLog::unreadFor).
             'counts' => $user ? function () use ($user) {
                 $all = Cache::remember('admin.sidebar-counts', 30, fn () => [
                     'users' => User::count(),
                     'roles' => Role::count(),
                     'permissions' => Permission::count(),
                     'media' => Media::count(),
-                    'recentActivity' => ActivityLog::recent()->count(),
                 ]);
 
                 return [
@@ -88,7 +93,9 @@ class HandleInertiaRequests extends Middleware
                     'roles' => $user->can('roles.view') ? $all['roles'] : null,
                     'permissions' => $user->can('permissions.view') ? $all['permissions'] : null,
                     'media' => $user->can('media.view') ? $all['media'] : null,
-                    'recentActivity' => $user->can('activity-log.view') ? $all['recentActivity'] : null,
+                    'recentActivity' => $user->can('activity-log.view')
+                        ? ActivityLog::unreadFor($user)->count()
+                        : null,
                 ];
             } : null,
 

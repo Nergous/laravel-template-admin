@@ -131,12 +131,12 @@ class Media extends Model
     }
 
     /**
-     * Search by file name (substring).
+     * Search by the display name and the stored file name (substring).
      *
      * @param  string|null  $search  Search string
      */
     public function scopeSearch(Builder $query, ?string $search): Builder
     {
-        return $this->scopeSearchLike($query, $search, ['filename']);
+        return $this->scopeSearchLike($query, $search, ['original_name', 'filename']);
     }
 }

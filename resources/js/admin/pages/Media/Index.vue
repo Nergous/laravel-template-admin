@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onBeforeUnmount } from "vue";
 import type { PropType } from "vue";
-import type { MediaItem, Pagination } from "@/admin/types";
+import type { MediaDetails, MediaItem, Pagination } from "@/admin/types";
 import { router } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
@@ -19,20 +19,43 @@ import {
     NModal,
     NInput,
     NFormField,
+    NSelect,
+    NDrawer,
     useToast,
 } from "nergous-ui-vue";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
+import { useIndexFilters } from "@/admin/composables/useIndexFilters";
 import { can } from "@/lib/can";
-import { formatBytes, pluralize } from "@/lib/format";
+import { formatBytes, formatDateTime, pluralize } from "@/lib/format";
 
 const props = defineProps({
     media: { type: Object as PropType<Pagination<MediaItem>>, required: true },
+    currentSort: { type: String, default: "created_at" },
+    currentDirection: { type: String, default: "desc" },
+    perPage: { type: Number, default: 24 },
+    perPageOptions: {
+        type: Array as PropType<number[]>,
+        default: () => [24, 48, 96],
+    },
+    filters: {
+        type: Object as PropType<{ search?: string; type?: string }>,
+        default: () => ({}),
+    },
 });
 
 const toast = useToast();
 
-// Keep polled uploads and local deletions alongside the server's initial page.
+// Keep polled uploads and local deletions alongside the server's page.
 const rows = ref([...props.media.data]);
+// A filter, sort or page change brings a new server page: replace the rows and
+// drop the selection, so bulk delete never touches files the user can't see.
+watch(
+    () => props.media,
+    (media) => {
+        rows.value = [...media.data];
+        selected.value = new Set();
+    },
+);
 
 const TYPE_LABEL: Record<string, string> = {
     image: "Фото",
@@ -64,13 +87,41 @@ function typeBadge(m: MediaItem) {
     return sub.toUpperCase().slice(0, 5);
 }
 
-const filter = ref("all");
+const filter = ref(props.filters.type || "all");
+const search = ref(props.filters.search ?? "");
+const sortKey = ref(`${props.currentSort}:${props.currentDirection}`);
+const sortOpts = [
+    { value: "created_at:desc", label: "Сначала новые" },
+    { value: "created_at:asc", label: "Сначала старые" },
+    { value: "original_name:asc", label: "По имени, А → Я" },
+    { value: "original_name:desc", label: "По имени, Я → А" },
+];
+
+const { reload, onSearch } = useIndexFilters("/admin/media", () => {
+    const [sort, direction] = sortKey.value.split(":");
+    return {
+        search: search.value || undefined,
+        type: filter.value === "all" ? undefined : filter.value,
+        sort,
+        direction,
+        per_page: props.perPage,
+    };
+});
+const hasFilters = computed(
+    () => filter.value !== "all" || search.value.trim() !== "",
+);
+const showPager = computed(
+    () =>
+        props.media.last_page > 1 ||
+        props.media.total > Math.min(...props.perPageOptions),
+);
 const filterOpts = [
     { value: "all", label: "Все" },
     { value: "image", label: "Фото" },
     { value: "video", label: "Видео" },
     { value: "audio", label: "Аудио" },
     { value: "document", label: "Документы" },
+    { value: "other", label: "Другое" },
 ];
 const view = ref("grid");
 const viewOpts = [
@@ -78,6 +129,7 @@ const viewOpts = [
     { value: "list", icon: "list", label: "Список" },
 ];
 
+// The server already filters by type; polled uploads are filtered here too.
 const visible = computed(() =>
     filter.value === "all"
         ? rows.value
@@ -109,10 +161,6 @@ const processingLabel = computed(() => {
     if (n <= 0) return "Обработка файлов…";
     return `Обработка ${n} ${pluralize(n, "файла", "файлов", "файлов")}…`;
 });
-
-function largestId() {
-    return rows.value.reduce((max, m) => (m.id > max ? m.id : max), 0);
-}
 
 function upload(files: File[]) {
     if (!files?.length) return;
@@ -148,15 +196,17 @@ function upload(files: File[]) {
         // Bytes delivered — the real work is now in the queue.
         pct.value = 100;
         let queued = files.length;
+        let afterId = 0;
         try {
             const json = JSON.parse(xhr.responseText || "{}");
             if (typeof json.queued === "number") queued = json.queued;
+            if (typeof json.after_id === "number") afterId = json.after_id;
         } catch {
             // Fall back to the selected-file count when the response has no JSON.
         }
         // The queue may continue after the upload reaches 100%.
         phase.value = "processing";
-        startPolling(queued);
+        startPolling(queued, afterId);
     };
     xhr.onerror = () => uploadFailed();
     xhr.send(fd);
@@ -177,7 +227,9 @@ function uploadFailed(xhr?: XMLHttpRequest) {
 }
 
 // Stop polling when all queued files arrive or the attempt limit is reached.
-function startPolling(expected: number) {
+// afterId is the largest id before the upload (from the server), so rows that
+// are not on the current page or were filtered out are never counted twice.
+function startPolling(expected: number, afterId: number) {
     expectedCount.value = expected;
     receivedCount.value = 0;
     let attempts = 0;
@@ -185,18 +237,18 @@ function startPolling(expected: number) {
 
     const tick = async () => {
         attempts += 1;
-        const after = largestId();
         try {
-            const res = await fetch(`/admin/media/poll?after_id=${after}`, {
+            const res = await fetch(`/admin/media/poll?after_id=${afterId}`, {
                 headers: { Accept: "application/json" },
             });
+            if (!res.ok) throw new Error(String(res.status));
             const fresh = (await res.json()) as MediaItem[];
-            if (Array.isArray(fresh) && fresh.length) {
+            if (Array.isArray(fresh)) {
                 // Poll results arrive newest first; prepend them in ascending order.
                 const known = new Set(rows.value.map((m) => m.id));
                 const add = fresh.filter((m) => !known.has(m.id));
                 for (const m of [...add].reverse()) rows.value.unshift(m);
-                receivedCount.value += add.length;
+                receivedCount.value = fresh.length;
             }
         } catch {
             // Retry transient network errors on the next tick.
@@ -404,12 +456,142 @@ function confirmBulkDelete() {
     });
 }
 
-function goPage(p: number) {
-    router.get(
-        "/admin/media",
-        { page: p },
-        { preserveState: false, preserveScroll: true, replace: true },
-    );
+function fileName(m: MediaItem) {
+    return m.original_name || m.filename;
+}
+
+function absoluteUrl(url: string) {
+    return new URL(url, window.location.origin).toString();
+}
+
+async function copyUrl(m: MediaItem) {
+    try {
+        await navigator.clipboard.writeText(absoluteUrl(m.url));
+        toast.success("Ссылка скопирована", fileName(m));
+    } catch {
+        toast.error(
+            "Не удалось скопировать",
+            "Браузер запретил доступ к буферу обмена.",
+        );
+    }
+}
+
+// File details drawer (GET /admin/media/{id}: dimensions, uploader, dates).
+const infoOpen = ref(false);
+const info = ref<MediaDetails | null>(null);
+const infoLoading = ref(false);
+
+async function fetchDetails(id: number): Promise<MediaDetails> {
+    const res = await fetch(`/admin/media/${id}`, {
+        headers: { Accept: "application/json" },
+    });
+    if (!res.ok) throw new Error(String(res.status));
+    return (await res.json()) as MediaDetails;
+}
+
+async function openInfo(m: MediaItem) {
+    info.value = {
+        ...m,
+        dimensions: null,
+        uploaded_by: null,
+        updated_by: null,
+        updated_at: null,
+    };
+    infoOpen.value = true;
+    infoLoading.value = true;
+    try {
+        info.value = await fetchDetails(m.id);
+    } catch {
+        toast.error("Не удалось загрузить сведения о файле");
+    } finally {
+        infoLoading.value = false;
+    }
+}
+
+// Replacing the file keeps the record (id, name, attachments); the queue stores
+// the new file under a new path, which the poll below waits for.
+const replaceInput = ref<HTMLInputElement | null>(null);
+const replacing = ref(false);
+
+function pickReplacement() {
+    replaceInput.value?.click();
+}
+
+function applyDetails(details: MediaDetails) {
+    const row = rows.value.find((m) => m.id === details.id);
+    if (row) {
+        Object.assign(row, {
+            filename: details.filename.split("/").pop() || details.filename,
+            mime_type: details.mime_type,
+            type: details.type,
+            size: details.size,
+            url: details.url,
+            thumb_url: details.thumb_url,
+        });
+        const nextBroken = new Set(broken.value);
+        nextBroken.delete(details.id);
+        broken.value = nextBroken;
+    }
+    if (info.value?.id === details.id) info.value = details;
+}
+
+function onReplaceFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = "";
+    const target = info.value;
+    if (!file || !target) return;
+
+    const token = document.querySelector<HTMLMetaElement>(
+        'meta[name="csrf-token"]',
+    )?.content;
+    const fd = new FormData();
+    fd.append("file", file);
+    replacing.value = true;
+
+    fetch(`/admin/media/${target.id}/replace`, {
+        method: "POST",
+        headers: { Accept: "application/json", "X-CSRF-TOKEN": token || "" },
+        body: fd,
+    })
+        .then(async (res) => {
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(
+                    json.errors?.file?.[0] || json.message || "Ошибка загрузки",
+                );
+            }
+            waitForReplacement(target.id, String(json.filename ?? ""));
+        })
+        .catch((err: Error) => {
+            replacing.value = false;
+            toast.error("Не удалось заменить файл", err.message);
+        });
+}
+
+function waitForReplacement(id: number, oldFilename: string, attempt = 0) {
+    setTimeout(async () => {
+        try {
+            const details = await fetchDetails(id);
+            if (details.filename !== oldFilename) {
+                applyDetails(details);
+                replacing.value = false;
+                toast.success("Файл заменён", fileName(details));
+                return;
+            }
+        } catch {
+            // Retry transient errors on the next attempt.
+        }
+        if (attempt >= 20) {
+            replacing.value = false;
+            toast.info(
+                "Файл ещё обрабатывается",
+                "Обновите страницу через минуту.",
+            );
+            return;
+        }
+        waitForReplacement(id, oldFilename, attempt + 1);
+    }, 1500);
 }
 </script>
 
@@ -445,27 +627,53 @@ function goPage(p: number) {
                 </div>
             </NCard>
 
-            <div v-if="rows.length" class="toolbar">
+            <div v-if="rows.length || hasFilters" class="toolbar">
                 <div class="toolbar__group">
-                    <NCheckbox
-                        v-if="can('media.delete') && visible.length"
-                        :model-value="allVisibleSelected"
-                        :indeterminate="someVisibleSelected"
-                        @update:model-value="toggleAllVisible"
-                    >
-                        Выбрать все
-                    </NCheckbox>
+                    <NInput
+                        v-model="search"
+                        class="toolbar__search"
+                        icon="search"
+                        placeholder="Поиск по имени файла…"
+                        aria-label="Поиск по имени файла"
+                        @update:model-value="onSearch"
+                    />
                     <NSegmented
                         v-model="filter"
                         :options="filterOpts"
                         aria-label="Фильтр по типу"
+                        @update:model-value="reload({ page: 1 })"
                     />
                 </div>
-                <NSegmented
-                    v-model="view"
-                    :options="viewOpts"
-                    aria-label="Вид"
-                />
+                <div class="toolbar__group">
+                    <NSelect
+                        v-model="sortKey"
+                        :options="sortOpts"
+                        aria-label="Сортировка"
+                        class="toolbar__sort"
+                        @update:model-value="reload({ page: 1 })"
+                    />
+                    <NSegmented
+                        v-model="view"
+                        :options="viewOpts"
+                        aria-label="Вид"
+                    />
+                </div>
+            </div>
+
+            <div v-if="can('media.delete') && visible.length" class="subbar">
+                <NCheckbox
+                    :model-value="allVisibleSelected"
+                    :indeterminate="someVisibleSelected"
+                    @update:model-value="toggleAllVisible"
+                >
+                    Выбрать все на странице
+                </NCheckbox>
+                <span class="subbar__total"
+                    >Всего: {{ media.total }}
+                    {{
+                        pluralize(media.total, "файл", "файла", "файлов")
+                    }}</span
+                >
             </div>
 
             <div
@@ -550,6 +758,28 @@ function goPage(p: number) {
                         <span class="mcard__badge">{{ typeBadge(m) }}</span>
                         <div class="mcard__actions">
                             <NButton
+                                class="mcard__act"
+                                variant="ghost"
+                                tone="accent"
+                                size="sm"
+                                icon="eye"
+                                :aria-label="'Сведения: ' + fileName(m)"
+                                title="Сведения о файле"
+                                @click.stop="openInfo(m)"
+                            />
+                            <NButton
+                                class="mcard__act"
+                                variant="ghost"
+                                tone="accent"
+                                size="sm"
+                                icon="link"
+                                :aria-label="
+                                    'Скопировать ссылку: ' + fileName(m)
+                                "
+                                title="Скопировать ссылку"
+                                @click.stop="copyUrl(m)"
+                            />
+                            <NButton
                                 v-if="can('media.edit')"
                                 class="mcard__act"
                                 variant="ghost"
@@ -585,12 +815,17 @@ function goPage(p: number) {
                             <span>{{ formatBytes(m.size) }}</span>
                             <span>{{ typeLabel(m) }}</span>
                         </div>
+                        <div class="mcard__date">
+                            {{
+                                m.created_local || formatDateTime(m.created_at)
+                            }}
+                        </div>
                     </div>
                 </div>
             </div>
 
             <NEmptyState
-                v-else-if="!rows.length"
+                v-else-if="!hasFilters"
                 icon="asset"
                 title="Пока пусто"
                 description="Загрузите первые файлы выше — изображения, видео, аудио или документы."
@@ -599,13 +834,16 @@ function goPage(p: number) {
                 v-else
                 icon="filter"
                 title="Ничего не найдено"
-                description="Нет файлов выбранного типа. Измените фильтр."
+                description="Нет файлов по выбранному фильтру или запросу."
             />
 
-            <div v-if="media.last_page > 1" class="page__pager">
+            <div v-if="showPager" class="page__pager">
                 <NPagination
                     :page="media.current_page"
                     :pages="media.last_page"
+                    :page-size="perPage"
+                    :page-sizes="perPageOptions"
+                    page-size-label="Показывать по"
                     jumpable
                     prev-label="Назад"
                     next-label="Вперёд"
@@ -614,7 +852,10 @@ function goPage(p: number) {
                     total-label="из"
                     jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по страницам"
-                    @update:page="goPage"
+                    @update:page="(p) => reload({ page: p })"
+                    @update:page-size="
+                        (size) => reload({ per_page: size, page: 1 })
+                    "
                 />
             </div>
         </div>
@@ -660,6 +901,97 @@ function goPage(p: number) {
                 >
             </template>
         </NModal>
+
+        <NDrawer
+            v-model="infoOpen"
+            title="Сведения о файле"
+            :subtitle="info ? fileName(info) : ''"
+            close-label="Закрыть"
+        >
+            <div v-if="info" class="info">
+                <div class="info__preview">
+                    <img
+                        v-if="info.type === 'image' && info.thumb_url"
+                        :src="info.thumb_url"
+                        :alt="fileName(info)"
+                    />
+                    <NIcon v-else :name="typeIcon(info)" :size="40" />
+                    <span v-if="infoLoading || replacing" class="info__busy">
+                        <NSpinner :size="20" :width="2" />
+                    </span>
+                </div>
+                <dl class="info__list">
+                    <dt>Имя</dt>
+                    <dd>{{ fileName(info) }}</dd>
+                    <dt>Тип</dt>
+                    <dd>{{ typeLabel(info) }} · {{ info.mime_type || "—" }}</dd>
+                    <dt>Размер</dt>
+                    <dd>{{ formatBytes(info.size) }}</dd>
+                    <template v-if="info.dimensions">
+                        <dt>Разрешение</dt>
+                        <dd>
+                            {{ info.dimensions.width }} ×
+                            {{ info.dimensions.height }} px
+                        </dd>
+                    </template>
+                    <dt>Загрузил</dt>
+                    <dd>{{ info.uploaded_by || "—" }}</dd>
+                    <dt>Загружен</dt>
+                    <dd>
+                        {{
+                            info.created_local ||
+                            formatDateTime(info.created_at)
+                        }}
+                    </dd>
+                    <template v-if="info.updated_by">
+                        <dt>Изменил</dt>
+                        <dd>
+                            {{ info.updated_by }} ·
+                            {{ formatDateTime(info.updated_at) }}
+                        </dd>
+                    </template>
+                    <dt>Ссылка</dt>
+                    <dd class="info__url">{{ absoluteUrl(info.url) }}</dd>
+                </dl>
+                <div class="info__actions">
+                    <NButton
+                        variant="secondary"
+                        icon="link"
+                        @click="copyUrl(info)"
+                        >Скопировать ссылку</NButton
+                    >
+                    <NButton
+                        variant="secondary"
+                        icon="ext"
+                        :as="'a'"
+                        :href="info.url"
+                        target="_blank"
+                        rel="noopener"
+                        >Открыть</NButton
+                    >
+                    <NButton
+                        v-if="can('media.edit')"
+                        variant="secondary"
+                        icon="upload"
+                        :loading="replacing"
+                        @click="pickReplacement"
+                        >Заменить файл</NButton
+                    >
+                </div>
+                <p v-if="can('media.edit')" class="info__hint">
+                    При замене запись и имя сохраняются, но адрес файла меняется
+                    — внешние ссылки на старый адрес перестанут работать.
+                </p>
+                <input
+                    ref="replaceInput"
+                    type="file"
+                    class="info__file"
+                    tabindex="-1"
+                    aria-hidden="true"
+                    @change="onReplaceFile"
+                />
+            </div>
+        </NDrawer>
 
         <ConfirmModal
             :open="delOpen"
@@ -710,8 +1042,94 @@ function goPage(p: number) {
 .toolbar__group {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
     flex-wrap: wrap;
+}
+.toolbar__search {
+    width: 260px;
+    max-width: 100%;
+}
+.toolbar__sort {
+    min-width: 190px;
+}
+.subbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.subbar__total {
+    font-size: 12.5px;
+    color: var(--text-3);
+}
+.mcard__date {
+    margin-top: 2px;
+    font-size: calc(var(--fs) - 2.5px);
+    color: var(--text-3);
+}
+.info {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.info__preview {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16 / 10;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    background: var(--surface-3);
+    color: var(--text-3);
+    overflow: hidden;
+}
+.info__preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+.info__busy {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--surface) 60%, transparent);
+}
+.info__list {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 16px;
+    margin: 0;
+    font-size: 13.5px;
+}
+.info__list dt {
+    color: var(--text-3);
+}
+.info__list dd {
+    margin: 0;
+    color: var(--text);
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.info__url {
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+.info__actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.info__hint {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-3);
+}
+.info__file {
+    display: none;
 }
 
 .selbar {

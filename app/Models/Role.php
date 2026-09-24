@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Traits\HasSearch;
+use Illuminate\Database\Eloquent\Builder;
 use Spatie\Permission\Models\Role as SpatieRole;
 
 /**
@@ -20,8 +22,16 @@ use Spatie\Permission\Models\Role as SpatieRole;
  */
 class Role extends SpatieRole
 {
+    use HasSearch;
+
     /** @var list<string> */
     protected $guarded = ['id', 'is_system'];
+
+    /** Search by name and description (substring, LIKE-escaped). */
+    public function scopeSearch(Builder $query, ?string $search): Builder
+    {
+        return $this->scopeSearchLike($query, $search, ['name', 'description']);
+    }
 
     /**
      * Keep the polymorphic subject type equal to the base spatie class.

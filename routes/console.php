@@ -22,3 +22,7 @@ Schedule::command('model:prune', ['--model' => [ActivityLog::class]])->daily();
 // In the prod stack, storage is a volume, so the dumps survive image rebuilds.
 // Pulling them off the host / shipping to S3 is left to operations' discretion.
 Schedule::command('app:db-backup')->daily();
+
+// Daily cleanup of files no media row references (stale temp uploads, leftovers
+// of failed jobs). Files younger than 24 hours are kept for jobs still queued.
+Schedule::command('media:prune-orphans')->daily();

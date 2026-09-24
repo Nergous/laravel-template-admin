@@ -2,14 +2,23 @@
 import { computed, ref, watch } from "vue";
 import type { PropType } from "vue";
 import type { AdminRole } from "@/admin/types";
-import { NInput, NAvatar, NIcon, NFormField, NButton } from "nergous-ui-vue";
-import { formatDateShort, formatDateTime } from "@/lib/format";
+import {
+    NInput,
+    NAvatar,
+    NIcon,
+    NFormField,
+    NButton,
+    NSwitch,
+    NCheckbox,
+} from "nergous-ui-vue";
 
 const props = defineProps({
     form: { type: Object, required: true },
     allRoles: { type: Array as PropType<AdminRole[]>, required: true },
     isEdit: { type: Boolean, default: false },
     user: { type: Object, default: null },
+    // The own account cannot be blocked (the server rejects it too).
+    isSelf: { type: Boolean, default: false },
 });
 const emit = defineEmits(["submit"]);
 
@@ -33,11 +42,17 @@ const SYMBOLS = "!@#$%^&*-_=+?";
 const generated = ref(false);
 const copied = ref(false);
 
+// Uniform random integer in [0, max): rejection sampling avoids the modulo bias.
+function randomBelow(max: number): number {
+    const limit = Math.floor(0x100000000 / max) * max;
+    const buf = new Uint32Array(1);
+    do crypto.getRandomValues(buf);
+    while (buf[0] >= limit);
+    return buf[0] % max;
+}
+
 function pickRandom(set: string, count: number): string[] {
-    return Array.from(
-        crypto.getRandomValues(new Uint32Array(count)),
-        (n) => set[n % set.length],
-    );
+    return Array.from({ length: count }, () => set[randomBelow(set.length)]);
 }
 
 function generatePassword() {
@@ -51,9 +66,8 @@ function generatePassword() {
         ...pickRandom(all, PASSWORD_LENGTH - 8),
     ];
     // …then shuffle so the class blocks don't sit at the start (Fisher–Yates).
-    const rnd = crypto.getRandomValues(new Uint32Array(chars.length));
     for (let i = chars.length - 1; i > 0; i--) {
-        const j = rnd[i] % (i + 1);
+        const j = randomBelow(i + 1);
         [chars[i], chars[j]] = [chars[j], chars[i]];
     }
     return chars.join("");
@@ -157,6 +171,40 @@ const passwordHint = computed(() => {
         </NFormField>
 
         <NFormField
+            label="Доступ к панели"
+            tag="div"
+            label-id="uform-state-label"
+        >
+            <div
+                class="uform__state"
+                role="group"
+                aria-labelledby="uform-state-label"
+            >
+                <label class="uform__toggle">
+                    <span class="uform__toggle-text">
+                        <b>Учётная запись активна</b>
+                        <span>{{
+                            isSelf
+                                ? "Свою учётную запись заблокировать нельзя"
+                                : "Заблокированный пользователь не сможет войти"
+                        }}</span>
+                    </span>
+                    <NSwitch
+                        v-model="form.is_active"
+                        :disabled="isSelf"
+                        aria-label="Учётная запись активна"
+                    />
+                </label>
+                <NCheckbox v-model="form.must_change_password">
+                    Потребовать смену пароля при следующем входе
+                </NCheckbox>
+                <span v-if="form.errors.is_active" class="uform__error">{{
+                    form.errors.is_active
+                }}</span>
+            </div>
+        </NFormField>
+
+        <NFormField
             label="Роли"
             :error="form.errors.roles"
             tag="div"
@@ -192,40 +240,6 @@ const passwordHint = computed(() => {
                 </button>
             </div>
         </NFormField>
-
-        <div v-if="isEdit && user" class="uform__panel">
-            <h4 class="uform__panel-title">Сведения</h4>
-            <div class="uform__panel-row">
-                <span class="uform__panel-key">Добавлен</span>
-                <span class="uform__panel-val">{{
-                    formatDateShort(user.created_at)
-                }}</span>
-            </div>
-            <div class="uform__panel-row">
-                <span class="uform__panel-key">Обновлено</span>
-                <span class="uform__panel-val">{{
-                    formatDateTime(user.updated_at)
-                }}</span>
-            </div>
-            <div class="uform__panel-row">
-                <span class="uform__panel-key">Создал</span>
-                <span class="uform__panel-val">{{
-                    user.creator?.name ?? "—"
-                }}</span>
-            </div>
-            <div class="uform__panel-row">
-                <span class="uform__panel-key">Изменил</span>
-                <span class="uform__panel-val">{{
-                    user.editor?.name ?? "—"
-                }}</span>
-            </div>
-            <div class="uform__panel-row">
-                <span class="uform__panel-key">Идентификатор</span>
-                <span class="uform__panel-val uform__panel-val--mono"
-                    >#{{ user.id }}</span
-                >
-            </div>
-        </div>
     </form>
 </template>
 
@@ -266,6 +280,33 @@ const passwordHint = computed(() => {
 .uform__password-input {
     flex: 1;
     min-width: 0;
+}
+
+.uform__state {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.uform__toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+}
+.uform__toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 13.5px;
+}
+.uform__toggle-text span {
+    font-size: 12px;
+    color: var(--text-3);
+}
+.uform__error {
+    font-size: 12px;
+    color: var(--danger);
 }
 
 .uform__roles {
@@ -342,37 +383,5 @@ const passwordHint = computed(() => {
     font-size: 12px;
     color: var(--text-3);
     margin-top: 1px;
-}
-
-.uform__panel {
-    padding: 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface-2);
-}
-.uform__panel-title {
-    margin: 0 0 10px;
-    font-size: 11.5px;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-    color: var(--text-3);
-}
-.uform__panel-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 13px;
-    padding: 4px 0;
-}
-.uform__panel-key {
-    color: var(--text-3);
-}
-.uform__panel-val {
-    font-weight: 600;
-    color: var(--text);
-}
-.uform__panel-val--mono {
-    font-family: var(--font-mono);
 }
 </style>

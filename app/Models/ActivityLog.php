@@ -77,6 +77,27 @@ class ActivityLog extends Model
         return $query->where('created_at', '>=', now()->subDay());
     }
 
+    /**
+     * Actions for the user's notification bell: entries by other users (and the
+     * system) since the bell was last opened, at most one week back. Routine
+     * successful logins are left out as noise.
+     */
+    public static function forBell(User $user): Builder
+    {
+        return static::query()
+            ->where(fn (Builder $q) => $q->whereNull('user_id')->orWhere('user_id', '!=', $user->getKey()))
+            ->where('action', '!=', 'login')
+            ->where('created_at', '>=', now()->subWeek());
+    }
+
+    /** Unread bell entries: newer than the user's last look at the bell (24 hours if never). */
+    public static function unreadFor(User $user): Builder
+    {
+        $since = $user->notifications_seen_at ?? now()->subDay();
+
+        return static::forBell($user)->where('created_at', '>', $since);
+    }
+
     // ---------- Retention / cleanup ----------
 
     /**
@@ -116,11 +137,14 @@ class ActivityLog extends Model
      * failure to write the log must not break the user's action, so exceptions are
      * swallowed (with report()).
      *
-     * @param  Model  $subject  The entity the action was performed on
+     * @param  Model|null  $subject  The entity the action was performed on; null for
+     *                               actions without an entity (a failed login with an
+     *                               unknown email, clearing the log)
      * @param  string  $action  The action name (created, updated, deleted, restored …)
      * @param  array<string, array{0: mixed, 1: mixed}>|null  $changes  Diff of changed fields: field → [old, new]
+     * @param  string|null  $label  Subject label override (defaults to the subject's name)
      */
-    public static function record($subject, string $action, ?array $changes = null): void
+    public static function record(?Model $subject, string $action, ?array $changes = null, ?string $label = null): void
     {
         $actor = Auth::user();
         $actorId = $actor?->getKey();
@@ -133,9 +157,9 @@ class ActivityLog extends Model
             static::create([
                 'user_id' => $actorId,
                 'action' => $action,
-                'subject_type' => $subject->getMorphClass(),
-                'subject_id' => $subject->getKey(),
-                'subject_label' => static::labelFor($subject),
+                'subject_type' => $subject?->getMorphClass(),
+                'subject_id' => $subject?->getKey(),
+                'subject_label' => $label ?? ($subject ? static::labelFor($subject) : null),
                 'actor_label' => $actor?->name,
                 'changes' => $changes,
                 'created_at' => now(),
@@ -146,12 +170,13 @@ class ActivityLog extends Model
     }
 
     /**
-     * Human-readable subject label: title → name → filename → id.
+     * Human-readable subject label: title → name → original_name → filename → id.
      */
     protected static function labelFor($subject): string
     {
         return $subject->title
             ?? $subject->name
+            ?? $subject->original_name
             ?? $subject->filename
             ?? (string) $subject->getKey();
     }
@@ -178,6 +203,11 @@ class ActivityLog extends Model
     public function subjectTypeLabel(): string
     {
         $type = (string) ($this->subject_type ?? '');
+
+        if ($type === '') {
+            return __('activity.subjects.system');
+        }
+
         $key = config('audit.subjects')[$type] ?? null;
 
         return $key ? __('activity.subjects.'.$key) : class_basename($type);

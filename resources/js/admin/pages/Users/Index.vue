@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { PropType } from "vue";
-import { Link, router } from "@inertiajs/vue3";
+import { Link, router, usePage } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
     NDataTable,
@@ -14,7 +14,7 @@ import {
     NEmptyState,
 } from "nergous-ui-vue";
 import type { Column, Row } from "nergous-ui-vue";
-import type { AdminUser, Pagination } from "@/admin/types";
+import type { AdminUser, Pagination, SharedProps } from "@/admin/types";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
 import { useConfirm } from "@/admin/composables/useConfirm";
 import { useIndexFilters } from "@/admin/composables/useIndexFilters";
@@ -28,6 +28,7 @@ const props = defineProps({
         type: Object as PropType<Record<string, string>>,
         default: () => ({}),
     }, // { admin:'admin', ... }
+    withoutRolesValue: { type: String, default: "__none" },
     trashedCount: { type: Number, default: 0 },
     currentSort: { type: String, default: "id" },
     currentDirection: {
@@ -46,10 +47,12 @@ const props = defineProps({
 });
 
 const search = ref(props.filters.search ?? "");
+const page = usePage<SharedProps>();
 const role = ref(props.filters.role ?? "");
 
 const roleOptions = computed(() => [
     { value: "", label: "Все роли" },
+    { value: props.withoutRolesValue, label: "Без роли" },
     ...Object.entries(props.roles).map(([value, label]) => ({ value, label })),
 ]);
 
@@ -117,6 +120,7 @@ const columns: Column[] = [
     { key: "name", label: "Пользователь", sortable: true },
     { key: "email", label: "Email" },
     { key: "roles", label: "Роли" },
+    { key: "last_login_at", label: "Последний вход", width: "150px" },
     { key: "created_at", label: "Добавлен", sortable: true, width: "140px" },
     { key: "actions", label: "Действия", width: "120px", align: "center" },
 ];
@@ -244,6 +248,12 @@ function confirmBulkDelete() {
                             class="ucell__name"
                             >{{ userRow(row).name }}</Link
                         >
+                        <NBadge
+                            v-if="userRow(row).is_active === false"
+                            tone="danger"
+                            pill
+                            >Заблокирован</NBadge
+                        >
                     </div>
                 </template>
 
@@ -267,6 +277,14 @@ function confirmBulkDelete() {
                     </span>
                 </template>
 
+                <template #cell-last_login_at="{ row }">
+                    <span class="created">{{
+                        userRow(row).last_login_at
+                            ? formatDateShort(userRow(row).last_login_at)
+                            : "никогда"
+                    }}</span>
+                </template>
+
                 <template #cell-created_at="{ row }">
                     <span class="created">{{
                         formatDateShort(userRow(row).created_at)
@@ -285,7 +303,7 @@ function confirmBulkDelete() {
                             :aria-label="`Открыть пользователя ${userRow(row).name}`"
                         />
                         <NButton
-                            v-if="can('users.edit')"
+                            v-if="can('users.edit') && userRow(row).can_manage"
                             :as="Link"
                             :href="`/admin/users/${userRow(row).id}/edit`"
                             variant="ghost"
@@ -296,7 +314,11 @@ function confirmBulkDelete() {
                             aria-label="Редактировать"
                         />
                         <NButton
-                            v-if="can('users.delete')"
+                            v-if="
+                                can('users.delete') &&
+                                userRow(row).can_manage &&
+                                userRow(row).id !== page.props.auth.user?.id
+                            "
                             variant="ghost"
                             tone="danger"
                             icon="trash"

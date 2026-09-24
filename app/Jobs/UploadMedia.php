@@ -67,11 +67,13 @@ class UploadMedia implements ShouldQueue
      *                            (e.g.: temp/randomname.jpg)
      * @param  string|null  $originalName  The file's original name at upload time
      * @param  int|null  $uploaderId  ID of the uploading user (for created_by; null from CLI/outside a session)
+     * @param  int|null  $replaceMediaId  Existing record whose file this upload replaces (null — a new record)
      */
     public function __construct(
         protected string $tempPath,
         protected ?string $originalName = null,
         protected ?int $uploaderId = null,
+        protected ?int $replaceMediaId = null,
     ) {}
 
     /**
@@ -116,22 +118,77 @@ class UploadMedia implements ShouldQueue
         $thumbPath = ImageOptimizer::thumbPath($filename);
         $hasThumb = $thumbPath !== $filename && Storage::disk('public')->exists($thumbPath);
 
-        $media = new Media([
+        $attributes = [
             'filename' => $filename,
-            'original_name' => $this->originalName,
             'mime_type' => $mime,
             'type' => Media::categorize($mime),
             'size' => $size,
             'has_thumb' => $hasThumb,
-        ]);
+        ];
+
+        // The new files exist before the row does: if the row cannot be saved,
+        // remove them so a retry does not leave orphans on the public disk.
+        $replaced = null;
+
+        try {
+            if ($this->replaceMediaId !== null) {
+                $replaced = $this->replaceFile($attributes);
+            } else {
+                $this->createRecord($attributes);
+            }
+        } catch (\Throwable $e) {
+            (new Media(['filename' => $filename]))->deleteFiles();
+
+            throw $e;
+        }
+
+        // Old files go only after the row points at the new ones.
+        $replaced?->deleteFiles();
+
+        $localDisk->delete($this->tempPath);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function createRecord(array $attributes): void
+    {
+        $media = new Media([...$attributes, 'original_name' => $this->originalName]);
 
         if ($this->uploaderId) {
             $media->created_by = $this->uploaderId;
         }
 
         $media->save();
+    }
 
-        $localDisk->delete($this->tempPath);
+    /**
+     * Points an existing record at the new file. The display name stays; the
+     * change is logged by LogsActivity.
+     *
+     * @param  array<string, mixed>  $attributes
+     * @return Media|null A detached model holding the old filename, for file cleanup
+     */
+    private function replaceFile(array $attributes): ?Media
+    {
+        $media = Media::find($this->replaceMediaId);
+
+        if ($media === null) {
+            // The record was deleted while the job waited — drop the new files.
+            (new Media(['filename' => $attributes['filename']]))->deleteFiles();
+
+            return null;
+        }
+
+        $old = new Media(['filename' => $media->filename]);
+
+        $media->fill($attributes);
+        if ($this->uploaderId) {
+            $media->updated_by = $this->uploaderId;
+        }
+        $media->save();
+
+        return $old;
     }
 
     /**

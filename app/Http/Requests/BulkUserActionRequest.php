@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\User;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -20,7 +21,10 @@ class BulkUserActionRequest extends FormRequest
         return [
             'all' => ['sometimes', 'boolean'],
             'search' => ['nullable', 'string', 'max:255'],
-            'role' => ['nullable', 'string', 'exists:roles,name'],
+            'role' => [
+                'nullable', 'string',
+                Rule::when($this->input('role') !== User::WITHOUT_ROLES, ['exists:roles,name']),
+            ],
             'ids' => [
                 Rule::requiredIf(fn () => ! $this->boolean('all')),
                 'array',

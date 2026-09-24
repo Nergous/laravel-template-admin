@@ -40,7 +40,7 @@ class AdminRoleController extends Controller
             ->withCount(['permissions', 'users']);
 
         if ($request->filled('search')) {
-            $query->where('name', 'LIKE', '%'.$request->search.'%');
+            $query->search($request->search);
         }
 
         $roles = $query->orderBy('name')->paginate(15)->withQueryString();

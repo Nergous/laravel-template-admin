@@ -4,13 +4,13 @@ This is a server-driven **Inertia** application: the vast majority of routes ret
 Inertia page objects (HTML/JSON) or a `RedirectResponse` with flash and validation
 errors (see [response-conventions.md](response-conventions.md)), **not** a JSON API.
 
-There are only **five** "real" JSON/XHR endpoints that the frontend reads directly
+There are only a few "real" JSON/XHR endpoints that the frontend reads directly
 via `fetch`. Their response shapes are an implicit contract between the controller
 and Vue; this file pins it down in one place.
 
 ## Authentication for all JSON endpoints
 
-All five live under `/admin/*` and are protected by a **session cookie + CSRF**, not
+All of them live under `/admin/*` and are protected by a **session cookie + CSRF**, not
 a token. They are part of the admin SPA, not a public API:
 
 - requests carry the same session as the page (the `*_session` cookie);
@@ -33,7 +33,10 @@ a token. They are part of the admin SPA, not a public API:
 | GET   | `/admin/notifications/recent` | `activity-log.view`             | `{ count, items: [...] }` |
 | GET   | `/admin/media/poll`           | `media.view`                    | **bare array** `[...]`    |
 | GET   | `/admin/media/browse`         | `media.view`                    | `{ data, current_page, last_page }` |
-| POST  | `/admin/media`                | `media.upload`                  | `{ queued: <int> }`       |
+| POST  | `/admin/notifications/seen`   | `activity-log.view`             | `{ count: 0 }`            |
+| GET   | `/admin/media/{id}`           | `media.view`                    | file details object       |
+| POST  | `/admin/media`                | `media.upload`                  | `{ queued, after_id }`    |
+| POST  | `/admin/media/{id}/replace`   | `media.edit`                    | `{ queued: 1, filename }` |
 
 ---
 
@@ -45,8 +48,8 @@ a token. They are part of the admin SPA, not a public API:
 ignored (an empty `results` is returned). At most **5** matches per entity.
 
 **Permission:** the endpoint is under `auth`, but result types are filtered inline via
-`can()`: the `user` block is returned only with `users.view`, the `media` block —
-only with `media.view`.
+`can()`: the `user` block is returned only with `users.view`, `role` — with
+`roles.view`, `media` — with `media.view`.
 With no matching view permissions you get `{ "results": [] }` (not a 403).
 
 **Response** `200 application/json`:
@@ -58,21 +61,22 @@ With no matching view permissions you get `{ "results": [] }` (not a 403).
             "type": "user",
             "label": "Иван Петров",
             "meta": "ivan@example.com",
-            "url": "/admin/users/12/edit",
+            "url": "https://admin.test/admin/users/12",
             "icon": "user"
         },
         {
             "type": "media",
             "label": "photo.webp",
             "meta": "Фото",
-            "url": "/admin/media",
-            "icon": "image"
+            "url": "https://admin.test/admin/media?search=photo.webp",
+            "icon": "asset"
         }
     ]
 }
 ```
 
-Fields of each result: `type` (`user`|`media`), `label`, `meta`, `url`, `icon`.
+Fields of each result: `type` (`user`|`role`|`media`), `label`, `meta`, `url`, `icon`.
+Media is matched by its display name (`original_name`) and stored file name.
 
 > To add a new entity to search, follow the pattern of the block in the controller (a
 > new `if ($user?->can('xxx.view'))` with `->map(...)` into the same shape).
@@ -83,7 +87,9 @@ Fields of each result: `type` (`user`|`media`), `label`, `meta`, `url`, `icon`.
 
 `AdminActivityLogController@recent`. Consumer — `AdminLayout.vue` (the topbar badge).
 
-Returns a counter and the latest **10** activity-log entries from the past **24 hours**.
+Returns the unread counter and the latest **10** actions of **other** users from the
+past **week** (logins excluded). An item is unread when it is newer than the user's
+`notifications_seen_at`; `POST /admin/notifications/seen` moves that mark to now.
 
 **Permission:** `activity-log.view` (route middleware, `routes/web.php`). The feed
 serves the same audit stream as the `/admin/activity-log` page, so it requires the
@@ -102,14 +108,16 @@ same permission, not just `auth`.
             "subject": "Пользователь #42",
             "time": "5 минут назад",
             "iso_time": "2026-06-29T10:15:00+00:00",
-            "url": "/admin/activity-log"
+            "unread": true,
+            "url": "https://admin.test/admin/users/42"
         }
     ]
 }
 ```
 
-`count` is computed over the same 24-hour window as `items` (not from the list length —
-`items` is truncated to 10).
+`count` counts every unread item in the window (not the list length — `items` is
+truncated to 10). `url` points at the affected record when it still exists, otherwise
+at the activity log.
 
 ---
 
@@ -128,7 +136,9 @@ without reloading the page.
 | `after_id` | `nullable, integer, min:0`         | `0` (return the latest) |
 | `limit`    | `nullable, integer, min:1, max:50` | `50`                    |
 
-Returns media with `id > after_id`, descending by `id`, at most `limit`.
+Returns media with `id > after_id` **uploaded by the current user**, descending by `id`,
+at most `limit`. Pass the `after_id` returned by `POST /admin/media`, so uploads of other
+admins and rows outside the current page never mix in.
 
 **⚠️ The response is a bare array, NOT wrapped in `{ data: ... }`:**
 
@@ -142,12 +152,14 @@ Returns media with `id > after_id`, descending by `id`, at most `limit`.
         "filename": "abc.webp",
         "original_name": "Моё фото.png",
         "size": 24576,
-        "created_at": "29.06.2026 13:05"
+        "created_at": "2026-06-29T10:05:00+00:00",
+        "created_local": "29.06.2026 13:05"
     }
 ]
 ```
 
-`created_at` is an already-formatted `d.m.Y H:i` string, not ISO. `filename` is only
+`created_at` is ISO-8601 UTC; `created_local` is the same moment formatted `d.m.Y H:i`
+in the display time zone. `filename` is only
 the base name (no path).
 
 ---
@@ -167,6 +179,7 @@ browse feed.
 | --------- | ------------------------------ | ------- |
 | `search`  | `nullable, string, max:255`    | —       |
 | `page`    | `nullable, integer, min:1`     | `1`     |
+| `type`    | `nullable, in:image,video,audio,document,other` | — |
 
 `search` matches the file name (substring); results are 24 per page, descending by `id`.
 
@@ -212,12 +225,32 @@ is additionally checked (protection against decompression bombs).
 **Response** `200 application/json`:
 
 ```json
-{ "queued": 3 }
+{ "queued": 3, "after_id": 104 }
 ```
 
-`queued` is how many files were queued into `UploadMedia`. The actual WebP conversion
+`queued` is how many files were queued into `UploadMedia`; `after_id` is the largest
+media id before this upload — pass it to `media/poll`. The actual WebP conversion
 and thumbnail generation happen **asynchronously** in the worker — the frontend then
 pulls the ready records via `media/poll`.
 
 **Errors:** `422` with validation errors (format/size/count), `403` without the
 `media.upload` permission, `419` without a CSRF token. See [permissions-matrix.md](permissions-matrix.md).
+
+---
+
+## GET `/admin/media/{id}` — file details
+
+`AdminMediaController@show`. Consumer — the details drawer in `Media/Index.vue`.
+
+**Permission:** `media.view`. Returns the media fields plus `dimensions`
+(`{ width, height }` for images, read from the file header, otherwise `null`),
+`uploaded_by`, `updated_by`, `created_at`/`updated_at` (ISO UTC) and `created_local`.
+
+## POST `/admin/media/{id}/replace` — replace the file
+
+`AdminMediaController@replace`, validation — `ReplaceMediaRequest` (same formats and limits
+as an upload, field `file`). **Permission:** `media.edit`, CSRF required.
+
+Responds `{ "queued": 1, "filename": "<old path>" }`. The queue stores the new file, updates
+the record in place (id, display name and attachments stay) and deletes the old files.
+The file URL changes; the frontend polls `GET /admin/media/{id}` until `filename` differs.

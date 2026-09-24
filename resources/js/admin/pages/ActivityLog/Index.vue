@@ -2,7 +2,7 @@
 import { ref, computed } from "vue";
 import type { PropType } from "vue";
 import type { AuditLog, Pagination } from "@/admin/types";
-import { router, useForm } from "@inertiajs/vue3";
+import { Link, useForm } from "@inertiajs/vue3";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import {
     NCard,
@@ -14,33 +14,87 @@ import {
     NFormField,
     NInput,
     NButton,
+    NSelect,
+    NSelectWithSearch,
 } from "nergous-ui-vue";
+import { useIndexFilters } from "@/admin/composables/useIndexFilters";
 import { can } from "@/lib/can";
-import { formatRelative, formatDateTime } from "@/lib/format";
+import { formatRelative, formatDateTime, todayIso } from "@/lib/format";
+
+type Option = { value: string; label: string };
+type Filters = {
+    action?: string | null;
+    subject_type?: string | null;
+    user_id?: string | null;
+    date_from?: string | null;
+    date_to?: string | null;
+};
 
 const props = defineProps({
     logs: { type: Object as PropType<Pagination<AuditLog>>, required: true },
-    filters: {
-        type: Object as PropType<{ action?: string }>,
-        default: () => ({}),
-    },
+    filters: { type: Object as PropType<Filters>, default: () => ({}) },
+    actions: { type: Array as PropType<Option[]>, default: () => [] },
+    subjectTypes: { type: Array as PropType<Option[]>, default: () => [] },
+    actors: { type: Array as PropType<Option[]>, default: () => [] },
 });
 
-// Limit the clear-journal date to today in the user's local timezone.
-const todayIso = new Date().toLocaleDateString("sv-SE"); // YYYY-MM-DD, local date
+// Dates in the filters and the clear form are days in the display time zone.
+const today = todayIso();
 
-// An empty action shows all events.
-const CHIPS = [
-    { value: "", label: "Все" },
-    { value: "created", label: "Создано" },
-    { value: "updated", label: "Изменено" },
-    { value: "deleted", label: "Удалено" },
-    { value: "restored", label: "Восстановлено" },
-    { value: "duplicated", label: "Дублировано" },
-    { value: "force_deleted", label: "Удалено навсегда" },
-];
+const action = ref(props.filters.action ?? "");
+const subjectType = ref(props.filters.subject_type ?? "");
+const userId = ref(props.filters.user_id ?? "");
+const dateFrom = ref(props.filters.date_from ?? "");
+const dateTo = ref(props.filters.date_to ?? "");
 
-// Keep action labels in the page; the activity component stays presentational.
+function currentParams() {
+    return {
+        action: action.value || undefined,
+        subject_type: subjectType.value || undefined,
+        user_id: userId.value || undefined,
+        date_from: dateFrom.value || undefined,
+        date_to: dateTo.value || undefined,
+    };
+}
+const { reload } = useIndexFilters("/admin/activity-log", currentParams);
+
+const actionOptions = computed(() => [
+    { value: "", label: "Все действия" },
+    ...props.actions,
+]);
+const typeOptions = computed(() => [
+    { value: "", label: "Все объекты" },
+    ...props.subjectTypes,
+]);
+const actorOptions = computed(() => [
+    { value: "", label: "Все пользователи" },
+    ...props.actors,
+]);
+
+const hasFilters = computed(() =>
+    Object.values(currentParams()).some((v) => v !== undefined),
+);
+
+function resetFilters() {
+    action.value = "";
+    subjectType.value = "";
+    userId.value = "";
+    dateFrom.value = "";
+    dateTo.value = "";
+    reload({ page: 1 });
+}
+
+// The export uses the same filters as the list.
+const exportUrl = computed(() => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(currentParams())) {
+        if (value) params.set(key, value);
+    }
+    const query = params.toString();
+    return `/admin/activity-log/export${query ? `?${query}` : ""}`;
+});
+
+// Keep action visuals in the page; the activity component stays presentational.
 const VISUAL: Record<
     string,
     { tone: "ok" | "info" | "danger" | "accent"; icon: string }
@@ -51,34 +105,21 @@ const VISUAL: Record<
     force_deleted: { tone: "danger", icon: "trash" },
     restored: { tone: "ok", icon: "check" },
     duplicated: { tone: "accent", icon: "copy" },
+    login: { tone: "info", icon: "user" },
+    login_failed: { tone: "danger", icon: "alert-triangle" },
+    cleared: { tone: "danger", icon: "eraser" },
+    backup_created: { tone: "accent", icon: "shield" },
+    backup_downloaded: { tone: "info", icon: "download" },
 };
 const FALLBACK = { tone: "info", icon: "edit" };
 
-const activeAction = computed(() => props.filters?.action ?? "");
-
-function visual(action: string) {
-    return VISUAL[action] ?? FALLBACK;
+function visual(value: string) {
+    return VISUAL[value] ?? FALLBACK;
 }
 
 function metaFor(log: AuditLog) {
     const n = Number(log.changesCount ?? 0);
     return n > 0 ? `${n} изм.` : "";
-}
-
-function selectAction(value: string) {
-    router.get(
-        "/admin/activity-log",
-        { action: value || undefined },
-        { preserveState: true, preserveScroll: true, replace: true },
-    );
-}
-
-function goToPage(page: number) {
-    router.get(
-        "/admin/activity-log",
-        { action: activeAction.value || undefined, page },
-        { preserveState: true, preserveScroll: true, replace: true },
-    );
 }
 
 const detailOpen = ref(false);
@@ -130,27 +171,73 @@ function submitClear() {
     <AdminLayout title="Журнал действий" subtitle="Хронология событий">
         <div class="page">
             <div class="toolbar">
-                <div class="chips" role="group" aria-label="Фильтр по действию">
-                    <button
-                        v-for="chip in CHIPS"
-                        :key="chip.value || 'all'"
-                        type="button"
-                        class="chip"
-                        :class="{ 'chip--on': activeAction === chip.value }"
-                        :aria-pressed="activeAction === chip.value"
-                        @click="selectAction(chip.value)"
+                <div class="filters" role="group" aria-label="Фильтры журнала">
+                    <NSelect
+                        v-model="action"
+                        :options="actionOptions"
+                        aria-label="Действие"
+                        class="filters__select"
+                        @update:model-value="reload({ page: 1 })"
+                    />
+                    <NSelect
+                        v-model="subjectType"
+                        :options="typeOptions"
+                        aria-label="Тип объекта"
+                        class="filters__select"
+                        @update:model-value="reload({ page: 1 })"
+                    />
+                    <NSelectWithSearch
+                        v-model="userId"
+                        :options="actorOptions"
+                        search-placeholder="Найти пользователя…"
+                        no-results-text="Никого не найдено"
+                        aria-label="Пользователь"
+                        class="filters__select"
+                        @update:model-value="reload({ page: 1 })"
+                    />
+                    <div class="filters__dates">
+                        <NInput
+                            v-model="dateFrom"
+                            type="date"
+                            :max="dateTo || today"
+                            aria-label="С даты"
+                            @update:model-value="reload({ page: 1 })"
+                        />
+                        <span class="filters__dash">—</span>
+                        <NInput
+                            v-model="dateTo"
+                            type="date"
+                            :min="dateFrom || undefined"
+                            :max="today"
+                            aria-label="По дату"
+                            @update:model-value="reload({ page: 1 })"
+                        />
+                    </div>
+                    <NButton
+                        v-if="hasFilters"
+                        variant="ghost"
+                        icon="x"
+                        @click="resetFilters"
+                        >Сбросить</NButton
                     >
-                        {{ chip.label }}
-                    </button>
                 </div>
-                <NButton
-                    v-if="can('activity-log.delete')"
-                    variant="secondary"
-                    icon="trash"
-                    class="toolbar__clear"
-                    @click="openClear"
-                    >Очистить журнал</NButton
-                >
+                <div class="toolbar__actions">
+                    <NButton
+                        variant="secondary"
+                        icon="download"
+                        :as="'a'"
+                        :href="exportUrl"
+                        :disabled="logs.total === 0"
+                        >Экспорт CSV</NButton
+                    >
+                    <NButton
+                        v-if="can('activity-log.delete')"
+                        variant="secondary"
+                        icon="trash"
+                        @click="openClear"
+                        >Очистить журнал</NButton
+                    >
+                </div>
             </div>
 
             <NCard padding="0">
@@ -179,6 +266,12 @@ function submitClear() {
                     </li>
                 </ul>
                 <NEmptyState
+                    v-else-if="hasFilters"
+                    icon="filter"
+                    title="Ничего не найдено"
+                    description="Нет событий по выбранным фильтрам."
+                />
+                <NEmptyState
                     v-else
                     icon="activity"
                     title="Событий пока нет"
@@ -198,7 +291,7 @@ function submitClear() {
                     total-label="из"
                     jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по страницам"
-                    @update:page="goToPage"
+                    @update:page="(p) => reload({ page: p })"
                 />
             </div>
         </div>
@@ -224,7 +317,13 @@ function submitClear() {
                     <div class="detail__row">
                         <dt class="detail__key">Объект</dt>
                         <dd class="detail__val detail__val--object">
-                            <span>{{ selected.subject || "—" }}</span>
+                            <Link
+                                v-if="selected.subjectUrl"
+                                :href="selected.subjectUrl"
+                                class="detail__link"
+                                >{{ selected.subject || "—" }}</Link
+                            >
+                            <span v-else>{{ selected.subject || "—" }}</span>
                             <span
                                 v-if="selected.subjectType"
                                 class="detail__tag"
@@ -298,7 +397,7 @@ function submitClear() {
                 <NInput
                     v-model="clearForm.before"
                     type="date"
-                    :max="todayIso"
+                    :max="today"
                     :error="!!clearForm.errors.before"
                 />
             </NFormField>
@@ -323,16 +422,39 @@ function submitClear() {
 .toolbar {
     display: flex;
     align-items: flex-start;
+    justify-content: space-between;
     gap: 12px;
+    flex-wrap: wrap;
 }
-.chips {
+.filters {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: 8px;
 }
-.toolbar__clear {
-    margin-left: auto;
+.filters__select {
+    min-width: 180px;
+}
+.filters__dates {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.filters__dash {
+    color: var(--text-3);
+}
+.toolbar__actions {
+    display: flex;
+    gap: 8px;
     flex: none;
+}
+.detail__link {
+    color: var(--accent);
+    font-weight: 700;
+    text-decoration: none;
+}
+.detail__link:hover {
+    text-decoration: underline;
 }
 .clear__msg {
     margin: 0 0 16px;
@@ -340,36 +462,6 @@ function submitClear() {
     font-size: 14px;
     line-height: 1.5;
 }
-.chip {
-    height: 32px;
-    padding: 0 14px;
-    border-radius: 999px;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text-2);
-    font-family: inherit;
-    font-size: 12.5px;
-    font-weight: 700;
-    cursor: pointer;
-    transition:
-        background-color 0.14s ease,
-        border-color 0.14s ease,
-        color 0.14s ease;
-}
-.chip:hover:not(.chip--on) {
-    background: var(--surface-3);
-    border-color: var(--text-3);
-}
-.chip--on {
-    background: var(--accent-soft);
-    border-color: transparent;
-    color: var(--accent);
-}
-.chip:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-}
-
 .feed {
     margin: 0;
     padding: 0;

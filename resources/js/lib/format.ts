@@ -1,17 +1,76 @@
-import { createFormat } from "nergous-ui-vue";
+import { createFormat, toDate } from "nergous-ui-vue";
 
 // Blade sets the document language used by application-level formatters.
 const locale =
     (typeof document !== "undefined" && document.documentElement.lang) ||
     "ru-RU";
 
-export const {
-    toDate,
-    formatDateTime,
-    formatDateShort,
-    formatRelative,
-    formatNumber,
-} = createFormat(locale);
+const EMPTY = "—";
+
+// Relative time and numbers do not depend on the time zone.
+export const { formatRelative, formatNumber } = createFormat(locale);
+export { toDate };
+
+// Display time zone from the settings (shared prop `timezone`); dates are stored in UTC.
+let timeZone: string | undefined;
+let dateTime: Intl.DateTimeFormat;
+let dateShort: Intl.DateTimeFormat;
+let dateOnly: Intl.DateTimeFormat;
+
+function build() {
+    const base = { timeZone } as const;
+    dateTime = new Intl.DateTimeFormat(locale, {
+        ...base,
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    });
+    dateShort = new Intl.DateTimeFormat(locale, {
+        ...base,
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+    });
+    dateOnly = new Intl.DateTimeFormat("sv-SE", {
+        ...base,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    });
+}
+build();
+
+/** Switch the zone used by the date formatters; invalid zones fall back to the browser's. */
+export function setDisplayTimeZone(zone: string | null | undefined): void {
+    const next = zone || undefined;
+    if (next === timeZone) return;
+    try {
+        new Intl.DateTimeFormat(locale, { timeZone: next });
+        timeZone = next;
+    } catch {
+        timeZone = undefined;
+    }
+    build();
+}
+
+/** Day, month, year, hours, and minutes in the display time zone. */
+export function formatDateTime(value: Parameters<typeof toDate>[0]): string {
+    const d = toDate(value);
+    return d ? dateTime.format(d) : EMPTY;
+}
+
+/** Day, short month, and year in the display time zone. */
+export function formatDateShort(value: Parameters<typeof toDate>[0]): string {
+    const d = toDate(value);
+    return d ? dateShort.format(d) : EMPTY;
+}
+
+/** Today as YYYY-MM-DD in the display time zone (for date inputs). */
+export function todayIso(): string {
+    return dateOnly.format(new Date());
+}
 
 /** Format a byte count with Russian units. */
 export function formatBytes(bytes: number | string | null | undefined): string {

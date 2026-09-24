@@ -55,6 +55,7 @@ class AdminPermissionController extends Controller
                         'name' => $p->name,
                         'action' => $action,
                         'label' => $this->actionLabel($action),
+                        'is_system' => (bool) $p->is_system,
                     ];
                 })->values(),
             ])
@@ -67,7 +68,11 @@ class AdminPermissionController extends Controller
                 'label' => $r->name,
                 'is_system' => (bool) $r->is_system,
                 'locked' => RbacGuard::isSuperadminRole($r),
+                // Whether the current user may toggle this role's cells at all.
+                'manageable' => ! RbacGuard::isSuperadminRole($r)
+                    && RbacGuard::canManageRole($request->user(), $r),
             ])->values(),
+            'superadminRole' => RbacGuard::superadminRole(),
             'groups' => $groups,
             'matrix' => $roles->mapWithKeys(fn (Role $r) => [
                 $r->id => $r->permissions->pluck('name')->all(),
@@ -96,6 +101,30 @@ class AdminPermissionController extends Controller
         );
 
         return back()->with('success', 'Матрица доступа обновлена');
+    }
+
+    /**
+     * Bulk toggle: a whole row (one permission for several roles) or a group
+     * column (several permissions for one role). Rules are in the service.
+     */
+    public function syncMany(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'role_ids' => ['required', 'array', 'min:1'],
+            'role_ids.*' => ['integer', 'exists:roles,id'],
+            'permissions' => ['required', 'array', 'min:1'],
+            'permissions.*' => ['string', 'exists:permissions,name'],
+            'granted' => ['required', 'boolean'],
+        ]);
+
+        $changed = $this->permissions->toggleMany(
+            $data['role_ids'],
+            $data['permissions'],
+            $data['granted'],
+            $request->user(),
+        );
+
+        return back()->with('success', "Матрица доступа обновлена. Изменено ролей: {$changed}");
     }
 
     public function create(): RedirectResponse

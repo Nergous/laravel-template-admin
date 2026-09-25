@@ -13,6 +13,7 @@ import {
     useToast,
 } from "nergous-ui-vue";
 import { formatBytes } from "@/lib/format";
+import { apiFetch, SessionExpiredError } from "@/lib/api";
 
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
@@ -98,16 +99,15 @@ async function load(p = 1) {
         const params = new URLSearchParams({ page: String(p) });
         if (search.value.trim()) params.set("search", search.value.trim());
         if (props.type) params.set("type", props.type);
-        const res = await fetch(`/admin/media/browse?${params.toString()}`, {
-            headers: { Accept: "application/json" },
-        });
+        const res = await apiFetch(`/admin/media/browse?${params.toString()}`);
         if (!res.ok) throw new Error(String(res.status));
         const json = await res.json();
         items.value = Array.isArray(json.data) ? json.data : [];
         page.value = json.current_page || 1;
         lastPage.value = json.last_page || 1;
-    } catch {
+    } catch (err) {
         items.value = [];
+        if (err instanceof SessionExpiredError) return;
         toast.error(
             "Не удалось загрузить медиатеку",
             "Проверьте соединение и попробуйте снова.",
@@ -188,6 +188,13 @@ function confirm() {
                                 v-if="showThumb(m)"
                                 class="mp__img"
                                 :src="m.thumb_url || undefined"
+                                :style="
+                                    m.focal_x != null && m.focal_y != null
+                                        ? {
+                                              objectPosition: `${m.focal_x * 100}% ${m.focal_y * 100}%`,
+                                          }
+                                        : undefined
+                                "
                                 :alt="m.original_name"
                                 loading="lazy"
                                 @error="onImgError(m.id)"

@@ -12,14 +12,18 @@ import {
     NAvatar,
     NCommandPalette,
     NDrawer,
+    NModal,
     NSpinner,
+    NCheckbox,
 } from "nergous-ui-vue";
 import { useFlashToasts } from "@/admin/composables/useFlashToasts";
 import { useHotkeys } from "@/admin/composables/useHotkeys";
 import { useServerErrors } from "@/admin/composables/useServerErrors";
+import { useSessionTimeout } from "@/admin/composables/useSessionTimeout";
 import { can } from "@/lib/can";
+import { apiFetch } from "@/lib/api";
 import type { Command, Density } from "nergous-ui-vue";
-import type { SharedProps } from "@/admin/types";
+import type { NotificationCategory, SharedProps } from "@/admin/types";
 
 interface NavItem {
     id: string;
@@ -41,16 +45,50 @@ const { theme, density, toggle, setDensity } = useTheme();
 useFlashToasts();
 useServerErrors();
 
+const session = useSessionTimeout(() => page.props.sessionLifetime ?? null);
+const sessionWarning = session.warning;
+const staying = ref(false);
+async function stayInSession() {
+    staying.value = true;
+    try {
+        await session.stayActive();
+    } finally {
+        staying.value = false;
+    }
+}
+function formatSeconds(total: number): string {
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s} с`;
+}
+
 // Shortcut hint: ⌘ on Apple platforms, Ctrl elsewhere (the hotkey accepts both).
 const isMac =
     typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 const modKey = isMac ? "⌘" : "Ctrl";
 
-const collapsed = ref(false);
+// The collapsed desktop sidebar survives page reloads.
+const SIDEBAR_KEY = "admin-sidebar-collapsed";
+function readCollapsed(): boolean {
+    try {
+        return localStorage.getItem(SIDEBAR_KEY) === "1";
+    } catch {
+        return false;
+    }
+}
+const collapsed = ref(readCollapsed());
+watch(collapsed, (value) => {
+    try {
+        localStorage.setItem(SIDEBAR_KEY, value ? "1" : "0");
+    } catch {
+        // Storage may be unavailable (private mode); the state stays in memory.
+    }
+});
 const isMobile = ref(false); // < 768px viewport
 const drawerOpen = ref(false);
 const user = computed(() => page.props.auth.user);
+const impersonator = computed(() => page.props.auth.impersonator ?? null);
 
 const MOBILE_BP = 768;
 function syncViewport() {
@@ -63,9 +101,11 @@ function syncViewport() {
 onMounted(() => {
     syncViewport();
     window.addEventListener("resize", syncViewport);
+    startNotifRefresh();
 });
 onBeforeUnmount(() => {
     window.removeEventListener("resize", syncViewport);
+    stopNotifRefresh();
 });
 
 const sidebarCollapsed = computed(() =>
@@ -89,15 +129,61 @@ const densityOpts = [
 // Record counts for the sidebar badges (shared prop from HandleInertiaRequests).
 const counts = computed(() => page.props.counts ?? {});
 
-// Unread bell entries; opening the bell marks them read until the next page load.
+// Unread bell entries. The shared prop arrives with every page; between page
+// visits the count is refreshed in the background (see startNotifRefresh).
 const notifSeen = ref(false);
+const liveNotifCount = ref<number | null>(null);
 watch(
     () => counts.value.recentActivity,
-    () => (notifSeen.value = false),
+    () => {
+        notifSeen.value = false;
+        liveNotifCount.value = null;
+    },
 );
 const notifCount = computed(() =>
-    notifSeen.value ? 0 : (counts.value.recentActivity ?? 0),
+    notifSeen.value
+        ? 0
+        : (liveNotifCount.value ?? counts.value.recentActivity ?? 0),
 );
+
+const NOTIF_REFRESH_MS = 60_000;
+let notifTimer: ReturnType<typeof setInterval> | null = null;
+
+async function refreshNotifCount() {
+    // An idle tab stops polling, otherwise the poll would keep the session alive forever.
+    if (!can("activity-log.view") || document.hidden || !session.isActive())
+        return;
+    try {
+        const res = await apiFetch("/admin/notifications/count");
+        if (!res.ok) return;
+        const json = (await res.json()) as { count?: number };
+        if (typeof json.count !== "number") return;
+        if (json.count > 0) notifSeen.value = false;
+        liveNotifCount.value = json.count;
+    } catch {
+        // Offline or signed out: keep the last known value.
+    }
+}
+
+function onVisibility() {
+    if (!document.hidden) refreshNotifCount();
+}
+
+function startNotifRefresh() {
+    if (!can("activity-log.view")) return;
+    notifTimer = setInterval(refreshNotifCount, NOTIF_REFRESH_MS);
+    document.addEventListener("visibilitychange", onVisibility);
+}
+
+function stopNotifRefresh() {
+    if (notifTimer) clearInterval(notifTimer);
+    notifTimer = null;
+    document.removeEventListener("visibilitychange", onVisibility);
+}
+
+function stopImpersonation() {
+    router.post("/admin/impersonation/stop");
+}
 
 const sections = computed<{ label: string; items: NavItem[] }[]>(() => [
     {
@@ -178,6 +264,13 @@ const sections = computed<{ label: string; items: NavItem[] }[]>(() => [
                 icon: "download",
                 href: "/admin/backups",
                 perm: "backups.view",
+            },
+            {
+                id: "queue",
+                label: "Очередь задач",
+                icon: "layers",
+                href: "/admin/queue",
+                perm: "queue.view",
             },
         ],
     },
@@ -296,8 +389,7 @@ async function runSearch(q: string) {
         c.label.toLowerCase().includes(t),
     );
     try {
-        const res = await fetch(`/admin/search?q=${encodeURIComponent(q)}`, {
-            headers: { Accept: "application/json" },
+        const res = await apiFetch(`/admin/search?q=${encodeURIComponent(q)}`, {
             signal: controller.signal,
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -334,18 +426,74 @@ watch(paletteOpen, (open) => {
 useHotkeys({ "mod+k": () => (paletteOpen.value = true) });
 
 const notifOpen = ref(false);
+interface NotifItem {
+    id: number;
+    url: string;
+    user: string;
+    time: string;
+    action: string;
+    subject: string;
+    category: NotificationCategory;
+    repeat: number;
+    unread?: boolean;
+}
 const notif = ref<{
     count: number;
-    items: {
-        id: number;
-        url: string;
-        user: string;
-        time: string;
-        action: string;
-        subject: string;
-        unread?: boolean;
-    }[];
-}>({ count: 0, items: [] });
+    mutes: NotificationCategory[];
+    items: NotifItem[];
+}>({ count: 0, mutes: [], items: [] });
+
+const NOTIF_CATEGORIES: { value: NotificationCategory; label: string }[] = [
+    { value: "auth", label: "Вход и сеансы" },
+    { value: "users", label: "Пользователи" },
+    { value: "roles", label: "Роли и права" },
+    { value: "media", label: "Медиатека" },
+    { value: "settings", label: "Настройки" },
+    { value: "system", label: "Система" },
+];
+const notifFilter = ref<NotificationCategory | "">("");
+const notifSettingsOpen = ref(false);
+const notifSaving = ref(false);
+const visibleNotifs = computed(() =>
+    notifFilter.value
+        ? notif.value.items.filter((it) => it.category === notifFilter.value)
+        : notif.value.items,
+);
+const notifFilterOptions = computed(() =>
+    NOTIF_CATEGORIES.filter(
+        (c) =>
+            !notif.value.mutes.includes(c.value) &&
+            notif.value.items.some((it) => it.category === c.value),
+    ),
+);
+
+async function toggleMute(category: NotificationCategory, shown: boolean) {
+    const mutes = shown
+        ? notif.value.mutes.filter((c) => c !== category)
+        : [...notif.value.mutes, category];
+    notifSaving.value = true;
+    try {
+        const res = await apiFetch("/admin/notifications/preferences", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mutes }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as {
+            mutes: NotificationCategory[];
+            count: number;
+        };
+        notif.value.mutes = json.mutes;
+        if (json.mutes.includes(notifFilter.value as NotificationCategory))
+            notifFilter.value = "";
+        liveNotifCount.value = json.count;
+        await loadNotifications();
+    } catch {
+        // The checkbox stays as it was; nothing was saved.
+    } finally {
+        notifSaving.value = false;
+    }
+}
 
 function changeDensity(value: string | number) {
     setDensity(value as Density);
@@ -355,13 +503,11 @@ const notifLoading = ref(false);
 async function loadNotifications() {
     notifLoading.value = true;
     try {
-        const res = await fetch("/admin/notifications/recent", {
-            headers: { Accept: "application/json" },
-        });
+        const res = await apiFetch("/admin/notifications/recent");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        notif.value = await res.json(); // { count, items: [{ id, user, action, subject, time, url }] }
+        notif.value = await res.json();
     } catch {
-        notif.value = { count: 0, items: [] };
+        notif.value = { count: 0, mutes: notif.value.mutes, items: [] };
     } finally {
         notifLoading.value = false;
     }
@@ -374,18 +520,14 @@ function openNotifications() {
 
 async function markNotificationsSeen() {
     if (!notif.value.count) return;
-    const token = document.querySelector<HTMLMetaElement>(
-        'meta[name="csrf-token"]',
-    )?.content;
     try {
-        const res = await fetch("/admin/notifications/seen", {
+        const res = await apiFetch("/admin/notifications/seen", {
             method: "POST",
-            headers: {
-                Accept: "application/json",
-                "X-CSRF-TOKEN": token || "",
-            },
         });
-        if (res.ok) notifSeen.value = true;
+        if (res.ok) {
+            notifSeen.value = true;
+            liveNotifCount.value = 0;
+        }
     } catch {
         // The badge stays; the next open retries.
     }
@@ -397,7 +539,75 @@ async function markNotificationsSeen() {
         <Head :title="title" />
         <a href="#admin-main" class="skip-link">Перейти к содержимому</a>
         <NToaster region-label="Уведомления" dismiss-label="Закрыть" />
+        <NModal
+            :model-value="sessionWarning"
+            title="Сессия скоро завершится"
+            width="420px"
+            close-label="Продолжить работу"
+            @update:model-value="(open: boolean) => !open && stayInSession()"
+        >
+            <p class="session-warn">
+                Вы давно не работали в панели. Сессия завершится через
+                <b>{{ formatSeconds(session.secondsLeft.value) }}</b>, и
+                несохранённые изменения на странице пропадут.
+            </p>
+            <template #footer>
+                <NButton variant="secondary" @click="logout">Выйти</NButton>
+                <NButton :loading="staying" @click="stayInSession"
+                    >Продолжить работу</NButton
+                >
+            </template>
+        </NModal>
         <NDrawer v-model="notifOpen" title="Уведомления" close-label="Закрыть">
+            <div class="notif-tools">
+                <div
+                    v-if="notifFilterOptions.length > 1"
+                    class="notif-chips"
+                    role="group"
+                    aria-label="Тип событий"
+                >
+                    <button
+                        type="button"
+                        class="notif-chip"
+                        :class="{ 'notif-chip--on': notifFilter === '' }"
+                        :aria-pressed="notifFilter === ''"
+                        @click="notifFilter = ''"
+                    >
+                        Все
+                    </button>
+                    <button
+                        v-for="c in notifFilterOptions"
+                        :key="c.value"
+                        type="button"
+                        class="notif-chip"
+                        :class="{ 'notif-chip--on': notifFilter === c.value }"
+                        :aria-pressed="notifFilter === c.value"
+                        @click="notifFilter = c.value"
+                    >
+                        {{ c.label }}
+                    </button>
+                </div>
+                <NButton
+                    size="sm"
+                    variant="ghost"
+                    icon="settings"
+                    class="notif-tools__gear"
+                    :aria-expanded="notifSettingsOpen"
+                    @click="notifSettingsOpen = !notifSettingsOpen"
+                    >Настроить</NButton
+                >
+            </div>
+            <div v-if="notifSettingsOpen" class="notif-settings">
+                <div class="notif-settings__title">Показывать события</div>
+                <NCheckbox
+                    v-for="c in NOTIF_CATEGORIES"
+                    :key="c.value"
+                    :model-value="!notif.mutes.includes(c.value)"
+                    :disabled="notifSaving"
+                    @update:model-value="(v: boolean) => toggleMute(c.value, v)"
+                    >{{ c.label }}</NCheckbox
+                >
+            </div>
             <div v-if="notifLoading" style="text-align: center">
                 <NSpinner
                     :size="18"
@@ -408,13 +618,13 @@ async function markNotificationsSeen() {
             </div>
 
             <div
-                v-if="!notif.items.length && !notifLoading"
+                v-if="!visibleNotifs.length && !notifLoading"
                 class="notif-empty"
             >
                 Свежих событий нет
             </div>
             <Link
-                v-for="it in notif.items"
+                v-for="it in visibleNotifs"
                 :key="it.id"
                 :href="it.url"
                 class="notif-item"
@@ -427,6 +637,9 @@ async function markNotificationsSeen() {
                 </div>
                 <div class="notif-item__body">
                     {{ it.action }} · {{ it.subject }}
+                    <span v-if="it.repeat > 1" class="notif-item__repeat"
+                        >×{{ it.repeat }}</span
+                    >
                 </div>
             </Link>
         </NDrawer>
@@ -513,6 +726,16 @@ async function markNotificationsSeen() {
         </NSidebar>
 
         <div class="admin__main">
+            <div v-if="impersonator && user" class="imp-banner" role="status">
+                <NIcon name="user" :size="16" />
+                <span class="imp-banner__text">
+                    Вы работаете от имени <b>{{ user.name }}</b>. Ваш аккаунт:
+                    {{ impersonator.name }}.
+                </span>
+                <NButton size="sm" variant="secondary" @click="stopImpersonation"
+                    >Вернуться к своему аккаунту</NButton
+                >
+            </div>
             <NTopbar
                 :title="title"
                 :subtitle="subtitle"
@@ -609,6 +832,21 @@ async function markNotificationsSeen() {
     min-width: 0;
     display: flex;
     flex-direction: column;
+}
+.imp-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 8px 24px;
+    background: var(--warn-bg);
+    color: var(--text);
+    border-bottom: 1px solid var(--warn);
+    font-size: 13.5px;
+}
+.imp-banner__text {
+    flex: 1;
+    min-width: 200px;
 }
 .admin__backdrop {
     position: fixed;
@@ -799,6 +1037,66 @@ async function markNotificationsSeen() {
     color: var(--text-3);
     text-align: center;
     font-size: 13.5px;
+}
+.notif-tools {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2, 8px);
+    margin-bottom: 10px;
+}
+.notif-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    flex: 1;
+}
+.notif-tools__gear {
+    margin-left: auto;
+}
+.notif-chip {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-2);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.notif-chip--on {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    color: var(--text);
+}
+.notif-settings {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+.notif-settings__title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-3);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.notif-item__repeat {
+    margin-left: 6px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--danger-bg);
+    color: var(--danger);
+    font-weight: 600;
+    font-size: 11.5px;
+}
+.session-warn {
+    margin: 0;
+    line-height: 1.5;
+    color: var(--text-2);
 }
 .notif-item {
     display: block;

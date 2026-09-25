@@ -69,6 +69,12 @@ return Application::configure(basePath: dirname(__DIR__))
         // is: an Inertia page instead of JSON would break the client. Inertia XHR
         // (X-Inertia) is still served here — the client switches the page itself.
         $exceptions->respond(function (Response $response, Throwable $e, Request $request) {
+            // An expired CSRF token (the page sat open past the session lifetime):
+            // return to the page with a hint; the reload brings a fresh token.
+            if ($response->getStatusCode() === 419 && ! ($request->expectsJson() && ! $request->header('X-Inertia'))) {
+                return back()->with('warning', 'Страница устарела, повторите действие');
+            }
+
             if (config('app.debug')) {
                 return $response;
             }

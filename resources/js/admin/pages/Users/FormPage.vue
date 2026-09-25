@@ -7,6 +7,7 @@ import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import UserForm from "@/admin/pages/Users/Partials/Form.vue";
 import { useUnsavedGuard } from "@/admin/composables/useUnsavedGuard";
 import { formatDateTime } from "@/lib/format";
+import { listUrl } from "@/lib/listUrl";
 
 const props = defineProps({
     mode: { type: String, required: true },
@@ -22,6 +23,7 @@ const form = useForm({
     password: "",
     roles: props.user?.roles?.map((role: { name: string }) => role.name) ?? [],
     is_active: props.user?.is_active ?? true,
+    blocked_reason: props.user?.blocked_reason ?? "",
     must_change_password: props.user?.must_change_password ?? false,
 });
 
@@ -43,7 +45,9 @@ function submit() {
         <div class="page entity-page" :class="{ 'entity-page--wide': isEdit }">
             <div class="entity-page__bar">
                 <Link
-                    :href="isEdit ? `/admin/users/${user.id}` : '/admin/users'"
+                    :href="
+                        isEdit ? `/admin/users/${user.id}` : listUrl('/admin/users')
+                    "
                     class="entity-page__back"
                     >← {{ isEdit ? "К пользователю" : "К списку" }}</Link
                 >

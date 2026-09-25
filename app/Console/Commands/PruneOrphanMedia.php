@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Models\Media;
-use App\Services\ImageOptimizer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 
@@ -12,8 +11,8 @@ use Illuminate\Support\Facades\Storage;
  *
  * Two sources of orphans:
  *  - storage/app/temp — uploads whose job never ran or crashed before cleanup;
- *  - the public media/ directory — originals/thumbnails left after failed jobs
- *    or manual database edits.
+ *  - the media/ directory on the media disk (config('media.disk')) —
+ *    originals/thumbnails left after failed jobs or manual database edits.
  *
  * Only files older than --hours (24 by default) are touched, so uploads still
  * waiting in the queue are safe. Runs daily from the scheduler (routes/console.php).
@@ -38,12 +37,13 @@ class PruneOrphanMedia extends Command
         $temp = $this->prune('local', 'temp', $cutoff, $dryRun, fn () => false);
 
         $known = [];
-        Media::query()->select(['id', 'filename'])->lazyById()->each(function (Media $media) use (&$known) {
-            $known[$media->filename] = true;
-            $known[ImageOptimizer::thumbPath($media->filename)] = true;
+        Media::query()->select(['id', 'filename', 'variants'])->lazyById()->each(function (Media $media) use (&$known) {
+            foreach ($media->storedPaths() as $path) {
+                $known[$path] = true;
+            }
         });
 
-        $media = $this->prune('public', 'media', $cutoff, $dryRun, fn (string $file) => isset($known[$file]));
+        $media = $this->prune(Media::diskName(), 'media', $cutoff, $dryRun, fn (string $file) => isset($known[$file]));
 
         $verb = $dryRun ? 'Будет удалено' : 'Удалено';
         $this->info("{$verb}: temp — {$temp}, media — {$media}");

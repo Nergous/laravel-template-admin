@@ -15,6 +15,7 @@ import type { AdminUser, Pagination } from "@/admin/types";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
 import { useIndexFilters } from "@/admin/composables/useIndexFilters";
 import { formatDateTime } from "@/lib/format";
+import { listUrl } from "@/lib/listUrl";
 
 const props = defineProps({
     users: { type: Object as PropType<Pagination<AdminUser>>, required: true },
@@ -151,7 +152,9 @@ function confirmForce() {
     >
         <div class="page">
             <div class="page__head">
-                <Link href="/admin/users" class="page__back">← К списку</Link>
+                <Link :href="listUrl('/admin/users')" class="page__back"
+                    >← К списку</Link
+                >
                 <div class="page__search">
                     <NInput
                         v-model="search"
@@ -215,7 +218,10 @@ function confirmForce() {
                     formatDateTime(userRow(row).deleted_at)
                 }}</template>
                 <template #cell-actions="{ row }">
-                    <div class="row-actions row-actions--end">
+                    <div
+                        v-if="userRow(row).can_manage"
+                        class="row-actions row-actions--end"
+                    >
                         <NButton
                             variant="ghost"
                             size="sm"
@@ -232,6 +238,7 @@ function confirmForce() {
                             @click="askForceOne(userRow(row).id)"
                         />
                     </div>
+                    <span v-else class="muted">Нет прав</span>
                 </template>
                 <template #empty>
                     <NEmptyState
@@ -297,5 +304,9 @@ function confirmForce() {
     font-weight: 600;
     font-size: 13.5px;
     text-decoration: none;
+}
+.muted {
+    color: var(--text-3);
+    font-size: 13px;
 }
 </style>

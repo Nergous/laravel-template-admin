@@ -18,13 +18,14 @@ class RolePermissionSeeder extends Seeder
      * @var list<string>
      */
     public const PERMISSIONS = [
-        'users.view', 'users.create', 'users.edit', 'users.delete',
+        'users.view', 'users.create', 'users.edit', 'users.delete', 'users.export', 'users.impersonate',
         'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
         'permissions.view', 'permissions.create', 'permissions.edit', 'permissions.delete',
         'media.view', 'media.upload', 'media.edit', 'media.delete',
         'activity-log.view', 'activity-log.delete',
         'settings.view', 'settings.edit',
-        'backups.view', 'backups.create',
+        'backups.view', 'backups.download', 'backups.create', 'backups.delete',
+        'queue.view', 'queue.manage',
     ];
 
     /**

@@ -1,19 +1,49 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import type { PropType } from "vue";
 import { Link, router, usePage } from "@inertiajs/vue3";
-import { NAvatar, NBadge, NButton, NCard } from "nergous-ui-vue";
+import {
+    NActivityRow,
+    NAvatar,
+    NBadge,
+    NButton,
+    NCard,
+    NEmptyState,
+} from "nergous-ui-vue";
 import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
 import type { SharedProps } from "@/admin/types";
 import { can } from "@/lib/can";
-import { formatDateTime } from "@/lib/format";
+import { listUrl } from "@/lib/listUrl";
+import { formatDateTime, formatRelative } from "@/lib/format";
 import { swatchColor } from "@/lib/swatch";
+import { activityVisual as visual } from "@/admin/activityVisuals";
+
+interface UserActivity {
+    id: number;
+    action: string;
+    actionLabel: string;
+    actor: string;
+    subject: string;
+    subjectType: string;
+    changesCount: number;
+    createdAt: string | null;
+}
 
 const props = defineProps({
     user: { type: Object, required: true },
     // Server rule (RbacGuard::canManageUser): may the current user edit/delete this account.
     canManage: { type: Boolean, default: false },
     isSelf: { type: Boolean, default: false },
+    // Server rule (Impersonation::canImpersonate): users.impersonate, another active
+    // account the current user may manage, never a superadmin.
+    canImpersonate: { type: Boolean, default: false },
+    // Latest entries where the user is the author or the subject (activity-log.view only).
+    activity: { type: Array as PropType<UserActivity[]>, default: () => [] },
+    activityLinks: {
+        type: Object as PropType<{ byUser: string; aboutUser: string } | null>,
+        default: null,
+    },
 });
 
 const page = usePage<SharedProps>();
@@ -46,13 +76,34 @@ async function copyLink() {
         copyState.value = "Не удалось скопировать";
     }
 }
+
+const impersonateOpen = ref(false);
+const impersonating = ref(false);
+
+function confirmImpersonate() {
+    impersonating.value = true;
+    router.post(
+        `/admin/users/${props.user.id}/impersonate`,
+        {},
+        {
+            onFinish: () => {
+                impersonating.value = false;
+                impersonateOpen.value = false;
+            },
+        },
+    );
+}
+
+function metaFor(log: UserActivity) {
+    return log.changesCount > 0 ? `${log.changesCount} изм.` : "";
+}
 </script>
 
 <template>
     <AdminLayout :title="user.name" subtitle="Карточка пользователя">
         <div class="page entity-page entity-page--wide">
             <div class="entity-page__bar">
-                <Link href="/admin/users" class="entity-page__back"
+                <Link :href="listUrl('/admin/users')" class="entity-page__back"
                     >← К списку пользователей</Link
                 >
                 <div class="entity-page__actions">
@@ -61,6 +112,13 @@ async function copyLink() {
                         icon="copy"
                         @click="copyLink"
                         >{{ copyState || "Скопировать ссылку" }}</NButton
+                    >
+                    <NButton
+                        v-if="canImpersonate"
+                        variant="secondary"
+                        icon="eye"
+                        @click="impersonateOpen = true"
+                        >Войти как пользователь</NButton
                     >
                     <NButton
                         v-if="canDelete"
@@ -102,6 +160,13 @@ async function copyLink() {
                                 >Должен сменить пароль</NBadge
                             >
                         </div>
+                        <p
+                            v-if="user.is_active === false"
+                            class="blocked-reason"
+                        >
+                            <b>Причина блокировки:</b>
+                            {{ user.blocked_reason || "не указана" }}
+                        </p>
                     </NCard>
 
                     <NCard padding="var(--kpi-pad)" class="entity-page__card">
@@ -135,6 +200,46 @@ async function copyLink() {
                             </template>
                             <span v-else>Роли не назначены</span>
                         </div>
+                    </NCard>
+
+                    <NCard
+                        v-if="activityLinks"
+                        padding="var(--kpi-pad)"
+                        class="entity-page__card"
+                    >
+                        <div class="activity__head">
+                            <h2 class="entity-page__section-title">
+                                Активность
+                            </h2>
+                            <div class="activity__links">
+                                <Link :href="activityLinks.byUser"
+                                    >Действия пользователя</Link
+                                >
+                                <Link :href="activityLinks.aboutUser"
+                                    >Изменения учётной записи</Link
+                                >
+                            </div>
+                        </div>
+                        <ul v-if="activity.length" class="activity__feed">
+                            <li v-for="log in activity" :key="log.id">
+                                <NActivityRow
+                                    :tone="visual(log.action).tone"
+                                    :icon="visual(log.action).icon"
+                                    :actor="log.actor"
+                                    :verb="log.actionLabel"
+                                    :object="log.subject"
+                                    :tag="log.subjectType"
+                                    :time="formatRelative(log.createdAt)"
+                                    :meta="metaFor(log)"
+                                />
+                            </li>
+                        </ul>
+                        <NEmptyState
+                            v-else
+                            icon="activity"
+                            title="Событий нет"
+                            description="Здесь появятся действия пользователя и изменения его учётной записи."
+                        />
                     </NCard>
                 </div>
 
@@ -187,5 +292,54 @@ async function copyLink() {
             @cancel="deleteOpen = false"
             @update:open="deleteOpen = $event"
         />
+
+        <ConfirmModal
+            :open="impersonateOpen"
+            :loading="impersonating"
+            title="Войти как пользователь"
+            :message="`Вы начнёте работать от имени «${user.name}» и увидите панель с его правами. Ваши действия будут записаны в журнал с пометкой о вас. Вернуться к своему аккаунту можно в любой момент.`"
+            confirm-label="Войти"
+            :danger="false"
+            @confirm="confirmImpersonate"
+            @cancel="impersonateOpen = false"
+            @update:open="impersonateOpen = $event"
+        />
     </AdminLayout>
 </template>
+
+<style scoped>
+.blocked-reason {
+    margin: var(--sp-3) 0 0;
+    padding: 10px 12px;
+    border-radius: var(--radius-md);
+    background: var(--danger-bg);
+    color: var(--text);
+    font-size: 13px;
+}
+.activity__head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}
+.activity__links {
+    display: flex;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+    font-size: 13px;
+}
+.activity__links a {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+}
+.activity__links a:hover {
+    text-decoration: underline;
+}
+.activity__feed {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+</style>

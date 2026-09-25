@@ -32,6 +32,9 @@ class MediaRequest extends FormRequest
     /** Maximum size of a single file in kilobytes (~50 MB). */
     public const MAX_SIZE_KB = 51200;
 
+    /** Maximum number of files in one upload batch. */
+    public const MAX_FILES = 10;
+
     public function authorize(): bool
     {
         return $this->user()?->can('media.upload') === true;
@@ -48,7 +51,7 @@ class MediaRequest extends FormRequest
         $extensions = implode(',', self::ALLOWED_EXTENSIONS);
 
         return [
-            'media' => ['required', 'array', 'min:1', 'max:10'],
+            'media' => ['required', 'array', 'min:1', 'max:'.self::MAX_FILES],
             'media.*' => [
                 'required',
                 'file',

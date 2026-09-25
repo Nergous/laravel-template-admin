@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { PropType } from "vue";
 import { router, useForm } from "@inertiajs/vue3";
 import {
@@ -41,7 +41,12 @@ const props = defineProps({
 const profileForm = useForm({
     name: props.profile.name,
     email: props.profile.email,
+    current_password: "",
 });
+// The server asks for the current password only when the email changes.
+const emailChanged = computed(
+    () => profileForm.email.trim() !== props.profile.email,
+);
 const passwordForm = useForm({
     current_password: "",
     password: "",
@@ -56,7 +61,16 @@ useUnsavedGuard(
 );
 
 function saveProfile() {
-    profileForm.put("/admin/profile", { preserveScroll: true });
+    profileForm
+        .transform((data) => ({
+            ...data,
+            current_password: emailChanged.value ? data.current_password : "",
+        }))
+        .put("/admin/profile", {
+            preserveScroll: true,
+            onFinish: () => profileForm.reset("current_password"),
+            onSuccess: () => profileForm.defaults(),
+        });
 }
 
 function savePassword() {
@@ -165,6 +179,23 @@ function deviceLabel(agent: string | null): string {
                             icon="mail"
                             autocomplete="email"
                             :error="!!profileForm.errors.email"
+                        />
+                    </NFormField>
+                    <NFormField
+                        v-if="emailChanged"
+                        label="Текущий пароль"
+                        hint="Нужен для смены email"
+                        :error="profileForm.errors.current_password"
+                        required
+                    >
+                        <NInput
+                            v-model="profileForm.current_password"
+                            type="password"
+                            icon="lock"
+                            autocomplete="current-password"
+                            reveal-label="Показать пароль"
+                            hide-label="Скрыть пароль"
+                            :error="!!profileForm.errors.current_password"
                         />
                     </NFormField>
                     <div class="profile__actions">

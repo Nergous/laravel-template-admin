@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\User;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -46,6 +47,11 @@ class ProfileController extends Controller
         ]);
     }
 
+    /**
+     * Updates the name and email. Changing the email needs the current
+     * password: whoever controls the email controls the account, so a stolen
+     * session alone must not be enough to take it over.
+     */
     public function update(Request $request): RedirectResponse
     {
         /** @var User $user */
@@ -57,11 +63,17 @@ class ProfileController extends Controller
                 'required', 'email', 'max:255',
                 Rule::unique('users')->ignore($user->id)->whereNull('deleted_at'),
             ],
+            'current_password' => [
+                Rule::requiredIf(fn () => $request->input('email') !== $user->email),
+                'nullable', 'string', 'current_password:web',
+            ],
         ], [
             'email.unique' => 'Пользователь с таким email уже существует',
+            'current_password.required' => 'Введите текущий пароль, чтобы сменить email',
+            'current_password.current_password' => 'Неверный текущий пароль',
         ]);
 
-        $user->update($data);
+        $user->update(['name' => $data['name'], 'email' => $data['email']]);
 
         return back()->with('success', 'Профиль обновлён');
     }
@@ -107,15 +119,18 @@ class ProfileController extends Controller
         $user = $request->user();
 
         if ($this->usesDatabaseSessions()) {
-            $this->sessionQuery($user)
+            $ended = $this->sessionQuery($user)
                 ->where('id', '!=', $request->session()->getId())
                 ->delete();
 
             // "Remember me" cookies on other devices would sign them back in.
             $user->updateSilently(['remember_token' => Str::random(60)]);
         } else {
+            $ended = null;
             Auth::logoutOtherDevices($request->input('password'));
         }
+
+        ActivityLog::record($user, 'sessions_ended', $ended !== null ? ['sessions' => [null, $ended]] : null);
 
         return back()->with('success', 'Сеансы на других устройствах завершены');
     }
@@ -138,7 +153,13 @@ class ProfileController extends Controller
             return back()->withErrors(['session' => 'Текущий сеанс завершается кнопкой «Выйти»']);
         }
 
+        $session = $this->sessionQuery($user)->where('id', $id)->first(['ip_address', 'user_agent']);
         $this->sessionQuery($user)->where('id', $id)->delete();
+
+        ActivityLog::record($user, 'session_ended', [
+            'ip' => [$session?->ip_address, null],
+            'agent' => [$session?->user_agent ? Str::limit($session->user_agent, 120) : null, null],
+        ]);
 
         return back()->with('success', 'Сеанс завершён');
     }

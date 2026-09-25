@@ -18,9 +18,9 @@ Artisan::command('inspire', function () {
 // of auto-discovery. MassPrunable → a single DELETE without model events.
 Schedule::command('model:prune', ['--model' => [ActivityLog::class]])->daily();
 
-// Daily DB dump into storage/app/backups (with rotation, see app:db-backup).
-// In the prod stack, storage is a volume, so the dumps survive image rebuilds.
-// Pulling them off the host / shipping to S3 is left to operations' discretion.
+// Daily DB dump into config('backup.path') (storage/app/backups by default) with
+// rotation of scheduled dumps; optional encryption and an offsite copy to
+// BACKUP_DISK are configured in config/backup.php.
 Schedule::command('app:db-backup')->daily();
 
 // Daily cleanup of files no media row references (stale temp uploads, leftovers

@@ -5,6 +5,7 @@ import { resolvePageComponent } from "laravel-vite-plugin/inertia-helpers";
 import "nergous-ui-vue/styles";
 import "@/admin/styles.css";
 import { setDisplayTimeZone } from "@/lib/format";
+import { rememberListUrl } from "@/lib/listUrl";
 
 // The tab title follows the "Название приложения" setting (shared prop appName);
 // VITE_APP_NAME is only a fallback before the first page props arrive.
@@ -40,9 +41,11 @@ createInertiaApp({
     },
     setup({ el, App, props, plugin }) {
         applySharedProps(props.initialPage.props);
-        router.on("navigate", (event) =>
-            applySharedProps(event.detail.page.props),
-        );
+        rememberListUrl(props.initialPage.url);
+        router.on("navigate", (event) => {
+            applySharedProps(event.detail.page.props);
+            rememberListUrl(event.detail.page.url);
+        });
 
         createApp({ render: () => h(App, props) })
             .use(plugin)

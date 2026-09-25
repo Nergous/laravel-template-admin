@@ -89,6 +89,10 @@ class LoginController extends Controller
      */
     public function logout(Request $request): RedirectResponse
     {
+        if ($request->user() !== null) {
+            ActivityLog::record($request->user(), 'logout');
+        }
+
         Auth::logout();
 
         $request->session()->invalidate();

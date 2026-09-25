@@ -6,6 +6,7 @@ import AdminLayout from "@/admin/layouts/AdminLayout.vue";
 import ConfirmModal from "@/admin/components/ConfirmModal.vue";
 import { can } from "@/lib/can";
 import { formatDateTime } from "@/lib/format";
+import { listUrl } from "@/lib/listUrl";
 import { permissionGroupLabels } from "@/admin/pages/Roles/permissionGroupLabels";
 
 const props = defineProps({ role: { type: Object, required: true } });
@@ -49,7 +50,7 @@ async function copyLink() {
     <AdminLayout :title="role.name" subtitle="Карточка роли">
         <div class="page entity-page entity-page--wide">
             <div class="entity-page__bar">
-                <Link href="/admin/roles" class="entity-page__back"
+                <Link :href="listUrl('/admin/roles')" class="entity-page__back"
                     >← К списку ролей</Link
                 >
                 <div class="entity-page__actions">

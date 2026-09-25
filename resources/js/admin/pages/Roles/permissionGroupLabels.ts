@@ -5,5 +5,7 @@ export const permissionGroupLabels: Record<string, string> = {
     permissions: "Разрешения",
     settings: "Настройки",
     "activity-log": "Журнал действий",
+    backups: "Резервные копии",
+    queue: "Очередь задач",
     other: "Прочее",
 };

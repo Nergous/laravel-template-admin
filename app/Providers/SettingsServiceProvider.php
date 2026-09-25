@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use App\Models\Setting;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -29,12 +28,10 @@ class SettingsServiceProvider extends ServiceProvider
         }
 
         try {
-            if (! Schema::hasTable('settings')) {
-                return;
-            }
-
             // A single grouped() call (it is also memoized per request — the blade
             // favicon and the login limiter reuse it).
+            // A missing settings table (before migrations) throws and is ignored
+            // below; no schema lookup on every request.
             $settings = Setting::grouped();
 
             config([

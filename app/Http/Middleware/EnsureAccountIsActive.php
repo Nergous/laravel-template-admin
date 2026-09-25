@@ -20,6 +20,7 @@ class EnsureAccountIsActive
         $user = $request->user();
 
         if ($user !== null && ! $user->is_active) {
+            $reason = $user->blocked_reason;
             Auth::guard('web')->logout();
             $request->session()->invalidate();
             $request->session()->regenerateToken();
@@ -30,7 +31,7 @@ class EnsureAccountIsActive
 
             return redirect()
                 ->route('login')
-                ->withErrors(['email' => 'Учётная запись заблокирована']);
+                ->withErrors(['email' => 'Учётная запись заблокирована'.($reason ? ": {$reason}" : '')]);
         }
 
         return $next($request);

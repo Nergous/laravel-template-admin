@@ -42,11 +42,15 @@ trait HasSearch
         }
 
         // Escape LIKE special characters so that "%" and "_" are searched literally.
-        $term = '%'.addcslashes(trim($search), '%_\\').'%';
+        // The explicit ESCAPE clause is required (SQLite has no default escape
+        // character); "!" needs no quoting in any SQL dialect, unlike a backslash.
+        $term = '%'.str_replace(['!', '%', '_'], ['!!', '!%', '!_'], trim($search)).'%';
 
-        return $query->where(function (Builder $q) use ($term, $columns) {
+        $grammar = $query->getQuery()->getGrammar();
+
+        return $query->where(function (Builder $q) use ($term, $columns, $grammar) {
             foreach ($columns as $column) {
-                $q->orWhere($column, 'LIKE', $term);
+                $q->orWhereRaw($grammar->wrap($column)." LIKE ? ESCAPE '!'", [$term]);
             }
         });
     }

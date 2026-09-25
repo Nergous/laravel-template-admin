@@ -110,7 +110,10 @@ class RoleService
             ]);
         }
 
-        ActivityLog::record($role, 'deleted');
-        $role->delete();
+        // Log only a deletion that actually happened.
+        DB::transaction(function () use ($role) {
+            $role->delete();
+            ActivityLog::record($role, 'deleted');
+        });
     }
 }

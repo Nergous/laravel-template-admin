@@ -26,6 +26,7 @@ function onClose() {
         @update:model-value="onClose"
     >
         <p class="confirm__msg">{{ message }}</p>
+        <slot />
         <template #footer="{ close }">
             <NButton variant="secondary" block @click="close">
                 {{ cancelLabel }}

@@ -5,18 +5,26 @@ use App\Http\Controllers\Admin\AdminBackupController;
 use App\Http\Controllers\Admin\AdminDashboardController;
 use App\Http\Controllers\Admin\AdminMediaController;
 use App\Http\Controllers\Admin\AdminPermissionController;
+use App\Http\Controllers\Admin\AdminQueueController;
 use App\Http\Controllers\Admin\AdminRoleController;
 use App\Http\Controllers\Admin\AdminSearchController;
 use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\AdminUserController;
+use App\Http\Controllers\Admin\ImpersonationController;
 use App\Http\Controllers\Admin\ProfileController;
+use App\Http\Controllers\Admin\SessionController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\SeoController;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\RequirePasswordChange;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/admin');
+
+// Crawler files built from the SEO settings (seo.indexable, seo.sitemap).
+Route::get('/robots.txt', [SeoController::class, 'robots'])->name('robots');
+Route::get('/sitemap.xml', [SeoController::class, 'sitemap'])->name('sitemap');
 
 Route::prefix('/admin')->group(function () {
 
@@ -40,6 +48,10 @@ Route::prefix('/admin')->group(function () {
         Route::post('/logout', [LoginController::class, 'logout'])
             ->name('logout');
 
+        // Keep-alive for the "session expires soon" dialog.
+        Route::post('session/ping', [SessionController::class, 'ping'])
+            ->name('admin.session.ping');
+
         // Own account: available to every signed-in user.
         Route::get('profile', [ProfileController::class, 'show'])
             ->name('admin.profile.show');
@@ -52,6 +64,17 @@ Route::prefix('/admin')->group(function () {
         Route::delete('profile/sessions/{key}', [ProfileController::class, 'destroySession'])
             ->name('admin.profile.sessions.destroy');
 
+        // Leaving the "sign in as" mode: available to whoever is being impersonated;
+        // the controller checks the impersonator stored in the session.
+        Route::post('impersonation/stop', [ImpersonationController::class, 'stop'])
+            ->name('admin.impersonation.stop');
+
+        // Starting it: users.impersonate; the target rules live in App\Support\Impersonation.
+        Route::post('users/{user}/impersonate', [ImpersonationController::class, 'start'])
+            ->whereNumber('user')
+            ->middleware('permission:users.impersonate')
+            ->name('admin.users.impersonate');
+
         // Global search (Cmd+K)
         Route::get('search', [AdminSearchController::class, 'index'])
             ->name('admin.search');
@@ -60,8 +83,12 @@ Route::prefix('/admin')->group(function () {
         Route::middleware('permission:activity-log.view')->group(function () {
             Route::get('notifications/recent', [AdminActivityLogController::class, 'recent'])
                 ->name('admin.notifications.recent');
+            Route::get('notifications/count', [AdminActivityLogController::class, 'count'])
+                ->name('admin.notifications.count');
             Route::post('notifications/seen', [AdminActivityLogController::class, 'markSeen'])
                 ->name('admin.notifications.seen');
+            Route::put('notifications/preferences', [AdminActivityLogController::class, 'preferences'])
+                ->name('admin.notifications.preferences');
         });
 
         // User deletion
@@ -76,20 +103,32 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.users.bulk-force-delete');
 
             Route::patch('users/restore/{id}', [AdminUserController::class, 'restore'])
+                ->whereNumber('id')
                 ->name('admin.users.restore');
 
             Route::delete('users/force/{id}', [AdminUserController::class, 'forceDelete'])
+                ->whereNumber('id')
                 ->name('admin.users.force-delete');
 
             Route::delete('users/bulk', [AdminUserController::class, 'bulkDestroy'])
                 ->name('admin.users.bulk-destroy');
 
             Route::delete('users/{user}', [AdminUserController::class, 'destroy'])
+                ->whereNumber('user')
                 ->name('admin.users.destroy');
         });
 
         // Viewing/creating/editing users.
         Route::middleware('permission:users.view')->group(function () {
+            // CSV of the list with the current filters.
+            Route::get('users/export', [AdminUserController::class, 'export'])
+                ->middleware('permission:users.export')
+                ->name('admin.users.export');
+
+            // Bulk block/unblock; gated by users.edit in BulkUserStatusRequest.
+            Route::patch('users/bulk-status', [AdminUserController::class, 'bulkStatus'])
+                ->name('admin.users.bulk-status');
+
             Route::name('admin')->resource('users', AdminUserController::class)->except('destroy');
         });
 
@@ -143,18 +182,36 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.media.store');
         });
         Route::middleware('permission:media.edit')->group(function () {
+            // Move selected files into a folder (or out of any folder).
+            Route::patch('media/bulk-folder', [AdminMediaController::class, 'bulkFolder'])
+                ->name('admin.media.bulk-folder');
+
+            // Rename a folder, or dissolve it (its files move out of any folder).
+            Route::patch('media/folders', [AdminMediaController::class, 'renameFolder'])
+                ->name('admin.media.folders.rename');
+            Route::delete('media/folders', [AdminMediaController::class, 'clearFolder'])
+                ->name('admin.media.folders.clear');
+
             Route::patch('media/{media}', [AdminMediaController::class, 'update'])
+                ->whereNumber('media')
                 ->name('admin.media.update');
 
             // Replace the file behind an existing record (processed in the queue).
             Route::post('media/{media}/replace', [AdminMediaController::class, 'replace'])
+                ->whereNumber('media')
                 ->name('admin.media.replace');
+
+            // Crop an image in place (a new file under the same record).
+            Route::post('media/{media}/crop', [AdminMediaController::class, 'crop'])
+                ->whereNumber('media')
+                ->name('admin.media.crop');
         });
         Route::middleware('permission:media.delete')->group(function () {
             Route::delete('media/bulk', [AdminMediaController::class, 'bulkDestroy'])
                 ->name('admin.media.bulk-destroy');
 
             Route::delete('media/{media}', [AdminMediaController::class, 'destroy'])
+                ->whereNumber('media')
                 ->name('admin.media.destroy');
         });
 
@@ -184,10 +241,14 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.settings.update');
         });
 
-        // Database backups (dumps of app:db-backup in storage/app/backups).
+        // Database backups (dumps of app:db-backup in storage/app/backups). A dump holds
+        // every account's password hash, so downloading has its own permission.
         Route::middleware('permission:backups.view')->group(function () {
             Route::get('backups', [AdminBackupController::class, 'index'])
                 ->name('admin.backups.index');
+        });
+
+        Route::middleware('permission:backups.download')->group(function () {
             Route::get('backups/{file}', [AdminBackupController::class, 'download'])
                 ->where('file', 'db-[A-Za-z0-9_.-]+')
                 ->name('admin.backups.download');
@@ -196,6 +257,31 @@ Route::prefix('/admin')->group(function () {
         Route::middleware('permission:backups.create')->group(function () {
             Route::post('backups', [AdminBackupController::class, 'store'])
                 ->name('admin.backups.store');
+        });
+
+        Route::middleware('permission:backups.delete')->group(function () {
+            Route::delete('backups/{file}', [AdminBackupController::class, 'destroy'])
+                ->where('file', 'db-[A-Za-z0-9_.-]+')
+                ->name('admin.backups.destroy');
+        });
+
+        // Queue: pending jobs overview and failed jobs (retry/delete).
+        Route::middleware('permission:queue.view')->group(function () {
+            Route::get('queue', [AdminQueueController::class, 'index'])
+                ->name('admin.queue.index');
+        });
+
+        Route::middleware('permission:queue.manage')->group(function () {
+            Route::post('queue/failed/retry-all', [AdminQueueController::class, 'retryAll'])
+                ->name('admin.queue.retry-all');
+            Route::post('queue/failed/{uuid}/retry', [AdminQueueController::class, 'retry'])
+                ->whereUuid('uuid')
+                ->name('admin.queue.retry');
+            Route::delete('queue/failed/{uuid}', [AdminQueueController::class, 'destroy'])
+                ->whereUuid('uuid')
+                ->name('admin.queue.destroy');
+            Route::delete('queue/failed', [AdminQueueController::class, 'flush'])
+                ->name('admin.queue.flush');
         });
 
     });

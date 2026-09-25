@@ -20,12 +20,15 @@ import {
 import { useIndexFilters } from "@/admin/composables/useIndexFilters";
 import { can } from "@/lib/can";
 import { formatRelative, formatDateTime, todayIso } from "@/lib/format";
+import { activityVisual as visual } from "@/admin/activityVisuals";
 
 type Option = { value: string; label: string };
 type Filters = {
     action?: string | null;
     subject_type?: string | null;
+    subject_id?: string | null;
     user_id?: string | null;
+    impersonator_id?: string | null;
     date_from?: string | null;
     date_to?: string | null;
 };
@@ -36,6 +39,14 @@ const props = defineProps({
     actions: { type: Array as PropType<Option[]>, default: () => [] },
     subjectTypes: { type: Array as PropType<Option[]>, default: () => [] },
     actors: { type: Array as PropType<Option[]>, default: () => [] },
+    // Administrators who acted "as" someone; the filter shows only when there are any.
+    impersonators: { type: Array as PropType<Option[]>, default: () => [] },
+    // Name of the entity picked by subject_type + subject_id (links from cards).
+    subjectLabel: { type: String as PropType<string | null>, default: null },
+    fieldLabels: {
+        type: Object as PropType<Record<string, string>>,
+        default: () => ({}),
+    },
 });
 
 // Dates in the filters and the clear form are days in the display time zone.
@@ -43,7 +54,9 @@ const today = todayIso();
 
 const action = ref(props.filters.action ?? "");
 const subjectType = ref(props.filters.subject_type ?? "");
+const subjectId = ref(props.filters.subject_id ?? "");
 const userId = ref(props.filters.user_id ?? "");
+const impersonatorId = ref(props.filters.impersonator_id ?? "");
 const dateFrom = ref(props.filters.date_from ?? "");
 const dateTo = ref(props.filters.date_to ?? "");
 
@@ -51,7 +64,9 @@ function currentParams() {
     return {
         action: action.value || undefined,
         subject_type: subjectType.value || undefined,
+        subject_id: subjectId.value || undefined,
         user_id: userId.value || undefined,
+        impersonator_id: impersonatorId.value || undefined,
         date_from: dateFrom.value || undefined,
         date_to: dateTo.value || undefined,
     };
@@ -70,6 +85,13 @@ const actorOptions = computed(() => [
     { value: "", label: "Все пользователи" },
     ...props.actors,
 ]);
+const impersonatorOptions = computed(() => [
+    { value: "", label: "Любой режим входа" },
+    ...props.impersonators.map((o) => ({
+        value: o.value,
+        label: `Действовал ${o.label}`,
+    })),
+]);
 
 const hasFilters = computed(() =>
     Object.values(currentParams()).some((v) => v !== undefined),
@@ -78,10 +100,43 @@ const hasFilters = computed(() =>
 function resetFilters() {
     action.value = "";
     subjectType.value = "";
+    subjectId.value = "";
     userId.value = "";
+    impersonatorId.value = "";
     dateFrom.value = "";
     dateTo.value = "";
     reload({ page: 1 });
+}
+
+// A different type makes the selected entity meaningless.
+function onTypeChange() {
+    subjectId.value = "";
+    reload({ page: 1 });
+}
+
+function clearSubject() {
+    subjectId.value = "";
+    reload({ page: 1 });
+}
+
+// Quick periods; days are counted in the display time zone like the inputs.
+const presets = [
+    { days: 0, label: "Сегодня" },
+    { days: 6, label: "7 дней" },
+    { days: 29, label: "30 дней" },
+];
+function shiftDays(iso: string, days: number): string {
+    const d = new Date(`${iso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - days);
+    return d.toISOString().slice(0, 10);
+}
+function applyPreset(days: number) {
+    dateFrom.value = shiftDays(today, days);
+    dateTo.value = today;
+    reload({ page: 1 });
+}
+function isPreset(days: number) {
+    return dateTo.value === today && dateFrom.value === shiftDays(today, days);
 }
 
 // The export uses the same filters as the list.
@@ -93,29 +148,6 @@ const exportUrl = computed(() => {
     const query = params.toString();
     return `/admin/activity-log/export${query ? `?${query}` : ""}`;
 });
-
-// Keep action visuals in the page; the activity component stays presentational.
-const VISUAL: Record<
-    string,
-    { tone: "ok" | "info" | "danger" | "accent"; icon: string }
-> = {
-    created: { tone: "ok", icon: "plus" },
-    updated: { tone: "info", icon: "edit" },
-    deleted: { tone: "danger", icon: "trash" },
-    force_deleted: { tone: "danger", icon: "trash" },
-    restored: { tone: "ok", icon: "check" },
-    duplicated: { tone: "accent", icon: "copy" },
-    login: { tone: "info", icon: "user" },
-    login_failed: { tone: "danger", icon: "alert-triangle" },
-    cleared: { tone: "danger", icon: "eraser" },
-    backup_created: { tone: "accent", icon: "shield" },
-    backup_downloaded: { tone: "info", icon: "download" },
-};
-const FALLBACK = { tone: "info", icon: "edit" };
-
-function visual(value: string) {
-    return VISUAL[value] ?? FALLBACK;
-}
 
 function metaFor(log: AuditLog) {
     const n = Number(log.changesCount ?? 0);
@@ -131,7 +163,13 @@ const changeRows = computed(() => {
     if (!map || typeof map !== "object") return [];
     return Object.entries(map).map(([field, pair]) => {
         const [oldValue, newValue] = Array.isArray(pair) ? pair : [null, pair];
-        return { field, oldValue, newValue };
+        return {
+            field,
+            label: props.fieldLabels[field] ?? field,
+            oldValue,
+            newValue,
+            parts: diffParts(oldValue, newValue),
+        };
     });
 });
 
@@ -140,8 +178,57 @@ const hasChanges = computed(() => changeRows.value.length > 0);
 // «—» for null/undefined/empty-string; everything else rendered as text.
 function displayValue(value: unknown) {
     if (value === null || value === undefined || value === "") return "—";
+    if (typeof value === "boolean") return value ? "да" : "нет";
     if (typeof value === "object") return JSON.stringify(value);
     return String(value);
+}
+
+type Segments = { same: boolean; text: string }[];
+
+/**
+ * Splits two values into unchanged and changed parts: lists by item, long
+ * strings by the differing middle (common prefix and suffix stay plain).
+ * Null when a plain side-by-side view is clearer.
+ */
+function diffParts(
+    oldValue: unknown,
+    newValue: unknown,
+): { old: Segments; new: Segments } | null {
+    if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+        const before = oldValue.map((v) => displayValue(v));
+        const after = newValue.map((v) => displayValue(v));
+        return {
+            old: before.map((text) => ({ text, same: after.includes(text) })),
+            new: after.map((text) => ({ text, same: before.includes(text) })),
+        };
+    }
+    if (typeof oldValue !== "string" || typeof newValue !== "string")
+        return null;
+    if (Math.max(oldValue.length, newValue.length) < 24) return null;
+
+    let start = 0;
+    while (
+        start < oldValue.length &&
+        start < newValue.length &&
+        oldValue[start] === newValue[start]
+    )
+        start++;
+    let end = 0;
+    while (
+        end < oldValue.length - start &&
+        end < newValue.length - start &&
+        oldValue[oldValue.length - 1 - end] ===
+            newValue[newValue.length - 1 - end]
+    )
+        end++;
+
+    const split = (value: string): Segments =>
+        [
+            { same: true, text: value.slice(0, start) },
+            { same: false, text: value.slice(start, value.length - end) },
+            { same: true, text: value.slice(value.length - end) },
+        ].filter((s) => s.text !== "");
+    return { old: split(oldValue), new: split(newValue) };
 }
 
 function openDetail(log: AuditLog) {
@@ -184,7 +271,7 @@ function submitClear() {
                         :options="typeOptions"
                         aria-label="Тип объекта"
                         class="filters__select"
-                        @update:model-value="reload({ page: 1 })"
+                        @update:model-value="onTypeChange"
                     />
                     <NSelectWithSearch
                         v-model="userId"
@@ -192,6 +279,14 @@ function submitClear() {
                         search-placeholder="Найти пользователя…"
                         no-results-text="Никого не найдено"
                         aria-label="Пользователь"
+                        class="filters__select"
+                        @update:model-value="reload({ page: 1 })"
+                    />
+                    <NSelect
+                        v-if="impersonators.length || impersonatorId"
+                        v-model="impersonatorId"
+                        :options="impersonatorOptions"
+                        aria-label="Вход от имени"
                         class="filters__select"
                         @update:model-value="reload({ page: 1 })"
                     />
@@ -213,6 +308,34 @@ function submitClear() {
                             @update:model-value="reload({ page: 1 })"
                         />
                     </div>
+                    <div
+                        class="filters__presets"
+                        role="group"
+                        aria-label="Период"
+                    >
+                        <NButton
+                            v-for="preset in presets"
+                            :key="preset.days"
+                            size="sm"
+                            :variant="
+                                isPreset(preset.days) ? 'primary' : 'ghost'
+                            "
+                            :aria-pressed="isPreset(preset.days)"
+                            @click="applyPreset(preset.days)"
+                            >{{ preset.label }}</NButton
+                        >
+                    </div>
+                    <span v-if="subjectId" class="filters__chip">
+                        Объект: {{ subjectLabel ?? `#${subjectId}` }}
+                        <button
+                            type="button"
+                            class="filters__chip-x"
+                            aria-label="Убрать фильтр по объекту"
+                            @click="clearSubject"
+                        >
+                            ×
+                        </button>
+                    </span>
                     <NButton
                         v-if="hasFilters"
                         variant="ghost"
@@ -356,13 +479,57 @@ function submitClear() {
                         <tbody>
                             <tr v-for="row in changeRows" :key="row.field">
                                 <th scope="row" class="diff__field">
-                                    {{ row.field }}
+                                    <span :title="row.field">{{
+                                        row.label
+                                    }}</span>
                                 </th>
-                                <td class="diff__cell diff__cell--mono">
-                                    {{ displayValue(row.oldValue) }}
+                                <td
+                                    class="diff__cell diff__cell--mono diff__cell--old"
+                                >
+                                    <template v-if="row.parts">
+                                        <span
+                                            v-for="(seg, i) in row.parts.old"
+                                            :key="i"
+                                            :class="{
+                                                'diff__mark diff__mark--old':
+                                                    !seg.same,
+                                                diff__item: Array.isArray(
+                                                    row.oldValue,
+                                                ),
+                                            }"
+                                            >{{ seg.text }}</span
+                                        >
+                                        <span v-if="!row.parts.old.length"
+                                            >—</span
+                                        >
+                                    </template>
+                                    <template v-else>{{
+                                        displayValue(row.oldValue)
+                                    }}</template>
                                 </td>
-                                <td class="diff__cell diff__cell--mono">
-                                    {{ displayValue(row.newValue) }}
+                                <td
+                                    class="diff__cell diff__cell--mono diff__cell--new"
+                                >
+                                    <template v-if="row.parts">
+                                        <span
+                                            v-for="(seg, i) in row.parts.new"
+                                            :key="i"
+                                            :class="{
+                                                'diff__mark diff__mark--new':
+                                                    !seg.same,
+                                                diff__item: Array.isArray(
+                                                    row.newValue,
+                                                ),
+                                            }"
+                                            >{{ seg.text }}</span
+                                        >
+                                        <span v-if="!row.parts.new.length"
+                                            >—</span
+                                        >
+                                    </template>
+                                    <template v-else>{{
+                                        displayValue(row.newValue)
+                                    }}</template>
                                 </td>
                             </tr>
                         </tbody>
@@ -432,7 +599,11 @@ function submitClear() {
     flex-wrap: wrap;
     gap: 8px;
 }
-.filters__select {
+/* NSelectWithSearch is a full-width block (width: 100%) by design, unlike the
+   inline NSelect; in this wrapping toolbar size all selects to their content. */
+.filters .filters__select {
+    flex: none;
+    width: auto;
     min-width: 180px;
 }
 .filters__dates {
@@ -442,6 +613,31 @@ function submitClear() {
 }
 .filters__dash {
     color: var(--text-3);
+}
+.filters__presets {
+    display: flex;
+    gap: 4px;
+}
+.filters__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 6px 0 10px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.filters__chip-x {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
 }
 .toolbar__actions {
     display: flex;
@@ -563,6 +759,27 @@ function submitClear() {
 }
 .diff__cell--mono {
     font-family: var(--font-mono);
+}
+.diff__cell--old {
+    background: var(--danger-bg);
+}
+.diff__cell--new {
+    background: var(--ok-bg);
+}
+.diff__mark {
+    border-radius: 3px;
+    font-weight: 700;
+}
+.diff__mark--old {
+    background: color-mix(in srgb, var(--danger) 22%, transparent);
+    text-decoration: line-through;
+}
+.diff__mark--new {
+    background: color-mix(in srgb, var(--ok) 25%, transparent);
+}
+/* List values: one item per line. */
+.diff__item {
+    display: block;
 }
 .diff__empty {
     margin: 0;

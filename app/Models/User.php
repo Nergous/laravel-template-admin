@@ -24,9 +24,11 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $email
  * @property string $password
  * @property bool $is_active
+ * @property string|null $blocked_reason
  * @property bool $must_change_password
  * @property Carbon|null $last_login_at
  * @property Carbon|null $notifications_seen_at
+ * @property list<string>|null $notification_mutes
  * @property Carbon|null $email_verified_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -41,7 +43,9 @@ class User extends Authenticatable
         'email',
         'password',
         'is_active',
+        'blocked_reason',
         'must_change_password',
+        'notification_mutes',
     ];
 
     /**
@@ -62,6 +66,8 @@ class User extends Authenticatable
         // enforces UNIQUE on active emails. Hidden so that serialization
         // (auth.user in Inertia, etc.) is identical across all drivers.
         'email_active',
+        // Personal bell preferences; not part of the account data other admins see.
+        'notification_mutes',
     ];
 
     /**
@@ -70,7 +76,7 @@ class User extends Authenticatable
      *
      * @var list<string>
      */
-    protected array $auditExclude = ['last_login_at', 'notifications_seen_at'];
+    protected array $auditExclude = ['last_login_at', 'notifications_seen_at', 'notification_mutes'];
 
     protected function casts(): array
     {
@@ -80,20 +86,24 @@ class User extends Authenticatable
             'notifications_seen_at' => 'datetime',
             'is_active' => 'boolean',
             'must_change_password' => 'boolean',
+            'notification_mutes' => 'array',
             'password' => 'hashed',
         ];
     }
 
     /**
      * Updates technical columns without model events, timestamps, or audit
-     * entries (last login, notification read marker).
+     * entries (last login, notification read marker). Values go through the
+     * model casts first, so arrays and dates are stored in their column format.
      *
      * @param  array<string, mixed>  $values
      */
     public function updateSilently(array $values): void
     {
-        static::query()->whereKey($this->getKey())->toBase()->update($values);
-        $this->forceFill($values)->syncOriginalAttributes(array_keys($values));
+        $this->forceFill($values);
+        static::query()->whereKey($this->getKey())->toBase()
+            ->update(array_intersect_key($this->getAttributes(), $values));
+        $this->syncOriginalAttributes(array_keys($values));
     }
 
     /**

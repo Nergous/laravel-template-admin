@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -167,19 +168,21 @@ class AdminHardeningTest extends TestCase
         $this->assertStringContainsString("'=HYPERLINK", $response->streamedContent());
     }
 
-    public function test_media_poll_returns_only_the_current_users_uploads(): void
+    public function test_media_poll_returns_only_the_requested_batch(): void
     {
         $me = $this->actingAsUserWith(['media.view']);
         $other = User::factory()->create();
+        $batch = (string) Str::uuid();
 
-        $mine = Media::create(['filename' => 'media/mine.webp', 'original_name' => 'mine.webp']);
-        Media::create(['filename' => 'media/theirs.webp', 'original_name' => 'theirs.webp'])
+        $mine = Media::create(['filename' => 'media/mine.webp', 'original_name' => 'mine.webp', 'upload_batch' => $batch]);
+        Media::create(['filename' => 'media/theirs.webp', 'original_name' => 'theirs.webp', 'upload_batch' => (string) Str::uuid()])
             ->forceFill(['created_by' => $other->id])->saveQuietly();
 
-        $this->getJson(route('admin.media.poll', ['after_id' => 0]))
+        $this->getJson(route('admin.media.poll', ['batch' => $batch]))
             ->assertOk()
-            ->assertJsonCount(1)
-            ->assertJsonPath('0.id', $mine->id);
+            ->assertJsonCount(1, 'items')
+            ->assertJsonPath('items.0.id', $mine->id);
+        $this->getJson(route('admin.media.poll'))->assertStatus(422);
 
         $this->assertSame($me->id, $mine->fresh()->created_by);
     }

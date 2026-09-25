@@ -22,17 +22,20 @@ class UserService
     /**
      * Creates a user and assigns them roles (in a transaction).
      *
-     * @param  array{name: string, email: string, password: string, is_active?: bool, must_change_password?: bool}  $data
+     * @param  array{name: string, email: string, password: string, is_active?: bool, blocked_reason?: string|null, must_change_password?: bool}  $data
      * @param  array<int, string>  $roles  Spatie role names.
      */
     public function create(array $data, array $roles): User
     {
         return DB::transaction(function () use ($data, $roles) {
+            $active = $data['is_active'] ?? true;
+
             $user = User::create([
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
-                'is_active' => $data['is_active'] ?? true,
+                'is_active' => $active,
+                'blocked_reason' => $active ? null : $this->reason($data['blocked_reason'] ?? null),
                 'must_change_password' => $data['must_change_password'] ?? false,
             ]);
 
@@ -47,7 +50,7 @@ class UserService
      * an admin cannot remove the admin role from themselves, and nobody can
      * block their own account.
      *
-     * @param  array{name: string, email: string, password?: string|null, is_active?: bool, must_change_password?: bool}  $data
+     * @param  array{name: string, email: string, password?: string|null, is_active?: bool, blocked_reason?: string|null, must_change_password?: bool}  $data
      * @param  array<int, string>  $roles
      *
      * @throws ValidationException If the actor may not manage the user or breaks a self-protection rule.
@@ -82,6 +85,13 @@ class UserService
                 if (array_key_exists($flag, $data)) {
                     $attributes[$flag] = (bool) $data[$flag];
                 }
+            }
+
+            // The reason lives only while the account is blocked.
+            if (array_key_exists('is_active', $data)) {
+                $attributes['blocked_reason'] = $data['is_active']
+                    ? null
+                    : $this->reason(array_key_exists('blocked_reason', $data) ? $data['blocked_reason'] : $user->blocked_reason);
             }
 
             $user->update($attributes);
@@ -126,12 +136,64 @@ class UserService
      *
      * @return array{processed: int, skipped: int}
      */
-    public function bulkDeleteAll(?string $search, ?string $role, ?User $actor): array
+    public function bulkDeleteAll(
+        ?string $search,
+        ?string $role,
+        ?string $status,
+        bool $mustChangePassword,
+        ?User $actor,
+    ): array {
+        return $this->applyDelete($this->listQuery($search, $role, $status, $mustChangePassword), $actor);
+    }
+
+    /**
+     * Blocks or unblocks selected users while preserving model audit events.
+     * The acting user's own account and users the actor may not manage are skipped.
+     *
+     * @param  array<int, int>  $ids
+     * @return array{processed: int, skipped: int}
+     */
+    public function bulkSetActive(array $ids, bool $active, ?User $actor, ?string $reason = null): array
     {
-        return $this->applyDelete(
-            User::query()->search($search)->filterByRole($role),
+        return $this->applyStatus(User::query()->whereIn('id', $ids), $active, $actor, $reason);
+    }
+
+    /**
+     * Blocks or unblocks every user matching the current list filters.
+     *
+     * @return array{processed: int, skipped: int}
+     */
+    public function bulkSetActiveAll(
+        ?string $search,
+        ?string $role,
+        ?string $status,
+        bool $mustChangePassword,
+        bool $active,
+        ?User $actor,
+        ?string $reason = null,
+    ): array {
+        return $this->applyStatus(
+            $this->listQuery($search, $role, $status, $mustChangePassword),
+            $active,
             $actor,
+            $reason,
         );
+    }
+
+    /**
+     * The user list query with the index filters applied; shared by the list,
+     * the CSV export, and the "all matching" bulk actions so they always agree.
+     *
+     * @param  string|null  $status  "active", "blocked", or null for both
+     */
+    public function listQuery(?string $search, ?string $role, ?string $status, bool $mustChangePassword): Builder
+    {
+        return User::query()
+            ->search($search)
+            ->filterByRole($role)
+            ->when($status === 'active', fn (Builder $query) => $query->where('is_active', true))
+            ->when($status === 'blocked', fn (Builder $query) => $query->where('is_active', false))
+            ->when($mustChangePassword, fn (Builder $query) => $query->where('must_change_password', true));
     }
 
     /**
@@ -227,16 +289,18 @@ class UserService
         $processed = 0;
         $skipped = 0;
 
-        $query->lazyById()->each(function (User $user) use ($actor, $restore, &$processed, &$skipped) {
-            if (! RbacGuard::canManageUser($actor, $user) || ($restore && $this->emailTaken($user))) {
-                $skipped++;
+        $query->with(['roles.permissions', 'permissions'])
+            ->lazyById()
+            ->each(function (User $user) use ($actor, $restore, &$processed, &$skipped) {
+                if (! RbacGuard::canManageUser($actor, $user) || ($restore && $this->emailTaken($user))) {
+                    $skipped++;
 
-                return;
-            }
+                    return;
+                }
 
-            $restore ? $user->restore() : $user->forceDelete();
-            $processed++;
-        });
+                $restore ? $user->restore() : $user->forceDelete();
+                $processed++;
+            });
 
         return ['processed' => $processed, 'skipped' => $skipped];
     }
@@ -248,25 +312,60 @@ class UserService
      */
     private function applyDelete(Builder $query, ?User $actor): array
     {
-        if ($actor !== null) {
-            $query->where('id', '!=', $actor->id);
-        }
-
         $processed = 0;
         $skipped = 0;
 
-        $query->lazyById()->each(function (User $user) use ($actor, &$processed, &$skipped) {
-            if (! RbacGuard::canManageUser($actor, $user)) {
-                $skipped++;
+        $query->with(['roles.permissions', 'permissions'])
+            ->lazyById()
+            ->each(function (User $user) use ($actor, &$processed, &$skipped) {
+                if ($actor?->is($user) || ! RbacGuard::canManageUser($actor, $user)) {
+                    $skipped++;
 
-                return;
-            }
+                    return;
+                }
 
-            $user->delete();
-            $processed++;
-        });
+                $user->delete();
+                $processed++;
+            });
 
         return ['processed' => $processed, 'skipped' => $skipped];
+    }
+
+    /**
+     * Updates account status model by model so LogsActivity records each change.
+     * The actor's own account is always skipped: blocking it is forbidden and
+     * unblocking it is meaningless, so it is reported as skipped.
+     *
+     * @return array{processed: int, skipped: int}
+     */
+    private function applyStatus(Builder $query, bool $active, ?User $actor, ?string $reason = null): array
+    {
+        $processed = 0;
+        $skipped = 0;
+        $reason = $active ? null : $this->reason($reason);
+
+        $query->with(['roles.permissions', 'permissions'])
+            ->lazyById()
+            ->each(function (User $user) use ($active, $actor, $reason, &$processed, &$skipped) {
+                if ($actor?->is($user) || ! RbacGuard::canManageUser($actor, $user)) {
+                    $skipped++;
+
+                    return;
+                }
+
+                $user->update(['is_active' => $active, 'blocked_reason' => $reason]);
+                $processed++;
+            });
+
+        return ['processed' => $processed, 'skipped' => $skipped];
+    }
+
+    /** A trimmed block reason; empty input means no reason. */
+    private function reason(?string $reason): ?string
+    {
+        $reason = trim((string) $reason);
+
+        return $reason === '' ? null : $reason;
     }
 
     /** Whether an active user already uses the trashed user's email. */

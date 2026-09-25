@@ -27,6 +27,14 @@ trait LogsActivity
         });
 
         static::updated(function ($model) {
+            // restore() saves the model, so "updated" fires right before
+            // "restored"; the restore is logged once, by the listener below.
+            if (method_exists($model, 'getDeletedAtColumn')
+                && $model->wasChanged($model->getDeletedAtColumn())
+                && $model->{$model->getDeletedAtColumn()} === null) {
+                return;
+            }
+
             $changes = $model->auditChanges();
 
             if ($changes === []) {

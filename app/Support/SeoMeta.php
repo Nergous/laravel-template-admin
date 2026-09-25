@@ -26,7 +26,7 @@ class SeoMeta
         $seo = $settings['seo'];
         $siteName = (string) $settings['general']['app_name'];
 
-        $base = rtrim((string) ($seo['canonical_domain'] ?: $request->getSchemeAndHttpHost()), '/');
+        $base = self::baseUrl($request);
         $path = trim($request->path(), '/');
 
         $title = trim((string) $title);
@@ -43,6 +43,14 @@ class SeoMeta
             'site_name' => $siteName,
             'favicon' => ($settings['general']['favicon'] ?? '') ?: null,
         ];
+    }
+
+    /** Site origin for absolute links: seo.canonical_domain, or the current host when empty. */
+    public static function baseUrl(Request $request): string
+    {
+        $domain = (string) Setting::value('seo', 'canonical_domain');
+
+        return rtrim($domain !== '' ? $domain : $request->getSchemeAndHttpHost(), '/');
     }
 
     /** Makes a root-relative asset path absolute (crawlers need full og:image URLs). */

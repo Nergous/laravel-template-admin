@@ -143,11 +143,12 @@ class Setting extends Model
         ];
     }
 
-    /** Writes a single value (only if the key is declared in SCHEMA). */
+    /** Writes a single value (only if the key is declared in SCHEMA) and drops the cached map. */
     public static function set(string $group, string $key, mixed $value): void
     {
         if ($row = static::row($group, $key, $value)) {
             static::updateOrCreate(['key' => $row['key']], $row);
+            static::flushCache();
         }
     }
 
@@ -171,6 +172,9 @@ class Setting extends Model
 
         if ($rows) {
             static::upsert($rows, ['key'], ['group', 'type', 'value']);
+            // Inside a transaction, flush again after commit (another request may
+            // re-cache the old values in between) — see AdminSettingsController.
+            static::flushCache();
         }
     }
 
@@ -178,5 +182,30 @@ class Setting extends Model
     {
         Cache::forget(self::CACHE_KEY);
         app()->forgetInstance(self::MEMO_KEY);
+    }
+
+    /**
+     * Changed values between two grouped() snapshots, keyed "group.key" in the
+     * activity log diff format: key => [old, new].
+     *
+     * @param  array<string, array<string, mixed>>  $before
+     * @param  array<string, array<string, mixed>>  $after
+     * @return array<string, array{0: mixed, 1: mixed}>
+     */
+    public static function diff(array $before, array $after): array
+    {
+        $changes = [];
+
+        foreach ($after as $group => $values) {
+            foreach ($values as $key => $value) {
+                $old = $before[$group][$key] ?? null;
+
+                if ($old !== $value) {
+                    $changes["{$group}.{$key}"] = [$old, $value];
+                }
+            }
+        }
+
+        return $changes;
     }
 }

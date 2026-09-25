@@ -146,8 +146,11 @@ class PermissionService
     {
         $this->ensureNotSystem($permission, 'удалить');
 
-        ActivityLog::record($permission, 'deleted');
-        $permission->delete();
+        // Log only a deletion that actually happened.
+        DB::transaction(function () use ($permission) {
+            $permission->delete();
+            ActivityLog::record($permission, 'deleted');
+        });
     }
 
     /**

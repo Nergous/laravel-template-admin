@@ -40,7 +40,11 @@ const SYMBOLS = "!@#$%^&*-_=+?";
 
 // Keep generated passwords visible until the field is cleared.
 const generated = ref(false);
-const copied = ref(false);
+// The value last written to the clipboard; editing the field invalidates it.
+const copiedValue = ref("");
+const copied = computed(
+    () => copiedValue.value !== "" && copiedValue.value === props.form.password,
+);
 
 // Uniform random integer in [0, max): rejection sampling avoids the modulo bias.
 function randomBelow(max: number): number {
@@ -77,23 +81,26 @@ async function onGenerate() {
     const password = generatePassword();
     props.form.password = password;
     generated.value = true;
+    await copyPassword();
+}
+
+async function copyPassword() {
+    const password = props.form.password;
+    if (!password) return;
     try {
         await navigator.clipboard.writeText(password);
-        copied.value = true;
+        copiedValue.value = password;
     } catch {
         // Clipboard is unavailable (permissions / non-secure context) — the
         // password is still visible in the opened field.
-        copied.value = false;
+        copiedValue.value = "";
     }
 }
 
 watch(
     () => props.form.password,
     (value) => {
-        if (!value) {
-            generated.value = false;
-            copied.value = false;
-        }
+        if (!value) generated.value = false;
     },
 );
 
@@ -167,6 +174,16 @@ const passwordHint = computed(() => {
                     @click="onGenerate"
                     >Сгенерировать</NButton
                 >
+                <NButton
+                    v-if="generated"
+                    variant="secondary"
+                    icon="copy"
+                    :aria-label="
+                        copied ? 'Пароль скопирован' : 'Скопировать пароль'
+                    "
+                    @click="copyPassword"
+                    >{{ copied ? "Скопировано" : "Копировать" }}</NButton
+                >
             </div>
         </NFormField>
 
@@ -195,6 +212,19 @@ const passwordHint = computed(() => {
                         aria-label="Учётная запись активна"
                     />
                 </label>
+                <NFormField
+                    v-if="!form.is_active"
+                    label="Причина блокировки"
+                    :error="form.errors.blocked_reason"
+                    hint="Пользователь увидит её при попытке входа."
+                >
+                    <NInput
+                        v-model="form.blocked_reason"
+                        placeholder="Например: увольнение, подозрительная активность"
+                        maxlength="255"
+                        :error="!!form.errors.blocked_reason"
+                    />
+                </NFormField>
                 <NCheckbox v-model="form.must_change_password">
                     Потребовать смену пароля при следующем входе
                 </NCheckbox>

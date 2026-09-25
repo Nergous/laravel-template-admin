@@ -14,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Permission;
@@ -36,14 +37,15 @@ class AdminActivityLogController extends Controller
     /**
      * Renders the paginated (30 per page) activity log on the ActivityLog/Index page.
      *
-     * Filters: action, subject_type, user_id, date_from, date_to (inclusive days).
+     * Filters: action, subject_type (+ subject_id for one entity), user_id,
+     * date_from, date_to (inclusive days).
      */
     public function index(Request $request): Response
     {
         $filters = $this->validatedFilters($request);
 
         $logs = $this->filteredQuery($filters)
-            ->with('user')
+            ->with(['user', 'impersonator'])
             ->paginate(30)
             ->withQueryString();
 
@@ -54,7 +56,7 @@ class AdminActivityLogController extends Controller
             'action' => $log->action,
             'actionLabel' => $log->actionLabel(),
             // Live author name → actor_label snapshot (survives force-delete) → "Система".
-            'actor' => $log->user?->name ?? $log->actor_label ?? 'Система',
+            'actor' => $log->actorName(),
             'subject' => $log->subject_label ?: $log->subjectTypeLabel(),
             'subjectType' => $log->subjectTypeLabel(),
             'subjectUrl' => $urls[$log->id] ?? null,
@@ -66,6 +68,8 @@ class AdminActivityLogController extends Controller
         return Inertia::render('ActivityLog/Index', [
             'logs' => $logs,
             'filters' => $filters,
+            'subjectLabel' => $this->subjectLabel($filters),
+            'fieldLabels' => __('activity.fields'),
             'actions' => $this->actionOptions(),
             'subjectTypes' => collect(config('audit.subjects'))
                 ->map(fn (string $key, string $class) => [
@@ -79,29 +83,36 @@ class AdminActivityLogController extends Controller
                 ->get(['id', 'name'])
                 ->map(fn (User $u) => ['value' => (string) $u->id, 'label' => $u->name])
                 ->values(),
+            'impersonators' => User::withTrashed()
+                ->whereIn('id', ActivityLog::query()->whereNotNull('impersonator_id')->distinct()->select('impersonator_id'))
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn (User $u) => ['value' => (string) $u->id, 'label' => $u->name])
+                ->values(),
         ]);
     }
 
     /**
      * Exports the filtered log as CSV (semicolon-separated, UTF-8 with BOM for
-     * Excel). Streams rows so a large log does not load into memory.
+     * Excel). Streams rows in chunks so a large log does not load into memory;
+     * lazy() keeps eager loading (cursor() would run a query per row).
      */
     public function export(Request $request): StreamedResponse
     {
         $filters = $this->validatedFilters($request);
         $timezone = SettingsServiceProvider::displayTimezone();
-        $query = $this->filteredQuery($filters)->with('user');
+        $query = $this->filteredQuery($filters)->with(['user', 'impersonator']);
 
         return response()->streamDownload(function () use ($query, $timezone) {
             $out = fopen('php://output', 'wb');
             fwrite($out, "\xEF\xBB\xBF");
             fputcsv($out, ['Дата', 'Пользователь', 'Действие', 'Тип', 'Объект', 'Изменения'], ';');
 
-            foreach ($query->cursor() as $log) {
+            foreach ($query->lazy(500) as $log) {
                 /** @var ActivityLog $log */
                 fputcsv($out, array_map($this->csvCell(...), [
                     $log->created_at?->timezone($timezone)->format('Y-m-d H:i:s') ?? '',
-                    $log->user?->name ?? $log->actor_label ?? 'Система',
+                    $log->actorName(),
                     $log->actionLabel(),
                     $log->subjectTypeLabel(),
                     $log->subject_label ?? '',
@@ -149,7 +160,9 @@ class AdminActivityLogController extends Controller
 
     /**
      * JSON feed for the "bell": the unread counter and the latest 10 actions of
-     * other users over the past week, each marked as read or unread.
+     * other users over the past week, each marked as read or unread. Consecutive
+     * failed sign-ins for the same account collapse into one item with a count.
+     * Also returns the user's muted categories for the settings panel.
      */
     public function recent(Request $request): JsonResponse
     {
@@ -157,26 +170,85 @@ class AdminActivityLogController extends Controller
         $user = $request->user();
         $seenAt = $user->notifications_seen_at ?? now()->subDay();
 
-        $items = ActivityLog::forBell($user)
-            ->with('user')
+        $rows = ActivityLog::forBell($user)
+            ->with(['user', 'impersonator'])
             ->latest('created_at')
-            ->limit(10)
+            ->latest('id')
+            ->limit(50)
             ->get();
 
+        /** @var list<array{log: ActivityLog, repeat: int}> $groups */
+        $groups = [];
+        foreach ($rows as $log) {
+            $last = array_key_last($groups);
+            if ($last !== null && $log->action === 'login_failed'
+                && $groups[$last]['log']->action === 'login_failed'
+                && $groups[$last]['log']->subject_label === $log->subject_label) {
+                $groups[$last]['repeat']++;
+
+                continue;
+            }
+            if (count($groups) === 10) {
+                break;
+            }
+            $groups[] = ['log' => $log, 'repeat' => 1];
+        }
+
+        $items = collect($groups)->pluck('log');
         $urls = $this->subjectUrls($items);
 
         return response()->json([
-            'count' => ActivityLog::unreadFor($user)->count(),
-            'items' => $items->map(fn (ActivityLog $log) => [
-                'id' => $log->id,
-                'user' => $log->user?->name ?? $log->actor_label ?? 'Система',
-                'action' => $log->actionLabel(),
-                'subject' => $log->subject_label ?? $log->subjectTypeLabel(),
-                'time' => $log->created_at->diffForHumans(),
-                'iso_time' => $log->created_at->toIso8601String(),
-                'unread' => $log->created_at->greaterThan($seenAt),
-                'url' => $urls[$log->id] ?? route('admin.activity-log.index'),
-            ]),
+            'count' => ActivityLog::unreadCountFor($user),
+            'mutes' => array_values(array_intersect(ActivityLog::NOTIFICATION_CATEGORIES, $user->notification_mutes ?? [])),
+            'items' => collect($groups)->map(fn (array $group) => [
+                ...$this->bellItem($group['log'], $seenAt, $urls),
+                'repeat' => $group['repeat'],
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * @param  array<int, string>  $urls
+     * @return array<string, mixed>
+     */
+    private function bellItem(ActivityLog $log, \DateTimeInterface $seenAt, array $urls): array
+    {
+        return [
+            'id' => $log->id,
+            'user' => $log->actorName(),
+            'action' => $log->actionLabel(),
+            'category' => $log->category(),
+            'subject' => $log->subject_label ?: $log->subjectTypeLabel(),
+            'time' => $log->created_at->diffForHumans(),
+            'iso_time' => $log->created_at->toIso8601String(),
+            'unread' => $log->created_at->greaterThan($seenAt),
+            'url' => $urls[$log->id] ?? route('admin.activity-log.index'),
+        ];
+    }
+
+    /** Unread bell counter for the background refresh in the layout. */
+    public function count(Request $request): JsonResponse
+    {
+        return response()->json(['count' => ActivityLog::unreadCountFor($request->user())]);
+    }
+
+    /**
+     * Saves the bell categories the user muted. Stored silently: it is a personal
+     * preference, not an audited change.
+     */
+    public function preferences(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'mutes' => ['present', 'array'],
+            'mutes.*' => ['string', Rule::in(ActivityLog::NOTIFICATION_CATEGORIES)],
+        ]);
+
+        $mutes = array_values(array_unique($data['mutes']));
+        $request->user()->updateSilently(['notification_mutes' => $mutes === [] ? null : $mutes]);
+
+        return response()->json([
+            'mutes' => $mutes,
+            'count' => ActivityLog::unreadCountFor($request->user()),
         ]);
     }
 
@@ -189,14 +261,16 @@ class AdminActivityLogController extends Controller
     }
 
     /**
-     * @return array{action: ?string, subject_type: ?string, user_id: ?string, date_from: ?string, date_to: ?string}
+     * @return array{action: ?string, subject_type: ?string, subject_id: ?string, user_id: ?string, impersonator_id: ?string, date_from: ?string, date_to: ?string}
      */
     private function validatedFilters(Request $request): array
     {
         $data = $request->validate([
             'action' => ['nullable', 'string', 'max:64'],
             'subject_type' => ['nullable', 'string', 'max:255'],
+            'subject_id' => ['nullable', 'integer', 'min:1'],
             'user_id' => ['nullable', 'integer'],
+            'impersonator_id' => ['nullable', 'integer'],
             'date_from' => ['nullable', 'date_format:Y-m-d'],
             'date_to' => ['nullable', 'date_format:Y-m-d'],
         ]);
@@ -204,14 +278,17 @@ class AdminActivityLogController extends Controller
         return [
             'action' => $data['action'] ?? null,
             'subject_type' => $data['subject_type'] ?? null,
+            // An entity id only makes sense together with its type.
+            'subject_id' => isset($data['subject_id'], $data['subject_type']) ? (string) $data['subject_id'] : null,
             'user_id' => isset($data['user_id']) ? (string) $data['user_id'] : null,
+            'impersonator_id' => isset($data['impersonator_id']) ? (string) $data['impersonator_id'] : null,
             'date_from' => $data['date_from'] ?? null,
             'date_to' => $data['date_to'] ?? null,
         ];
     }
 
     /**
-     * @param  array{action: ?string, subject_type: ?string, user_id: ?string, date_from: ?string, date_to: ?string}  $filters
+     * @param  array{action: ?string, subject_type: ?string, subject_id: ?string, user_id: ?string, impersonator_id: ?string, date_from: ?string, date_to: ?string}  $filters
      */
     private function filteredQuery(array $filters): Builder
     {
@@ -222,13 +299,36 @@ class AdminActivityLogController extends Controller
             ->latest('id')
             ->when($filters['action'], fn (Builder $q, string $action) => $q->where('action', $action))
             ->when($filters['subject_type'], fn (Builder $q, string $type) => $q->where('subject_type', $type))
+            ->when($filters['subject_id'], fn (Builder $q, string $id) => $q->where('subject_id', (int) $id))
             ->when($filters['user_id'], fn (Builder $q, string $id) => $q->where('user_id', (int) $id))
+            ->when($filters['impersonator_id'], fn (Builder $q, string $id) => $q->where('impersonator_id', (int) $id))
             ->when($filters['date_from'], fn (Builder $q, string $date) => $q->where(
                 'created_at', '>=', Carbon::parse($date, $timezone)->startOfDay()->utc(),
             ))
             ->when($filters['date_to'], fn (Builder $q, string $date) => $q->where(
                 'created_at', '<', Carbon::parse($date, $timezone)->addDay()->startOfDay()->utc(),
             ));
+    }
+
+    /**
+     * The name of the entity selected by subject_type + subject_id, taken from
+     * its latest log entry (it may no longer exist).
+     *
+     * @param  array{subject_type: ?string, subject_id: ?string}  $filters
+     */
+    private function subjectLabel(array $filters): ?string
+    {
+        if ($filters['subject_id'] === null) {
+            return null;
+        }
+
+        $label = ActivityLog::where('subject_type', $filters['subject_type'])
+            ->where('subject_id', (int) $filters['subject_id'])
+            ->whereNotNull('subject_label')
+            ->latest('id')
+            ->value('subject_label');
+
+        return $label ?: '#'.$filters['subject_id'];
     }
 
     /** @return list<array{value: string, label: string}> */

@@ -8,11 +8,11 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Generates thumbnail versions for already uploaded WebP images.
+ * Generates thumbnail versions for already uploaded WebP/AVIF images.
  *
- * Walks the specified folders on the public disk (media by default) and, for each
- * *.webp file that does not yet have a corresponding *.thumb.webp, creates a
- * resized copy.
+ * Walks the specified folders on the media disk (media by default) and, for each
+ * original that does not yet have a corresponding *.thumb.webp / *.thumb.avif,
+ * creates a resized copy. Thumbnails and responsive copies (*.w960.webp) are skipped.
  *
  * Usage:
  *   php artisan media:backfill-thumbs
@@ -34,7 +34,7 @@ class BackfillThumbnails extends Command
     public function handle(): int
     {
         $dirs = $this->option('dir') ?: ['media'];
-        $disk = Storage::disk('public');
+        $disk = Storage::disk(Media::diskName());
 
         $created = 0;
         $skipped = 0;
@@ -44,11 +44,7 @@ class BackfillThumbnails extends Command
             $files = $disk->allFiles($dir);
 
             foreach ($files as $file) {
-                if (! str_ends_with($file, '.webp')) {
-                    continue;
-                }
-
-                if (str_ends_with($file, '.thumb.webp')) {
+                if (! preg_match('/\.(webp|avif)$/', $file) || ImageOptimizer::isDerivedPath($file)) {
                     continue;
                 }
 
@@ -91,7 +87,7 @@ class BackfillThumbnails extends Command
      * the listing does not return them. Files without a DB row (for example,
      * avatars) are simply not found — this is expected.
      *
-     * @param  string  $file  Path to the WebP file relative to the public disk (the filename column value)
+     * @param  string  $file  Path to the WebP file relative to the media disk (the filename column value)
      */
     private function markHasThumb(string $file): void
     {

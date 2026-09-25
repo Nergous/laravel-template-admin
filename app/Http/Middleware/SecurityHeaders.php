@@ -2,9 +2,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Media;
 use App\Models\Setting;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Vite;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -46,8 +48,13 @@ class SecurityHeaders
             $headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
         }
 
+        // The admin panel never belongs in search results, whatever seo.indexable says.
+        if ($request->is('admin', 'admin/*')) {
+            $headers->set('X-Robots-Tag', 'noindex, nofollow');
+        }
+
         if (app()->environment('production')) {
-            $headers->set('Content-Security-Policy', $this->contentSecurityPolicy($nonce));
+            $headers->set('Content-Security-Policy', $this->contentSecurityPolicy($nonce, $this->mediaDiskOrigins($request)));
         }
 
         return $response;
@@ -61,14 +68,18 @@ class SecurityHeaders
      * style="" attributes, and the XSS risk of inline styles is low.
      *
      * @param  string  $nonce  the CSP nonce of this request; substituted into script-src
+     * @param  list<string>  $mediaOrigins  external origin of the media disk (see mediaDiskOrigins())
      */
-    protected function contentSecurityPolicy(string $nonce): string
+    protected function contentSecurityPolicy(string $nonce, array $mediaOrigins = []): string
     {
+        $imageOrigins = array_values(array_unique([...$this->settingsImageOrigins(), ...$mediaOrigins]));
+
         return implode('; ', [
             "default-src 'self'",
             "script-src 'self' 'nonce-{$nonce}'",
             "style-src 'self' 'unsafe-inline'",
-            trim("img-src 'self' data: ".implode(' ', $this->settingsImageOrigins())),
+            trim("img-src 'self' data: ".implode(' ', $imageOrigins)),
+            trim("media-src 'self' ".implode(' ', $mediaOrigins)),
             "font-src 'self'",
             "connect-src 'self'",
             "object-src 'none'",
@@ -95,17 +106,43 @@ class SecurityHeaders
 
         $origins = [];
         foreach ($urls as $url) {
-            $parts = is_string($url) ? parse_url($url) : false;
-
-            if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])
-                || ! in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
-                continue;
+            $origin = $this->originOf($url);
+            if ($origin !== null) {
+                $origins[$origin] = $origin;
             }
-
-            $origin = strtolower($parts['scheme']).'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
-            $origins[$origin] = $origin;
         }
 
         return array_values($origins);
+    }
+
+    /**
+     * Origin of the media disk (config('media.disk')) when its files are served
+     * from another host — an S3 bucket or a CDN. The default public disk lives
+     * on the app's own origin and adds nothing.
+     *
+     * @return list<string>
+     */
+    protected function mediaDiskOrigins(Request $request): array
+    {
+        try {
+            $origin = $this->originOf(Storage::disk(Media::diskName())->url('media'));
+        } catch (\Throwable) {
+            return [];
+        }
+
+        return $origin === null || $origin === strtolower($request->getSchemeAndHttpHost()) ? [] : [$origin];
+    }
+
+    /** scheme://host[:port] of an absolute http(s) URL, null for anything else. */
+    private function originOf(mixed $url): ?string
+    {
+        $parts = is_string($url) ? parse_url($url) : false;
+
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])
+            || ! in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
+            return null;
+        }
+
+        return strtolower($parts['scheme'].'://'.$parts['host']).(isset($parts['port']) ? ':'.$parts['port'] : '');
     }
 }

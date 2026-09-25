@@ -116,7 +116,7 @@ class MediaTest extends TestCase
         $job = new UploadMedia('temp/x.jpg');
 
         $this->assertSame(3, $job->tries);
-        $this->assertSame(60, $job->timeout);
+        $this->assertSame(300, $job->timeout);
         $this->assertSame([10, 30, 60], $job->backoff());
         $this->assertLessThan(config('queue.connections.database.retry_after'), $job->timeout);
     }

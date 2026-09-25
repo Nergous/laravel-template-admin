@@ -21,15 +21,68 @@ and the project adheres to [semantic versioning](https://semver.org/).
 - Database backups page (`backups.view`, `backups.create`).
 - `resources/views/public.blade.php` with meta tags built from the SEO settings.
 - `media:prune-orphans` (daily) and database/storage/queue checks in `/up`.
+- "Sign in as": a superadmin can work under another account; the log records the
+  impersonator.
+- Job queue page (`queue.view`, `queue.manage`): pending jobs and failed jobs with
+  retry/delete.
+- Backups: deletion (`backups.delete`), separate rotation of manual dumps, optional
+  libsodium encryption (`app:backup-key`, `app:db-backup-decrypt`) and an offsite copy
+  to `BACKUP_DISK`.
+- Media: `MEDIA_DISK` (S3-compatible storage), alt text, folders with bulk moving,
+  stored width/height, upload checks before sending, failed-upload reports, per-type
+  counts, and a warning before deleting a file used in the settings.
+- Users: status and "must change password" filters, sorting by last login, bulk
+  block/unblock, CSV export, recent activity on the user page, copying a generated password.
+- Activity log: per-record history, date presets, readable field names; logouts, ended
+  sessions, settings changes and user exports are logged.
+- Dashboard: blocked users, sign-ins over 24 hours with a 7-day sparkline, media storage
+  size, and queue/backup health.
+- The bell counter refreshes in the background; the collapsed sidebar is remembered.
+- Bell: category filter chips, per-user muted categories, and repeated failed sign-ins for
+  one email grouped into a single item.
+- Session expiry warning with "stay signed in", a keep-alive ping while the user is
+  active, and a login redirect with a toast when a request hits an expired session.
+- Media: cropping with aspect presets, a focal point, skipping duplicate uploads by
+  content hash, a "used / unused" filter, folder counts, renaming and clearing folders,
+  dragging files onto a folder, responsive copies with `srcset` and optional AVIF output
+  (`MEDIA_IMAGE_FORMAT`).
+- Users: a block reason, a column picker, and "back to list" links that keep filters.
+- Activity log: an impersonator filter and diff highlighting for long values and lists.
+- `/robots.txt` and `/sitemap.xml` built from the SEO settings, with an
+  `App\Support\Sitemap` registry for project URLs; `X-Robots-Tag: noindex` on the admin panel.
+- Backups: queued manual dumps with a pending state and the last failure on the page,
+  verification of every dump, and `app:db-restore` with a safety dump taken first.
+- Permissions `users.export`, `users.impersonate` and `backups.download`; a migration
+  grants them to the roles that already had those abilities.
 
 ### Changed
 
+- Changing the email in the profile asks for the current password.
+- `app:db-backup` names dumps in UTC and dumps SQLite with `VACUUM INTO`.
+- Tests never write to `storage/logs` and ignore `MEDIA_DISK`/`BACKUP_DISK` from `.env`.
+- `symfony/html-sanitizer` removed (unused).
 - Dates are stored in UTC; the timezone setting now only affects display.
 - Search covers roles, finds media by display name and links users to their page.
 - The dashboard shows only the statistics the user may view.
+- "Sign in as" requires `users.impersonate` and the right to manage the target account
+  instead of being superadmin-only.
+- Queue `retry_after` defaults to 330 s and the upload job timeout is 300 s, so a long
+  upload is not picked up by a second worker.
+- MySQL dumps prefer `mariadb-dump`; PostgreSQL dumps use `--clean --if-exists`. The
+  Docker image includes the MariaDB and PostgreSQL clients.
+- The dashboard counts sign-ins with one aggregate query instead of loading every row.
+- The static `public/robots.txt` was removed in favor of the generated one.
 
 ### Fixed
 
+- Media upload, file replacement and marking notifications as read sent no CSRF token
+  after the token rotated (419 errors); `csrfHeaders()` now reads the `XSRF-TOKEN` cookie.
+- Restoring a soft-deleted record was logged twice.
+- Deleting a role or permission was logged before the delete ran.
+- The users list ran a query per row to check management rights.
+- The activity log export ran a query per row.
+- A superadmin impersonating a user with a forced password change was locked into the profile.
+- JPEG photos taken in portrait orientation were saved rotated.
 - A user with `users.edit` could edit, block or delete a more privileged account.
 - Passwords and remember tokens could land in the activity log diff.
 - Restoring a user whose email was taken by another account returned a 500.
@@ -39,6 +92,14 @@ and the project adheres to [semantic versioning](https://semver.org/).
   let view-only users click cells.
 - Clearing the activity log accepted future dates and left no trace.
 - Settings accepted a zero session lifetime and login limit.
+- Search treated `%` and `_` as wildcards.
+- `media:prune-orphans` deleted the responsive copies of images.
+- `media:backfill-thumbs` treated responsive copies as originals and skipped AVIF files.
+- `Setting::set()` and `setMany()` left stale values in the cache.
+- The focal point could be saved with only one coordinate.
+- An expired CSRF token or session made JSON actions fail silently.
+- Deleting a user or role lost the list's filters, and deleting the last rows of the last
+  page left an empty page.
 
 ## [2.1.2] — 2026-09-24
 

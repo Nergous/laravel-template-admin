@@ -81,16 +81,22 @@ class RbacGuard
             return false;
         }
 
+        $actor->loadMissing(['roles.permissions', 'permissions']);
+
         if (self::isAdmin($actor) || $actor->is($target)) {
             return true;
         }
 
-        if ($target->roles()->where('is_system', true)->exists()) {
+        $target->loadMissing(['roles.permissions', 'permissions']);
+
+        if ($target->roles->contains('is_system', true)) {
             return false;
         }
 
+        $actorPermissions = $actor->getAllPermissions()->pluck('name')->flip();
+
         return $target->getAllPermissions()
             ->pluck('name')
-            ->every(fn (string $permission) => $actor->can($permission));
+            ->every(fn (string $permission) => $actorPermissions->has($permission));
     }
 }

@@ -26,8 +26,8 @@ class BulkDestroyMediaRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'ids' => ['required', 'array'],
-            'ids.*' => ['integer', 'exists:media,id'],
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer', 'distinct', 'exists:media,id'],
         ];
     }
 

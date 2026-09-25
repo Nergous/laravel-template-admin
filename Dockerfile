@@ -66,6 +66,7 @@ COPY --from=frankenphp-builder /usr/local/bin/frankenphp /usr/local/bin/frankenp
 #   pdo_sqlite — SQLite (.env.example default, tests)
 #   redis      — cache/sessions/queues
 #   gd         — image optimization (ImageOptimizer -> WebP)
+#   exif       — JPEG orientation (ImageOptimizer rotates photos before WebP)
 #   intl       — localization (RU project)
 #   bcmath/pcntl/opcache/zip/mbstring — Laravel runtime + queue worker
 RUN install-php-extensions \
@@ -74,6 +75,7 @@ RUN install-php-extensions \
         pdo_sqlite \
         redis \
         gd \
+        exif \
         intl \
         bcmath \
         pcntl \
@@ -87,8 +89,10 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # Unprivileged application user (uid/gid 1000 — compatible with bind-mount).
 # The FrankenPHP image already contains www-data; we give it a predictable uid, and the
 # right to bind privileged ports isn't needed — we listen on :8000.
+# mariadb-client / postgresql-client provide mariadb-dump / pg_dump (and the
+# mariadb / psql clients for app:db-restore) for the backups page on MySQL/PostgreSQL.
 RUN set -eux; \
-    apk add --no-cache shadow su-exec; \
+    apk add --no-cache shadow su-exec mariadb-client postgresql-client; \
     usermod -u 1000 www-data 2>/dev/null || true; \
     groupmod -g 1000 www-data 2>/dev/null || true
 

@@ -42,6 +42,7 @@ class UserRequest extends FormRequest
             'roles' => ['nullable', 'array'],
             'roles.*' => ['string', Rule::exists('roles', 'name'), $this->roleAssignableByActor(...)],
             'is_active' => ['sometimes', 'boolean'],
+            'blocked_reason' => ['nullable', 'string', 'max:255'],
             'must_change_password' => ['sometimes', 'boolean'],
         ];
 

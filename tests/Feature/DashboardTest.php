@@ -83,4 +83,44 @@ class DashboardTest extends TestCase
 
         $this->assertTrue(Cache::has('admin.sidebar-counts'));
     }
+
+    public function test_kpis_include_blocked_users_and_logins(): void
+    {
+        $this->actingAsUserWith(['users.view', 'activity-log.view']);
+        User::factory()->create(['is_active' => false]);
+        ActivityLog::query()->delete();
+        ActivityLog::create(['action' => 'login', 'created_at' => now()->subHour()]);
+        ActivityLog::create(['action' => 'login', 'created_at' => now()->subDays(2)]);
+        ActivityLog::create(['action' => 'login_failed', 'created_at' => now()->subHour()]);
+
+        $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+            ->where('stats.users.sub', '1 заблокировано')
+            ->where('stats.logins.value', 1)
+            ->where('stats.logins.sub', '1 неудачных за 24 ч')
+            ->where('stats.logins.spark', [0, 0, 0, 0, 1, 0, 1])
+        );
+    }
+
+    public function test_system_health_is_gated_by_permissions(): void
+    {
+        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'dash-backups-'.uniqid();
+        config(['backup.path' => $dir]);
+
+        try {
+            $this->actingAsUserWith([]);
+            $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+                ->where('system.queue', null)
+                ->where('system.backup', null)
+            );
+
+            $this->actingAsUserWith(['queue.view', 'backups.view']);
+            $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+                ->where('system.queue.failed', 0)
+                ->where('system.backup.latest', null)
+                ->where('system.backup.stale', true)
+            );
+        } finally {
+            @rmdir($dir);
+        }
+    }
 }

@@ -7,7 +7,9 @@ use App\Models\Media;
 use App\Models\Role;
 use App\Models\User;
 use App\Providers\SettingsServiceProvider;
+use App\Support\Impersonation;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 use Spatie\Permission\Models\Permission;
@@ -61,6 +63,13 @@ class HandleInertiaRequests extends Middleware
             // Display time zone (settings → general.timezone); dates are stored in UTC.
             'timezone' => fn () => SettingsServiceProvider::displayTimezone(),
 
+            // Idle session lifetime in minutes (security.session_lifetime) — drives
+            // the "session is about to expire" warning in the layout. Null with a
+            // "remember me" cookie: an expired session then signs back in silently.
+            'sessionLifetime' => fn () => $user && ! $request->hasCookie(Auth::guard('web')->getRecallerName())
+                ? (int) config('session.lifetime')
+                : null,
+
             'auth' => [
                 'user' => $user ? [
                     'id' => $user->id,
@@ -69,6 +78,9 @@ class HandleInertiaRequests extends Middleware
                     'roles' => $user->getRoleNames(),
                     'must_change_password' => (bool) $user->must_change_password,
                 ] : null,
+
+                // Set while an administrator works "as" this user (banner with a way back).
+                'impersonator' => $user ? $this->impersonator() : null,
 
                 // Names of all the user's permissions — for conditional rendering in Vue
                 // (can('users.view')). The server still checks independently.
@@ -79,7 +91,7 @@ class HandleInertiaRequests extends Middleware
             // (do not depend on the user) and are cached for 30s; we only return
             // the sections for which the user has the *.view permission — otherwise
             // a badge would reveal a number where there is no access. The bell count
-            // is personal: unread actions of other users (see ActivityLog::unreadFor).
+            // is personal: unread actions of other users (see ActivityLog::unreadCountFor).
             'counts' => $user ? function () use ($user) {
                 $all = Cache::remember('admin.sidebar-counts', 30, fn () => [
                     'users' => User::count(),
@@ -94,7 +106,7 @@ class HandleInertiaRequests extends Middleware
                     'permissions' => $user->can('permissions.view') ? $all['permissions'] : null,
                     'media' => $user->can('media.view') ? $all['media'] : null,
                     'recentActivity' => $user->can('activity-log.view')
-                        ? ActivityLog::unreadFor($user)->count()
+                        ? ActivityLog::unreadCountFor($user)
                         : null,
                 ];
             } : null,
@@ -106,5 +118,14 @@ class HandleInertiaRequests extends Middleware
                 'info' => fn () => $request->session()->get('info'),
             ],
         ];
+    }
+
+    /** @return array{id: int, name: string}|null */
+    private function impersonator(): ?array
+    {
+        $id = Impersonation::impersonatorId();
+        $impersonator = $id !== null ? User::find($id, ['id', 'name']) : null;
+
+        return $impersonator ? ['id' => $impersonator->id, 'name' => $impersonator->name] : null;
     }
 }

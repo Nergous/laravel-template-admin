@@ -25,6 +25,8 @@ class BulkUserActionRequest extends FormRequest
                 'nullable', 'string',
                 Rule::when($this->input('role') !== User::WITHOUT_ROLES, ['exists:roles,name']),
             ],
+            'status' => ['nullable', Rule::in(['active', 'blocked'])],
+            'must_change_password' => ['nullable', 'boolean'],
             'ids' => [
                 Rule::requiredIf(fn () => ! $this->boolean('all')),
                 'array',

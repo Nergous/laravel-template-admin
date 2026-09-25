@@ -9,5 +9,5 @@ namespace App\Http\Sorts;
  */
 class UserSort extends Sort
 {
-    protected array $allowedSorts = ['id', 'name', 'email', 'created_at', 'deleted_at'];
+    protected array $allowedSorts = ['id', 'name', 'email', 'last_login_at', 'created_at', 'deleted_at'];
 }

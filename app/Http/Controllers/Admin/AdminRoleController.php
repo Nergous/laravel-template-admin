@@ -34,7 +34,7 @@ class AdminRoleController extends Controller
     /**
      * List of roles with permission and user counts, with search by name.
      */
-    public function index(Request $request): Response
+    public function index(Request $request): Response|RedirectResponse
     {
         $query = Role::query()
             ->withCount(['permissions', 'users']);
@@ -44,6 +44,10 @@ class AdminRoleController extends Controller
         }
 
         $roles = $query->orderBy('name')->paginate(15)->withQueryString();
+
+        if ($redirect = $this->redirectPastLastPage($roles, $request)) {
+            return $redirect;
+        }
 
         // Send only the data used by the overview; the detail/form pages load more.
         $roles->setCollection($roles->getCollection()->map(fn (Role $role) => [
@@ -118,8 +122,7 @@ class AdminRoleController extends Controller
     {
         $this->roles->delete($role);
 
-        return redirect()
-            ->route('admin.roles.index')
+        return $this->redirectToList('admin.roles.index')
             ->with('success', 'Роль удалена');
     }
 

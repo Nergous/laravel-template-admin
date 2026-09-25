@@ -7,6 +7,8 @@ export interface AdminUser {
     email: string;
     roles: { id?: number; name: string; description?: string | null }[];
     is_active?: boolean;
+    /** Why the account is blocked (only while is_active is false). */
+    blocked_reason?: string | null;
     must_change_password?: boolean;
     last_login_at?: string | null;
     /** Whether the current user may edit/delete this account (server rule). */
@@ -42,8 +44,19 @@ export interface MediaItem {
     size: number;
     url: string;
     thumb_url?: string | null;
+    /** Responsive candidates ("url 600w, url 960w, …"); empty for non-images. */
+    srcset?: string;
+    width?: number | null;
+    height?: number | null;
+    /** Focal point as fractions of the width/height; null — the center. */
+    focal_x?: number | null;
+    focal_y?: number | null;
     created_at?: string;
     created_local?: string;
+    alt?: string | null;
+    folder?: string | null;
+    /** Places that reference the file (settings favicon, OG image…). */
+    usages?: string[];
 }
 
 /** File details from GET /admin/media/{id}. */
@@ -82,6 +95,8 @@ export interface SharedProps extends PageProps {
     appName: string;
     /** Display time zone (IANA); dates arrive as UTC ISO strings. */
     timezone: string;
+    /** Idle session lifetime in minutes; null with a "remember me" cookie. */
+    sessionLifetime?: number | null;
     auth: {
         user: {
             id: number;
@@ -90,6 +105,8 @@ export interface SharedProps extends PageProps {
             roles: string[];
             must_change_password: boolean;
         } | null;
+        /** The administrator behind a "sign in as" session, null otherwise. */
+        impersonator?: { id: number; name: string } | null;
         can: string[];
     };
     counts: {
@@ -103,3 +120,12 @@ export interface SharedProps extends PageProps {
         Record<"success" | "error" | "warning" | "info", string | null>
     >;
 }
+
+/** Bell notification categories (ActivityLog::NOTIFICATION_CATEGORIES). */
+export type NotificationCategory =
+    | "auth"
+    | "users"
+    | "roles"
+    | "media"
+    | "settings"
+    | "system";

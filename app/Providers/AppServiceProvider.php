@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\Setting;
+use App\Services\QueueStats;
+use App\Support\Sitemap;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Events\DiagnosingHealth;
 use Illuminate\Http\Request;
@@ -24,10 +26,13 @@ use Illuminate\Validation\Rules\Password;
  */
 class AppServiceProvider extends ServiceProvider
 {
-    /** Registering bindings in the container. Currently empty — there are no custom bindings. */
+    /** How many times the per-account login limit one IP may use across all emails. */
+    public const LOGIN_IP_MULTIPLIER = 4;
+
+    /** Container bindings: the sitemap registry is shared so providers can add sources. */
     public function register(): void
     {
-        //
+        $this->app->singleton(Sitemap::class);
     }
 
     /**
@@ -70,7 +75,12 @@ class AppServiceProvider extends ServiceProvider
             // on a different IP.
             $email = Str::lower((string) $request->input('email'));
 
-            return Limit::perMinute(max(1, $max))->by($email.'|'.$request->ip());
+            // The second, wider limit caps one IP cycling through many emails
+            // (credential stuffing), which the email+ip key alone does not stop.
+            return [
+                Limit::perMinute(max(1, $max))->by($email.'|'.$request->ip()),
+                Limit::perMinute(max(1, $max) * self::LOGIN_IP_MULTIPLIER)->by('ip|'.$request->ip()),
+            ];
         });
 
         Event::listen(DiagnosingHealth::class, fn () => $this->diagnoseHealth());
@@ -92,16 +102,9 @@ class AppServiceProvider extends ServiceProvider
             throw new \RuntimeException('storage/app is not writable');
         }
 
-        $queue = config('queue.default');
-        if (config("queue.connections.{$queue}.driver") === 'database') {
-            $oldest = DB::connection(config("queue.connections.{$queue}.connection"))
-                ->table(config("queue.connections.{$queue}.table", 'jobs'))
-                ->whereNull('reserved_at')
-                ->min('available_at');
-
-            if ($oldest !== null && (int) $oldest < now()->subMinutes(15)->getTimestamp()) {
-                throw new \RuntimeException('Queue backlog: a job has waited more than 15 minutes');
-            }
+        $oldest = $this->app->make(QueueStats::class)->oldestPendingAt();
+        if ($oldest !== null && $oldest->lt(now()->subMinutes(15))) {
+            throw new \RuntimeException('Queue backlog: a job has waited more than 15 minutes');
         }
     }
 }

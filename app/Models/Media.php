@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Storage;
 /**
  * Media model from the library.
  *
- * Files live on the public disk under the media/ directory.
+ * Files live on the configured media disk under the media/ directory.
  * Uploading is performed asynchronously via the UploadMedia job.
  *
  * Authorship: the TracksAuthor trait is used (creator()/editor() relations). The
@@ -24,28 +24,65 @@ use Illuminate\Support\Facades\Storage;
  * frontend).
  *
  * @property int $id
- * @property string $filename File path relative to the public disk (for example: media/abc123.webp)
+ * @property string $filename File path relative to the media disk (for example: media/abc123.webp)
  * @property string|null $original_name Original file name at upload time
+ * @property string|null $alt Alternative text for images
+ * @property string|null $folder Library folder (a flat label; null — outside any folder)
  * @property string|null $mime_type MIME type (for example image/webp, video/mp4)
  * @property string|null $type Category: image|video|audio|document|other
  * @property int|null $size Size in bytes
+ * @property int|null $width Image width in px after processing
+ * @property int|null $height Image height in px after processing
+ * @property float|null $focal_x Focal point, fraction of the width (0..1); null — the center
+ * @property float|null $focal_y Focal point, fraction of the height (0..1); null — the center
+ * @property list<int>|null $variants Widths of the responsive copies (see ImageOptimizer::variantPath())
+ * @property string|null $upload_batch Upload request that produced the current file (progress polling)
+ * @property string|null $content_hash SHA-256 of the uploaded file (duplicate detection)
  */
 class Media extends Model
 {
     use HasSearch, LogsActivity, TracksAuthor;
 
-    protected $fillable = ['filename', 'original_name', 'mime_type', 'type', 'size', 'has_thumb'];
+    protected $fillable = [
+        'filename',
+        'original_name',
+        'alt',
+        'folder',
+        'mime_type',
+        'type',
+        'size',
+        'width',
+        'height',
+        'has_thumb',
+        'focal_x',
+        'focal_y',
+        'variants',
+        'upload_batch',
+        'content_hash',
+    ];
 
     protected $casts = [
         'size' => 'integer',
+        'width' => 'integer',
+        'height' => 'integer',
         'has_thumb' => 'boolean',
+        'focal_x' => 'float',
+        'focal_y' => 'float',
+        'variants' => 'array',
     ];
+
+    /**
+     * Technical columns kept out of the activity log diff.
+     *
+     * @var list<string>
+     */
+    protected array $auditExclude = ['upload_batch', 'content_hash', 'variants'];
 
     /**
      * Public URLs are mixed into serialization so the frontend (media library
      * cards) immediately gets links to the original and the thumbnail.
      */
-    protected $appends = ['url', 'thumb_url'];
+    protected $appends = ['url', 'thumb_url', 'srcset'];
 
     public function getUrlAttribute(): string
     {
@@ -55,6 +92,11 @@ class Media extends Model
     public function getThumbUrlAttribute(): string
     {
         return $this->thumbUrl();
+    }
+
+    public function getSrcsetAttribute(): string
+    {
+        return $this->srcset();
     }
 
     /**
@@ -97,7 +139,7 @@ class Media extends Model
      */
     public function url(): string
     {
-        return Storage::url($this->filename);
+        return Storage::disk(self::diskName())->url($this->filename);
     }
 
     /**
@@ -109,25 +151,67 @@ class Media extends Model
             return $this->url();
         }
 
-        return Storage::url(ImageOptimizer::thumbPath($this->filename));
+        return Storage::disk(self::diskName())->url(ImageOptimizer::thumbPath($this->filename));
     }
 
     /**
-     * Deletes the file itself and its generated thumbnail from the public disk.
-     *
-     * The single cleanup point for media files — call it from any deletion path
-     * so as not to leave orphaned files. For non-images (and the GD-less fallback)
-     * thumbPath() returns the path itself — in that case we skip the second delete.
+     * srcset value for responsive images: the thumbnail, the responsive copies and
+     * the original with their widths. Empty for non-images or unknown widths.
      */
-    public function deleteFiles(): void
+    public function srcset(): string
     {
-        $disk = Storage::disk('public');
-        $disk->delete($this->filename);
+        if (! $this->isImage() || $this->width === null) {
+            return '';
+        }
+
+        $disk = Storage::disk(self::diskName());
+        $candidates = [];
+
+        if ($this->has_thumb) {
+            $candidates[ImageOptimizer::THUMB_MAX_WIDTH] = $this->thumbUrl();
+        }
+
+        foreach ($this->variants ?? [] as $width) {
+            $candidates[(int) $width] = $disk->url(ImageOptimizer::variantPath($this->filename, (int) $width));
+        }
+
+        $candidates[$this->width] = $this->url();
+        ksort($candidates);
+
+        return collect($candidates)->map(fn (string $url, int $width) => "{$url} {$width}w")->implode(', ');
+    }
+
+    /**
+     * Every file of this record on the media disk: the original, its thumbnail and
+     * the responsive copies. Missing derived files are harmless to delete.
+     *
+     * @return list<string>
+     */
+    public function storedPaths(): array
+    {
+        $paths = [$this->filename];
 
         $thumb = ImageOptimizer::thumbPath($this->filename);
         if ($thumb !== $this->filename) {
-            $disk->delete($thumb);
+            $paths[] = $thumb;
         }
+
+        foreach ($this->variants ?? [] as $width) {
+            $paths[] = ImageOptimizer::variantPath($this->filename, (int) $width);
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
+     * Deletes the file itself and its generated thumbnail and responsive copies.
+     *
+     * The single cleanup point for media files — call it from any deletion path
+     * so as not to leave orphaned files.
+     */
+    public function deleteFiles(): void
+    {
+        Storage::disk(self::diskName())->delete($this->storedPaths());
     }
 
     /**
@@ -138,5 +222,11 @@ class Media extends Model
     public function scopeSearch(Builder $query, ?string $search): Builder
     {
         return $this->scopeSearchLike($query, $search, ['original_name', 'filename']);
+    }
+
+    /** Media disk name (config('media.disk'), public by default). */
+    public static function diskName(): string
+    {
+        return (string) config('media.disk', 'public');
     }
 }

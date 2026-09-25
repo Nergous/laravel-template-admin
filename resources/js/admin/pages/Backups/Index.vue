@@ -127,8 +127,8 @@ function confirmDelete() {
                         Копии дублируются на диск <code>{{ offsite }}</code
                         >.
                     </template>
-                    Все действия записываются в журнал.
-                    Восстановление из копии —
+                    Все действия записываются в журнал. Восстановление из копии
+                    —
                     <code>php artisan app:db-restore имя-файла</code>.
                     <template v-if="driver">
                         Драйвер БД: <code>{{ driver }}</code

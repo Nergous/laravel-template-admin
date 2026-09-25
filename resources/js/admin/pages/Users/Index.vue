@@ -184,7 +184,9 @@ watch(hiddenColumns, (keys) => {
         // Storage unavailable: the choice lasts until the page is reloaded.
     }
 });
-const columnChoices = allColumns.filter((c) => OPTIONAL_COLUMNS.includes(c.key));
+const columnChoices = allColumns.filter((c) =>
+    OPTIONAL_COLUMNS.includes(c.key),
+);
 function toggleColumn(key: string, shown: boolean) {
     hiddenColumns.value = shown
         ? hiddenColumns.value.filter((k) => k !== key)

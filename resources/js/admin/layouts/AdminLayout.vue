@@ -548,8 +548,8 @@ async function markNotificationsSeen() {
         >
             <p class="session-warn">
                 Вы давно не работали в панели. Сессия завершится через
-                <b>{{ formatSeconds(session.secondsLeft.value) }}</b>, и
-                несохранённые изменения на странице пропадут.
+                <b>{{ formatSeconds(session.secondsLeft.value) }}</b
+                >, и несохранённые изменения на странице пропадут.
             </p>
             <template #footer>
                 <NButton variant="secondary" @click="logout">Выйти</NButton>
@@ -729,10 +729,13 @@ async function markNotificationsSeen() {
             <div v-if="impersonator && user" class="imp-banner" role="status">
                 <NIcon name="user" :size="16" />
                 <span class="imp-banner__text">
-                    Вы работаете от имени <b>{{ user.name }}</b>. Ваш аккаунт:
-                    {{ impersonator.name }}.
+                    Вы работаете от имени <b>{{ user.name }}</b
+                    >. Ваш аккаунт: {{ impersonator.name }}.
                 </span>
-                <NButton size="sm" variant="secondary" @click="stopImpersonation"
+                <NButton
+                    size="sm"
+                    variant="secondary"
+                    @click="stopImpersonation"
                     >Вернуться к своему аккаунту</NButton
                 >
             </div>

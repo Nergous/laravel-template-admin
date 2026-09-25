@@ -37,7 +37,11 @@ function submit() {
         <div class="page entity-page" :class="{ 'entity-page--wide': isEdit }">
             <div class="entity-page__bar">
                 <Link
-                    :href="isEdit ? '/admin/roles/' + role.id : listUrl('/admin/roles')"
+                    :href="
+                        isEdit
+                            ? '/admin/roles/' + role.id
+                            : listUrl('/admin/roles')
+                    "
                     class="entity-page__back"
                     >← {{ isEdit ? "К роли" : "К списку" }}</Link
                 >

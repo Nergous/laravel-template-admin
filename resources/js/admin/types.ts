@@ -123,9 +123,4 @@ export interface SharedProps extends PageProps {
 
 /** Bell notification categories (ActivityLog::NOTIFICATION_CATEGORIES). */
 export type NotificationCategory =
-    | "auth"
-    | "users"
-    | "roles"
-    | "media"
-    | "settings"
-    | "system";
+    "auth" | "users" | "roles" | "media" | "settings" | "system";

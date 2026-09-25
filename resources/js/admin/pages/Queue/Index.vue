@@ -142,9 +142,7 @@ function goToPage(page: number) {
                 <NStatCard
                     label="Ожидают обработки"
                     icon="layers"
-                    :value="
-                        isDatabase ? formatNumber(summary.pending) : 'н/д'
-                    "
+                    :value="isDatabase ? formatNumber(summary.pending) : 'н/д'"
                     :sub="
                         isDatabase
                             ? `соединение ${connection}`
@@ -208,7 +206,11 @@ function goToPage(page: number) {
                 </div>
 
                 <ul v-if="failedJobs.data.length" class="list">
-                    <li v-for="job in failedJobs.data" :key="job.id" class="row">
+                    <li
+                        v-for="job in failedJobs.data"
+                        :key="job.id"
+                        class="row"
+                    >
                         <span class="row__ico"
                             ><NIcon name="alert-triangle" :size="18"
                         /></span>

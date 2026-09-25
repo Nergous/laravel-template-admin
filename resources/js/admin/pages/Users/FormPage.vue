@@ -46,7 +46,9 @@ function submit() {
             <div class="entity-page__bar">
                 <Link
                     :href="
-                        isEdit ? `/admin/users/${user.id}` : listUrl('/admin/users')
+                        isEdit
+                            ? `/admin/users/${user.id}`
+                            : listUrl('/admin/users')
                     "
                     class="entity-page__back"
                     >← {{ isEdit ? "К пользователю" : "К списку" }}</Link

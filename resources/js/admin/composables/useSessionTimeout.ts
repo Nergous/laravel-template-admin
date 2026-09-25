@@ -11,7 +11,12 @@ import {
 export const ACTIVE_WINDOW_MS = 5 * 60_000;
 const WARN_BEFORE_MS = 60_000;
 const CHECK_EVERY_MS = 5_000;
-const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+const ACTIVITY_EVENTS = [
+    "pointerdown",
+    "keydown",
+    "wheel",
+    "touchstart",
+] as const;
 
 /**
  * Tracks user activity against the server session lifetime.
@@ -55,7 +60,10 @@ export function useSessionTimeout(lifetimeMinutes: () => number | null): {
         const lifetime = lifetimeMinutes();
         if (warning.value || !lifetime) return;
         // Refresh the session in the background once half of it has passed.
-        if (Date.now() - lastSessionTouch() > Math.min(ACTIVE_WINDOW_MS, (lifetime * 60_000) / 2)) {
+        if (
+            Date.now() - lastSessionTouch() >
+            Math.min(ACTIVE_WINDOW_MS, (lifetime * 60_000) / 2)
+        ) {
             ping();
         }
     }

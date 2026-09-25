@@ -692,7 +692,8 @@ const moveError = ref("");
 const moveLoading = ref(false);
 function askMove() {
     if (!selectedCount.value) return;
-    moveFolder.value = folderFilter.value === NO_FOLDER ? "" : folderFilter.value;
+    moveFolder.value =
+        folderFilter.value === NO_FOLDER ? "" : folderFilter.value;
     moveError.value = "";
     moveOpen.value = true;
 }
@@ -1089,7 +1090,11 @@ const cropAspects = [
 ];
 const cropSaving = ref(false);
 const cropError = ref("");
-let cropDrag: { mode: "move" | "draw" | "resize"; start: { x: number; y: number }; box: Box } | null = null;
+let cropDrag: {
+    mode: "move" | "draw" | "resize";
+    start: { x: number; y: number };
+    box: Box;
+} | null = null;
 
 function imageRatio() {
     const d = info.value?.dimensions;
@@ -1124,7 +1129,8 @@ watch(cropAspect, () => {
 function onCropDown(e: PointerEvent) {
     const point = stagePoint(cropStage.value, e);
     const role = (e.target as HTMLElement).dataset.crop;
-    const mode = role === "handle" ? "resize" : role === "box" ? "move" : "draw";
+    const mode =
+        role === "handle" ? "resize" : role === "box" ? "move" : "draw";
     cropDrag = { mode, start: point, box: { ...cropBox.value } };
     if (mode === "draw") cropBox.value = { ...point, width: 0, height: 0 };
     cropStage.value?.setPointerCapture(e.pointerId);
@@ -1403,7 +1409,9 @@ function saveFocal() {
             >
                 <span class="dropbar__label"
                     >Отпустите на папке ({{ dragIds.length }}
-                    {{ pluralize(dragIds.length, "файл", "файла", "файлов") }}):</span
+                    {{
+                        pluralize(dragIds.length, "файл", "файла", "файлов")
+                    }}):</span
                 >
                 <span
                     v-for="f in ['', ...folders]"
@@ -1942,7 +1950,11 @@ function saveFocal() {
                     @pointerup="onCropUp"
                     @pointercancel="onCropUp"
                 >
-                    <img :src="info.url" :alt="info.alt || fileName(info)" draggable="false" />
+                    <img
+                        :src="info.url"
+                        :alt="info.alt || fileName(info)"
+                        draggable="false"
+                    />
                     <div
                         class="cropbox"
                         data-crop="box"
@@ -1984,8 +1996,8 @@ function saveFocal() {
         >
             <div v-if="info" class="imgedit">
                 <p class="imgedit__hint">
-                    Нажмите на главное в кадре. При обрезке карточками и
-                    превью эта точка останется видимой.
+                    Нажмите на главное в кадре. При обрезке карточками и превью
+                    эта точка останется видимой.
                 </p>
                 <div
                     ref="focalStage"

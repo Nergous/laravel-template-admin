@@ -35,7 +35,9 @@ export function lastSessionTouch(): number {
 }
 
 /** Sends the user to the login page once, with a toast explaining why. */
-export function redirectToLogin(message = "Войдите снова, чтобы продолжить."): void {
+export function redirectToLogin(
+    message = "Войдите снова, чтобы продолжить.",
+): void {
     if (redirecting) return;
     redirecting = true;
     useToast().warning("Сессия истекла", message);

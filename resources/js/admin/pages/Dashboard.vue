@@ -20,7 +20,12 @@ import {
 import { swatchColor } from "@/lib/swatch";
 import { activityVisual } from "@/admin/activityVisuals";
 
-type StatCard = { value: number; sub: string; bytes?: number; spark?: number[] };
+type StatCard = {
+    value: number;
+    sub: string;
+    bytes?: number;
+    spark?: number[];
+};
 
 type SystemHealth = {
     queue: {
@@ -147,7 +152,9 @@ const bars = computed(() => {
                         v-if="system.queue.oldest_pending_at"
                         class="system-sub"
                         >Самая старая:
-                        {{ formatRelative(system.queue.oldest_pending_at) }}</span
+                        {{
+                            formatRelative(system.queue.oldest_pending_at)
+                        }}</span
                     >
                 </Link>
                 <Link

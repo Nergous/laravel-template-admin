@@ -10,18 +10,18 @@
         "format:check": "prettier --check \"resources/js/**/*.{ts,vue}\" vite.config.ts tsconfig.json"
     },
     "devDependencies": {
-        "@types/node": "^26.5.1",
+        "@types/node": "^26.6.3",
         "concurrently": "^10.0.5",
         "laravel-vite-plugin": "^3.2.0",
-        "prettier": "^3.9.6",
+        "prettier": "^3.9.9",
         "typescript": "^6.0.2",
-        "vite": "^8.3.0",
+        "vite": "^8.3.1",
         "vue-tsc": "^3.3.11"
     },
     "dependencies": {
         "@inertiajs/vue3": "^3.7.1",
-        "@vitejs/plugin-vue": "^6.0.8",
+        "@vitejs/plugin-vue": "^6.0.9",
         "nergous-ui-vue": "1.0.6",
-        "vue": "^3.5.42"
+        "vue": "^3.5.43"
     }
 }

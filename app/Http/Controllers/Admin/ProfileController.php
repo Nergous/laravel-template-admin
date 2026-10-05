@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Models\User;
+use Illuminate\Auth\SessionGuard;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,9 +28,16 @@ use Inertia\Response;
  *
  * The session list and per-session sign-out need SESSION_DRIVER=database; with
  * other drivers only "sign out on other devices" is available.
+ *
+ * Ending sessions also ends "remember me" on the other devices: the remember
+ * token is per user, so it is cycled and the current device, if it was
+ * remembered, gets a fresh cookie and stays signed in.
  */
 class ProfileController extends Controller
 {
+    /** Lifetime of a re-issued "remember me" cookie when auth.guards.web.remember is unset (SessionGuard default). */
+    private const REMEMBER_MINUTES = 576000;
+
     public function show(Request $request): Response
     {
         /** @var User $user */
@@ -122,13 +130,17 @@ class ProfileController extends Controller
             $ended = $this->sessionQuery($user)
                 ->where('id', '!=', $request->session()->getId())
                 ->delete();
-
-            // "Remember me" cookies on other devices would sign them back in.
-            $user->updateSilently(['remember_token' => Str::random(60)]);
         } else {
             $ended = null;
-            Auth::logoutOtherDevices($request->input('password'));
+
+            // Without a session table the other sessions are ended through
+            // AuthenticateSession: a new hash of the same password no longer
+            // matches the hash they stored. Saved silently — this is not a
+            // password change and must not appear as one in the activity log.
+            $user->updateSilently(['password' => Hash::make($request->input('password'))]);
         }
+
+        $this->forgetOtherRememberedDevices($request, $user);
 
         ActivityLog::record($user, 'sessions_ended', $ended !== null ? ['sessions' => [null, $ended]] : null);
 
@@ -156,12 +168,37 @@ class ProfileController extends Controller
         $session = $this->sessionQuery($user)->where('id', $id)->first(['ip_address', 'user_agent']);
         $this->sessionQuery($user)->where('id', $id)->delete();
 
+        // The ended device's "remember me" cookie would sign it straight back in.
+        $this->forgetOtherRememberedDevices($request, $user);
+
         ActivityLog::record($user, 'session_ended', [
             'ip' => [$session?->ip_address, null],
             'agent' => [$session?->user_agent ? Str::limit($session->user_agent, 120) : null, null],
         ]);
 
         return back()->with('success', 'Сеанс завершён');
+    }
+
+    /**
+     * Cycles the remember token, so "remember me" cookies of other devices stop
+     * working, and re-issues the cookie of the current device if it had one
+     * (with the current password hash, which AuthenticateSession checks).
+     */
+    private function forgetOtherRememberedDevices(Request $request, User $user): void
+    {
+        $user->updateSilently(['remember_token' => Str::random(60)]);
+
+        $guard = Auth::guard('web');
+
+        if (! $guard instanceof SessionGuard || ! $request->cookies->has($guard->getRecallerName())) {
+            return;
+        }
+
+        $guard->getCookieJar()->queue($guard->getCookieJar()->make(
+            $guard->getRecallerName(),
+            $user->getAuthIdentifier().'|'.$user->getRememberToken().'|'.$guard->hashPasswordForCookie($user->getAuthPassword()),
+            (int) (config('auth.guards.web.remember') ?: self::REMEMBER_MINUTES),
+        ));
     }
 
     /**

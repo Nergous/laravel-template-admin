@@ -14,14 +14,18 @@ use App\Http\Requests\ReplaceMediaRequest;
 use App\Http\Sorts\MediaSort;
 use App\Models\ActivityLog;
 use App\Models\Media;
+use App\Models\MediaFolder;
 use App\Providers\SettingsServiceProvider;
 use App\Services\ImageOptimizer;
 use App\Services\MediaService;
+use App\Support\MediaFolderPath;
 use App\Support\MediaUsage;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -35,10 +39,13 @@ use Inertia\Response;
 class AdminMediaController extends Controller
 {
     /** Media categories accepted by the type filter. */
-    private const TYPES = ['image', 'video', 'audio', 'document', 'other'];
+    public const TYPES = ['image', 'video', 'audio', 'document', 'other'];
 
-    /** Usage filter values: files referenced somewhere (see MediaUsage) or not. */
-    private const USAGES = ['used', 'unused'];
+    /**
+     * Usage filter values: files referenced somewhere (see MediaUsage) or not,
+     * and images without alternative text.
+     */
+    public const USAGES = ['used', 'unused', 'no_alt'];
 
     public function __construct(
         private readonly MediaService $media,
@@ -48,30 +55,36 @@ class AdminMediaController extends Controller
     /**
      * List of media with a type filter, search, sorting, and page size.
      *
+     * The library browses like a file manager: a level lists its own files plus
+     * its subfolders (taken from the folders prop on the client), ?folder= opens
+     * a folder by path, none — the root. Search and the usage filter at the root
+     * look through the whole library.
+     *
      * Supported sort parameters (GET):
-     * - sort (id|original_name|created_at) — the sort field
+     * - sort (id|original_name|created_at|size|mime_type) — the sort field
      * - direction (asc|desc)               — the sort direction
      * - type (image|video|audio|document|other), search, per_page
-     * - folder — a folder name, or __none__ for files outside any folder
-     * - usage (used|unused) — whether the settings reference the file
+     * - folder — the open folder's path ("Баннеры/2026"); empty — the root level
+     * - usage (used|unused|no_alt) — whether the file is referenced, or lacks alt
      *
      * typeCounts ignores the type filter (it labels the type switch), but
-     * respects search, folder and usage.
+     * respects search, the open level and usage.
      */
     public function index(Request $request, MediaSort $sort, MediaPerPage $perPage): Response|RedirectResponse
     {
-        $type = in_array($request->query('type'), self::TYPES, true) ? $request->query('type') : null;
-        $usage = in_array($request->query('usage'), self::USAGES, true) ? $request->query('usage') : null;
-        $folder = $request->query('folder');
-        $folder = is_string($folder) && mb_strlen($folder) <= 100 ? $folder : null;
-        $referenced = $usage !== null ? $this->usage->referencedFilenames() : [];
+        ['type' => $type, 'usage' => $usage, 'folder' => $folder] = $this->filters($request->query());
 
-        $base = Media::query()
-            ->when($request->filled('search'), fn ($q) => $q->search((string) $request->query('search')))
-            ->when($folder === '__none__', fn ($q) => $q->whereNull('folder'))
-            ->when($folder !== null && $folder !== '' && $folder !== '__none__', fn ($q) => $q->where('folder', $folder))
-            ->when($usage === 'used', fn ($q) => $q->whereIn('filename', $referenced))
-            ->when($usage === 'unused' && $referenced !== [], fn ($q) => $q->whereNotIn('filename', $referenced));
+        // A stale link to a renamed or deleted folder opens the nearest folder
+        // above it that still exists, or the root.
+        if ($folder !== null && ! MediaFolder::where('name', $folder)->exists()) {
+            $existing = MediaFolder::whereIn('name', MediaFolderPath::lineage($folder))->pluck('name')->all();
+            $nearest = collect(array_reverse(MediaFolderPath::lineage($folder)))
+                ->first(fn (string $path) => in_array($path, $existing, true));
+
+            return redirect()->route('admin.media.index', array_filter(['folder' => $nearest]));
+        }
+
+        $base = $this->filtered($this->filters($request->query()));
 
         $typeCounts = (clone $base)
             ->selectRaw('type, count(*) as aggregate')
@@ -106,13 +119,7 @@ class AdminMediaController extends Controller
                 'folder' => $folder ?? '',
                 'usage' => $usage ?? '',
             ],
-            'folders' => Media::query()->whereNotNull('folder')->distinct()->orderBy('folder')->pluck('folder'),
-            'folderCounts' => Media::query()
-                ->whereNotNull('folder')
-                ->selectRaw('folder, count(*) as aggregate')
-                ->groupBy('folder')
-                ->pluck('aggregate', 'folder')
-                ->map(fn ($count) => (int) $count),
+            'folders' => $this->folders(),
             'typeCounts' => $typeCounts,
             'uploadRules' => [
                 'extensions' => MediaRequest::ALLOWED_EXTENSIONS,
@@ -123,10 +130,128 @@ class AdminMediaController extends Controller
     }
 
     /**
+     * Normalized list filters from the query string (index) or from the flat
+     * filter fields of a bulk "every matching file" request (same names).
+     *
+     * @param  array<string, mixed>  $input
+     * @return array{type: ?string, usage: ?string, search: string, folder: ?string}
+     */
+    private function filters(array $input): array
+    {
+        $folder = $input['folder'] ?? null;
+
+        return [
+            'type' => in_array($input['type'] ?? null, self::TYPES, true) ? $input['type'] : null,
+            'usage' => in_array($input['usage'] ?? null, self::USAGES, true) ? $input['usage'] : null,
+            'search' => trim((string) ($input['search'] ?? '')),
+            'folder' => is_string($folder) && $folder !== '' && mb_strlen($folder) <= MediaFolderPath::MAX ? $folder : null,
+        ];
+    }
+
+    /**
+     * Files of the list for the given filters, the type filter aside (index
+     * counts types over this query). A level lists its own files; search and
+     * the usage filter at the root look through the whole library.
+     *
+     * @param  array{type: ?string, usage: ?string, search: string, folder: ?string}  $filters
+     */
+    private function filtered(array $filters): Builder
+    {
+        ['usage' => $usage, 'search' => $search, 'folder' => $folder] = $filters;
+        $wholeLibrary = $folder === null && ($search !== '' || $usage !== null);
+
+        return Media::query()
+            ->when($search !== '', fn ($q) => $q->search($search))
+            ->when($folder !== null, fn ($q) => $q->where('folder', $folder))
+            ->when($folder === null && ! $wholeLibrary, fn ($q) => $q->whereNull('folder'))
+            ->when(in_array($usage, ['used', 'unused'], true), fn ($q) => $this->usage->constrain($q, $usage === 'used'))
+            ->when($usage === 'no_alt', fn ($q) => $q
+                ->where('type', 'image')
+                ->where(fn ($alt) => $alt->whereNull('alt')->orWhere('alt', '')));
+    }
+
+    /**
+     * Ids a bulk action applies to: the picked ones, or with all=1 every file
+     * the list shows for the sent flat filters search/type/folder/usage
+     * (every page, folders aside).
+     *
+     * @return list<int>
+     */
+    private function selectedIds(Request $request): array
+    {
+        if (! $request->boolean('all')) {
+            return array_map('intval', $request->input('ids', []));
+        }
+
+        $filters = $this->filters($request->only(['search', 'type', 'folder', 'usage']));
+
+        return $this->filtered($filters)
+            ->when($filters['type'], fn ($q, string $t) => $q->where('type', $t))
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Every folder by path, with what lies directly inside (files, subfolders)
+     * and the whole subtree's file count and size.
+     *
+     * @return list<array{name: string, count: int, subfolders: int, total: int, size: int, created_at: ?string, created_local: ?string}>
+     */
+    private function folders(): array
+    {
+        $timezone = SettingsServiceProvider::displayTimezone();
+        // Keys are lowercased: MySQL matches folder names case-insensitively.
+        $stats = [];
+        Media::query()
+            ->whereNotNull('folder')
+            ->selectRaw('folder, count(*) as files, coalesce(sum(size), 0) as bytes')
+            ->groupBy('folder')
+            ->get()
+            ->each(function (Media $row) use (&$stats) {
+                $key = mb_strtolower((string) $row->folder);
+                $stats[$key]['count'] = ($stats[$key]['count'] ?? 0) + (int) $row->getAttribute('files');
+                $stats[$key]['size'] = ($stats[$key]['size'] ?? 0) + (int) $row->getAttribute('bytes');
+            });
+
+        $folders = MediaFolder::query()->orderBy('name')->get();
+        $children = [];
+        foreach ($folders as $f) {
+            $parent = MediaFolderPath::parent($f->name);
+            if ($parent !== null) {
+                $key = mb_strtolower($parent);
+                $children[$key] = ($children[$key] ?? 0) + 1;
+            }
+        }
+
+        return $folders->map(function (MediaFolder $f) use ($stats, $children, $timezone) {
+            $key = mb_strtolower($f->name);
+            $total = 0;
+            $size = 0;
+            foreach ($stats as $path => $stat) {
+                if ($path === $key || str_starts_with($path, $key.'/')) {
+                    $total += $stat['count'];
+                    $size += $stat['size'];
+                }
+            }
+
+            return [
+                'name' => $f->name,
+                'count' => $stats[$key]['count'] ?? 0,
+                'subfolders' => $children[$key] ?? 0,
+                'total' => $total,
+                'size' => $size,
+                'created_at' => $f->created_at?->toIso8601String(),
+                'created_local' => $f->created_at?->timezone($timezone)->format('d.m.Y H:i'),
+            ];
+        })->all();
+    }
+
+    /**
      * Queues files for upload.
      *
      * Files are temporarily saved to storage/app/temp,
-     * then a Job moves them to the media disk.
+     * then a Job moves them to the media disk (into the given folder, if any).
      *
      * @return JsonResponse { "queued": 3, "batch": uuid } — batch feeds poll()
      */
@@ -138,7 +263,12 @@ class AdminMediaController extends Controller
 
         // Q4: take the files once with a default of [] — don't rely on the key
         // being present (count(null) would be a TypeError if the form rules change).
-        $queued = $this->media->queue($request->file('media', []), $request->user()?->id, $batch);
+        $queued = $this->media->queue(
+            $request->file('media', []),
+            $request->user()?->id,
+            $batch,
+            $request->validated('folder'),
+        );
 
         return response()->json(['queued' => $queued, 'batch' => $batch]);
     }
@@ -161,6 +291,8 @@ class AdminMediaController extends Controller
         $dimensions = $media->width !== null && $media->height !== null
             ? ['width' => $media->width, 'height' => $media->height]
             : ($media->isImage() ? ImageOptimizer::dimensions($media->filename) : null);
+        // Every referencing record with an edit link (see MediaUsage::place()).
+        $places = $this->usage->places($media);
 
         return [
             'id' => $media->id,
@@ -182,7 +314,8 @@ class AdminMediaController extends Controller
             'created_at' => $media->created_at?->toIso8601String(),
             'updated_at' => $media->updated_at?->toIso8601String(),
             'created_local' => $media->created_at?->timezone($timezone)->format('d.m.Y H:i'),
-            'usages' => $this->usage->for([$media])[$media->id] ?? [],
+            'usages' => array_values(array_unique(array_column($places, 'label'))),
+            'places' => $places,
         ];
     }
 
@@ -226,46 +359,70 @@ class AdminMediaController extends Controller
     }
 
     /**
-     * Moves the selected files into a folder; an empty folder removes them from any folder.
+     * Moves the selected files (or every matching one, see selectedIds) into
+     * the target folder; an empty target removes them from any folder.
      */
     public function bulkFolder(BulkMediaFolderRequest $request): RedirectResponse
     {
-        $count = $this->media->moveToFolder(
-            $request->validated('ids'),
-            $request->validated('folder'),
-        );
+        $count = $this->media->moveToFolder($this->selectedIds($request), $request->validated('target'));
 
         return back()->with('success', "Перемещено файлов: {$count}");
     }
 
-    /** Renames a folder; merging into an existing folder is allowed. */
-    public function renameFolder(MediaFolderRequest $request): RedirectResponse
+    /** Creates an empty folder at the library root or inside parent. */
+    public function createFolder(MediaFolderRequest $request): RedirectResponse
     {
-        $count = $this->media->renameFolder($request->validated('folder'), $request->validated('name'));
+        $name = $request->validated('name');
+        $this->media->createFolder($request->validated('parent'), $name);
 
-        return redirect()
-            ->route('admin.media.index', ['folder' => $request->validated('name')])
-            ->with('success', "Папка переименована. Файлов: {$count}");
+        return back()->with('success', "Папка «{$name}» создана");
     }
 
-    /** Dissolves a folder; its files stay in the library outside any folder. */
+    /**
+     * Renames a folder in place (name is the new last part of its path); merging
+     * into an existing folder is allowed. With open=1 (renaming the folder being
+     * browsed) the folder opens under its new path.
+     */
+    public function renameFolder(MediaFolderRequest $request): RedirectResponse
+    {
+        $from = $request->validated('folder');
+        $count = $this->media->renameFolder($from, $request->validated('name'));
+        $to = MediaFolderPath::join(MediaFolderPath::parent($from), $request->validated('name'));
+
+        $response = $request->boolean('open')
+            ? redirect()->route('admin.media.index', ['folder' => $to])
+            : back();
+
+        return $response->with('success', "Папка переименована. Файлов: {$count}");
+    }
+
+    /**
+     * Deletes a folder with its subfolders; their files move up into the parent
+     * folder. When the deleted folder was open, index() sends the stale address
+     * to the nearest folder that still exists.
+     */
     public function clearFolder(MediaFolderRequest $request): RedirectResponse
     {
         $count = $this->media->clearFolder($request->validated('folder'));
 
-        return redirect()
-            ->route('admin.media.index')
-            ->with('success', "Папка удалена, файлы остались в медиатеке: {$count}");
+        return back()->with('success', $count > 0
+            ? "Папка удалена, файлы перенесены уровнем выше: {$count}"
+            : 'Папка удалена');
     }
 
     /**
      * Delete a single file.
      *
-     * Removes the file from storage and the record from the database.
+     * Removes the file from storage and the record from the database. A file
+     * that is still referenced is kept and the places are named in the error.
      */
     public function destroy(Media $media): RedirectResponse
     {
-        $this->media->delete($media);
+        try {
+            $this->media->delete($media);
+        } catch (ValidationException $e) {
+            return back()->with('error', (string) collect($e->errors())->flatten()->first());
+        }
 
         return $this->redirectToList('admin.media.index')
             ->with('success', 'Медиа удалено');
@@ -274,17 +431,22 @@ class AdminMediaController extends Controller
     /**
      * Bulk deletion of files.
      *
-     * Accepts an ids[] array and deletes all specified files
-     * along with their files from storage.
+     * Deletes the picked files (ids[]) or every file matching the list filters
+     * (all=1 + search/type/folder/usage, see selectedIds) along with their files in storage.
      *
      * @param  BulkDestroyMediaRequest  $request  ids (int[]) — media identifiers
      */
     public function bulkDestroy(BulkDestroyMediaRequest $request): RedirectResponse
     {
-        $count = $this->media->bulkDelete($request->ids);
+        ['deleted' => $count, 'skipped' => $skipped] = $this->media->bulkDelete($this->selectedIds($request));
 
-        return $this->redirectToList('admin.media.index')
-            ->with('success', "Удалено медиа: {$count}");
+        $response = $this->redirectToList('admin.media.index');
+        if ($skipped !== []) {
+            $names = implode(', ', array_slice($skipped, 0, 5)).(count($skipped) > 5 ? ' и др.' : '');
+            $response->with('warning', 'Не удалены используемые файлы ('.count($skipped)."): {$names}");
+        }
+
+        return $response->with('success', "Удалено медиа: {$count}");
     }
 
     /**

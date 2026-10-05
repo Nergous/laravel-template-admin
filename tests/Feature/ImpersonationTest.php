@@ -114,4 +114,15 @@ class ImpersonationTest extends TestCase
 
         $this->post(route('admin.impersonation.stop'))->assertNotFound();
     }
+
+    public function test_stop_returns_to_the_dashboard_when_the_actor_cannot_view_users(): void
+    {
+        $actor = $this->actingAsUserWith(['users.impersonate']);
+        $target = User::factory()->create();
+
+        $this->post(route('admin.users.impersonate', $target))->assertRedirect(route('admin.dashboard'));
+
+        $this->post(route('admin.impersonation.stop'))->assertRedirect(route('admin.dashboard'));
+        $this->assertAuthenticatedAs($actor);
+    }
 }

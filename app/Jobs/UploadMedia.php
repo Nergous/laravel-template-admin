@@ -4,13 +4,16 @@ namespace App\Jobs;
 
 use App\Models\ActivityLog;
 use App\Models\Media;
+use App\Models\MediaFolder;
 use App\Models\User;
 use App\Services\ImageOptimizer;
+use App\Services\MediaReferenceUpdater;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -54,7 +57,7 @@ class UploadMedia implements ShouldQueue
     /**
      * Hard limit per attempt (sec): large images and videos on a remote disk
      * take a while. Must be strictly less than the queue retry_after
-     * (330s by default, config/queue.php).
+     * (720s by default, config/queue.php).
      */
     public int $timeout = 300;
 
@@ -81,6 +84,7 @@ class UploadMedia implements ShouldQueue
      * @param  int|null  $uploaderId  ID of the uploading user (for created_by; null from CLI/outside a session)
      * @param  int|null  $replaceMediaId  Existing record whose file this upload replaces (null — a new record)
      * @param  string|null  $batch  Upload request id (AdminMediaController::store/replace) for progress polling
+     * @param  string|null  $folder  Library folder of a new record (null — outside any folder)
      */
     public function __construct(
         protected string $tempPath,
@@ -88,6 +92,7 @@ class UploadMedia implements ShouldQueue
         protected ?int $uploaderId = null,
         protected ?int $replaceMediaId = null,
         protected ?string $batch = null,
+        protected ?string $folder = null,
     ) {}
 
     /**
@@ -167,13 +172,14 @@ class UploadMedia implements ShouldQueue
             'content_hash' => $hash,
         ];
 
-        // The new files exist before the row does: if the row cannot be saved,
-        // remove them so a retry does not leave orphans on the media disk.
+        // The new files exist before the row does: if the row (or, for a
+        // replacement, the row and its links in one transaction) cannot be
+        // saved, remove them so a retry does not leave orphans on the media disk.
         $replaced = null;
 
         try {
             if ($this->replaceMediaId !== null) {
-                $replaced = $this->replaceFile($attributes);
+                $replaced = DB::transaction(fn () => $this->replaceFile($attributes));
             } else {
                 $this->createRecord($attributes);
             }
@@ -183,8 +189,11 @@ class UploadMedia implements ShouldQueue
             throw $e;
         }
 
-        // Old files go only after the row points at the new ones.
-        $replaced?->deleteFiles();
+        // Old files go only after the row and the links point at the new ones
+        // for good (after the commit of any enclosing transaction too).
+        if ($replaced !== null) {
+            DB::afterCommit(fn () => $replaced->deleteFiles());
+        }
 
         $localDisk->delete($this->tempPath);
     }
@@ -196,6 +205,11 @@ class UploadMedia implements ShouldQueue
     {
         $media = new Media([...$attributes, 'original_name' => $this->originalName]);
 
+        // The folder may have been removed while the job waited in the queue.
+        if ($this->folder !== null && MediaFolder::where('name', $this->folder)->exists()) {
+            $media->folder = $this->folder;
+        }
+
         if ($this->uploaderId) {
             $media->created_by = $this->uploaderId;
         }
@@ -205,14 +219,17 @@ class UploadMedia implements ShouldQueue
 
     /**
      * Points an existing record at the new file. The display name stays; the
-     * change is logged by LogsActivity.
+     * change is logged by LogsActivity. Links to the old file in texts and
+     * settings are rewritten to the new one (media_links_updated).
+     * Runs inside the caller's transaction: a failed rewrite rolls back the
+     * record change as well.
      *
      * @param  array<string, mixed>  $attributes
      * @return Media|null A detached model holding the old filename, for file cleanup
      */
     private function replaceFile(array $attributes): ?Media
     {
-        $media = Media::find($this->replaceMediaId);
+        $media = Media::query()->lockForUpdate()->find($this->replaceMediaId);
 
         if ($media === null) {
             // The record was deleted while the job waited — drop the new files.
@@ -229,6 +246,11 @@ class UploadMedia implements ShouldQueue
             $media->updated_by = $this->uploaderId;
         }
         $media->save();
+
+        $links = app(MediaReferenceUpdater::class)->rewrite($old, $media);
+        if ($links > 0) {
+            ActivityLog::record($media, 'media_links_updated', ['links_updated' => [null, $links]]);
+        }
 
         return $old;
     }

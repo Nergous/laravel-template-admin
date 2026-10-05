@@ -28,22 +28,35 @@
 	root * /app/public
 	encode zstd br gzip
 
+	# Browser caching of the Vite output: every file name under /build/assets
+	# carries a content hash, so a new build produces new names and a year-long
+	# cache is safe. Only successful responses are cached, so a missing file
+	# never sticks in a browser.
+	@hashed path /build/assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable" {
+		match status 2xx
+	}
+
 	# Uploaded media (/storage → symlink to storage/app/public) is served STRICTLY
 	# as static: this handle never reaches php_server, so no file under
 	# /storage is executed as PHP (defense-in-depth for S1 — even if a .php ends up
-	# on disk). nosniff stops the browser from guessing the type (txt→html), and
-	# Content-Disposition: attachment forces a download rather than rendering on
-	# direct navigation (neutralizes stored-XSS from .html/.svg). It doesn't affect inline
-	# images in the admin: the lightbox/preview load them via <img> (a subresource —
-	# Content-Disposition is ignored), and non-images the UI opens/downloads anyway.
+	# on disk). nosniff stops the browser from guessing the type (txt→html).
+	#
+	# Images, PDF, audio and video open inline (a PDF link from the media library
+	# opens in the browser; browsers refuse to show a PDF under a sandbox CSP).
+	# These types cannot run scripts with nosniff. Every other file (documents,
+	# archives, and anything that could be HTML/SVG) is forced to download
+	# (Content-Disposition: attachment) under a sandbox CSP with default-src
+	# 'none' — stored XSS through an uploaded file stays blocked (S8).
 	@storage path /storage/*
+	@storageDownload {
+		path /storage/*
+		not path_regexp (?i)\.(jpe?g|png|gif|webp|avif|pdf|mp4|webm|mov|mp3|wav|ogg|m4a)$
+	}
+	header @storageDownload Content-Disposition attachment
+	header @storageDownload Content-Security-Policy "default-src 'none'; sandbox"
 	handle @storage {
 		header X-Content-Type-Options nosniff
-		header Content-Disposition attachment
-		# A restrictive per-response CSP: even if the file does get rendered,
-		# sandbox + default-src 'none' kill scripts/forms/plugins (S8 — a sandbox
-		# for user content, complementing nosniff/attachment from S1).
-		header Content-Security-Policy "default-src 'none'; sandbox"
 		file_server
 	}
 

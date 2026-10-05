@@ -54,15 +54,33 @@ class QueueTest extends TestCase
         );
     }
 
-    public function test_health_check_fails_on_a_stale_backlog(): void
+    public function test_liveness_check_ignores_the_backlog_and_full_check_reports_it(): void
     {
         config(['queue.default' => 'database']);
 
         $this->queuedJob(availableAt: now()->subMinutes(5));
         $this->get('/up')->assertOk();
+        $this->get('/up?full=1')->assertOk();
 
         $this->queuedJob(availableAt: now()->subMinutes(20));
-        $this->get('/up')->assertStatus(500);
+        // A long backlog must not mark the web container unhealthy: the worker
+        // and scheduler containers wait for /up before they start.
+        $this->get('/up')->assertOk();
+        $this->get('/up?full=1')->assertStatus(500);
+    }
+
+    public function test_index_flags_a_stalled_queue(): void
+    {
+        config(['queue.default' => 'database']);
+        $this->actingAsUserWith(['queue.view']);
+
+        $this->queuedJob(availableAt: now()->subMinutes(5));
+        $this->get('/admin/queue')->assertInertia(fn (Assert $page) => $page->where('stalled', false));
+
+        $this->queuedJob(availableAt: now()->subMinutes(20));
+        $this->get('/admin/queue')->assertInertia(fn (Assert $page) => $page
+            ->where('stalled', true)
+            ->where('stalledAfterMinutes', QueueStats::STALLED_AFTER_MINUTES));
     }
 
     public function test_index_requires_queue_view(): void
@@ -81,12 +99,90 @@ class QueueTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Queue/Index')
                 ->where('summary.failed', 1)
-                ->where('failedJobs.total', 1)
-                ->where('failedJobs.data.0.uuid', $uuid)
-                ->where('failedJobs.data.0.name', 'App\\Jobs\\UploadMedia')
-                ->where('failedJobs.data.0.queue', 'default')
-                ->where('failedJobs.data.0.exception', 'RuntimeException: boom')
-                ->where('failedJobs.data.0.failed_at', '2026-09-24T11:00:00+00:00')
+                ->where('counts', ['running' => null, 'pending' => null, 'delayed' => null, 'failed' => 1])
+                ->where('jobs.total', 1)
+                ->where('jobs.data.0.uuid', $uuid)
+                ->where('jobs.data.0.status', 'failed')
+                ->where('jobs.data.0.name', 'App\\Jobs\\UploadMedia')
+                ->where('jobs.data.0.queue', 'default')
+                ->where('jobs.data.0.exception', 'RuntimeException: boom')
+                ->where('jobs.data.0.failed_at', '2026-09-24T11:00:00+00:00')
+            );
+    }
+
+    public function test_index_lists_queued_jobs_with_their_status(): void
+    {
+        config(['queue.default' => 'database']);
+        $this->queuedJob(availableAt: now()->subHour(), reserved: true, name: 'App\\Jobs\\CreateBackup');
+        $this->queuedJob(availableAt: now()->subMinutes(5));
+        $this->queuedJob(availableAt: now()->addHour());
+        $failed = $this->failedJob();
+        $this->actingAsUserWith(['queue.view']);
+
+        $this->get('/admin/queue')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('status', null)
+                ->where('counts', ['running' => 1, 'pending' => 1, 'delayed' => 1, 'failed' => 1])
+                ->where('jobs.total', 4)
+                ->where('jobs.data.0.status', 'running')
+                ->where('jobs.data.0.name', 'App\\Jobs\\CreateBackup')
+                ->where('jobs.data.0.attempts', 1)
+                ->where('jobs.data.0.uuid', null)
+                ->where('jobs.data.0.reserved_at', '2026-09-24T12:00:00+00:00')
+                ->where('jobs.data.1.status', 'pending')
+                ->where('jobs.data.1.available_at', '2026-09-24T11:55:00+00:00')
+                ->where('jobs.data.2.status', 'delayed')
+                ->where('jobs.data.3.status', 'failed')
+                ->where('jobs.data.3.uuid', $failed)
+            );
+
+        $this->get('/admin/queue?status=delayed')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('status', 'delayed')
+                ->where('jobs.total', 1)
+                ->where('jobs.data.0.status', 'delayed')
+                ->where('jobs.data.0.available_at', '2026-09-24T13:00:00+00:00')
+            );
+
+        $this->get('/admin/queue?status=failed')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('jobs.total', 1)
+                ->where('jobs.data.0.uuid', $failed)
+            );
+
+        // Unknown status falls back to the full list.
+        $this->get('/admin/queue?status=bogus')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('status', null)
+                ->where('jobs.total', 4)
+            );
+    }
+
+    public function test_pages_continue_from_queued_into_failed_jobs(): void
+    {
+        config(['queue.default' => 'database']);
+        foreach (range(1, 15) as $minutes) {
+            $this->queuedJob(availableAt: now()->subMinutes($minutes));
+        }
+        foreach (range(1, 10) as $ignored) {
+            $this->failedJob();
+        }
+        $this->actingAsUserWith(['queue.view']);
+
+        $this->get('/admin/queue?page=1')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('jobs.total', 25)
+                ->where('jobs.last_page', 2)
+                ->has('jobs.data', 20)
+                ->where('jobs.data.14.status', 'pending')
+                ->where('jobs.data.15.status', 'failed')
+            );
+
+        $this->get('/admin/queue?page=2')
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('jobs.data', 5)
+                ->where('jobs.data.0.status', 'failed')
             );
     }
 
@@ -180,11 +276,11 @@ class QueueTest extends TestCase
         return $uuid;
     }
 
-    private function queuedJob(Carbon $availableAt, bool $reserved = false): void
+    private function queuedJob(Carbon $availableAt, bool $reserved = false, string $name = 'App\\Jobs\\UploadMedia'): void
     {
         DB::table('jobs')->insert([
             'queue' => 'default',
-            'payload' => '{}',
+            'payload' => json_encode(['displayName' => $name]),
             'attempts' => $reserved ? 1 : 0,
             'reserved_at' => $reserved ? now()->getTimestamp() : null,
             'available_at' => $availableAt->getTimestamp(),

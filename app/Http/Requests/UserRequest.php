@@ -18,14 +18,13 @@ class UserRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        $permission = $this->isMethod('POST') ? 'users.create' : 'users.edit';
+        // Editing: the target must not be above the actor (an admin, a system role, more permissions).
+        $target = $this->route('user');
+        $permission = $target instanceof User ? 'users.edit' : 'users.create';
 
         if ($this->user()?->can($permission) !== true) {
             return false;
         }
-
-        // Editing: the target must not be above the actor (an admin, a system role, more permissions).
-        $target = $this->route('user');
 
         return ! $target instanceof User || RbacGuard::canManageUser($this->user(), $target);
     }
@@ -71,21 +70,26 @@ class UserRequest extends FormRequest
             return;
         }
 
+        // Keeping a role the user already has is not a grant: an operator with
+        // users.edit can save their own profile without dropping the system role.
+        $target = $this->route('user');
+        if ($target instanceof User && $target->hasRole($value)) {
+            return;
+        }
+
         $role = Role::where('name', $value)->with('permissions:id,name')->first();
 
         if (! $role) {
             return;
         }
 
-        if (! RbacGuard::canManageRole($actor, $role)) {
+        if ($role->is_system) {
             $fail('Системную роль может назначать только администратор.');
 
             return;
         }
 
-        $missing = $role->permissions
-            ->pluck('name')
-            ->reject(fn (string $permission) => $actor->can($permission));
+        $missing = RbacGuard::missingPermissions($actor, $role);
 
         if ($missing->isNotEmpty()) {
             $fail('Нельзя назначить роль с правами, которых у вас нет: '.$missing->implode(', '));

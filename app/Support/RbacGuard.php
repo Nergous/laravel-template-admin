@@ -4,15 +4,21 @@ namespace App\Support;
 
 use App\Models\Role;
 use App\Models\User;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Shared privilege anti-escalation checks for RBAC.
  *
  * Principles:
- *  - a full admin bypasses the checks (holds all permissions explicitly — see RolePermissionSeeder);
+ *  - a full admin bypasses the checks and every ability check (Gate::before, see
+ *    registerSuperadminGate()), so a route permission can never lock them out;
  *  - "you can't grant more than you have yourself": a permission is granted only if the
  *    actor has it;
- *  - system roles (is_system: admin/operator) can only be changed/assigned by an admin.
+ *  - system roles (is_system: admin/operator) can only be changed/assigned by an admin;
+ *  - a role can only be changed by someone who holds every permission it has, so
+ *    nobody can strip the role of a user above them;
+ *  - the superadmin role's permission set is immutable.
  */
 class RbacGuard
 {
@@ -41,6 +47,16 @@ class RbacGuard
     }
 
     /**
+     * Grants the superadmin every ability before any permission or policy check
+     * runs. Route "permission:" middleware calls $user->canAny(), so it honours
+     * this too: removing a permission row can never lock the superadmin out.
+     */
+    public static function registerSuperadminGate(): void
+    {
+        Gate::before(fn ($user) => $user instanceof User && self::isAdmin($user) ? true : null);
+    }
+
+    /**
      * Whether the actor can grant the given permission: only if they hold it
      * themselves (or they're an admin). Protects against granting permissions above
      * one's own level.
@@ -55,8 +71,10 @@ class RbacGuard
     }
 
     /**
-     * Whether the actor can assign/change the given role: system roles —
-     * admins only, custom roles — everyone (subject to the other checks).
+     * Whether the actor can assign/change the given role: system roles — admins
+     * only; other roles — only if the actor holds every permission the role has
+     * (otherwise a roles.edit/permissions.edit holder could strip the role of a
+     * user above them and then take that account over).
      */
     public static function canManageRole(?User $actor, Role $role): bool
     {
@@ -64,7 +82,30 @@ class RbacGuard
             return false;
         }
 
-        return self::isAdmin($actor) || ! $role->is_system;
+        if (self::isAdmin($actor)) {
+            return true;
+        }
+
+        return ! $role->is_system && self::missingPermissions($actor, $role)->isEmpty();
+    }
+
+    /**
+     * Permissions of the role that the actor does not hold.
+     *
+     * @return Collection<int, string>
+     */
+    public static function missingPermissions(User $actor, Role $role): Collection
+    {
+        if (self::isAdmin($actor)) {
+            return collect();
+        }
+
+        $held = self::permissionNames($actor);
+
+        return $role->permissions
+            ->pluck('name')
+            ->reject(fn (string $permission) => $held->has($permission))
+            ->values();
     }
 
     /**
@@ -93,10 +134,22 @@ class RbacGuard
             return false;
         }
 
-        $actorPermissions = $actor->getAllPermissions()->pluck('name')->flip();
+        $actorPermissions = self::permissionNames($actor);
 
         return $target->getAllPermissions()
             ->pluck('name')
             ->every(fn (string $permission) => $actorPermissions->has($permission));
+    }
+
+    /**
+     * The actor's permission names (direct and via roles) as a lookup map.
+     *
+     * @return Collection<string, int>
+     */
+    private static function permissionNames(User $actor): Collection
+    {
+        $actor->loadMissing(['roles.permissions', 'permissions']);
+
+        return $actor->getAllPermissions()->pluck('name')->flip();
     }
 }

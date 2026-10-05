@@ -8,6 +8,19 @@ use Illuminate\Http\Request;
 
 /**
  * Base application controller — common ancestor of all controllers.
+ *
+ * Authorization convention of the admin panel (each layer has one job):
+ *  - route middleware (`permission:x` in routes/web.php) decides whether the
+ *    user may perform the action at all; resource routes attach the action's
+ *    permission with middlewareFor();
+ *  - a FormRequest's authorize() re-checks the same concrete permission
+ *    (defence in depth, never just "is signed in") plus record-level rules
+ *    (RbacGuard: may the actor touch this user/role);
+ *  - controllers do not repeat permission checks. They only enforce
+ *    record-level rules for actions without a FormRequest (GET edit pages) and
+ *    per-record rules of bulk actions, which are reported as skipped;
+ *  - services keep the domain invariants (anti-escalation, protected roles)
+ *    whoever calls them.
  */
 abstract class Controller
 {
@@ -40,5 +53,11 @@ abstract class Controller
         }
 
         return redirect()->to($request->fullUrlWithQuery(['page' => $paginator->lastPage()]));
+    }
+
+    /** Flash text for a bulk action: "Удалено: 5. Пропущено: 2 (причина)". */
+    protected function bulkSummary(string $label, int $processed, int $skipped, string $reason): string
+    {
+        return $skipped > 0 ? "{$label}: {$processed}. Пропущено: {$skipped} ({$reason})" : "{$label}: {$processed}";
     }
 }

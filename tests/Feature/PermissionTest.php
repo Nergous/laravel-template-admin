@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Models\ActivityLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -52,36 +52,30 @@ class PermissionTest extends TestCase
         $this->assertLessThanOrEqual(2, $pivotQueries);
     }
 
-    public function test_creating_permission_logs_auto_grant_to_admin_role(): void
+    public function test_permissions_cannot_be_created_from_the_panel(): void
     {
         $this->actingAsAdmin();
 
-        $adminRole = Role::findByName('admin', 'web');
+        $this->assertFalse(Route::has('admin.permissions.store'));
+        $this->assertFalse(Route::has('admin.permissions.create'));
+        $this->post('/admin/permissions', ['name' => 'demo.new'])->assertStatus(405);
 
-        $this->post(route('admin.permissions.store'), [
-            'name' => 'demo.new',
-        ])->assertRedirect(route('admin.permissions.index'));
+        $this->assertDatabaseMissing('permissions', ['name' => 'demo.new']);
+    }
 
-        $permission = Permission::findByName('demo.new', 'web');
-        $this->assertDatabaseHas('role_has_permissions', [
-            'role_id' => $adminRole->id,
-            'permission_id' => $permission->id,
-        ]);
-        $this->assertDatabaseHas('activity_log', [
-            'subject_type' => $permission->getMorphClass(),
-            'subject_id' => $permission->id,
-            'action' => 'created',
-        ]);
+    public function test_permissions_cannot_be_renamed_or_deleted_from_the_panel(): void
+    {
+        $this->actingAsAdmin();
+        $permission = Permission::findByName('users.view', 'web');
 
-        $grantLog = ActivityLog::query()
-            ->where('subject_type', $adminRole->getMorphClass())
-            ->where('subject_id', $adminRole->id)
-            ->where('action', 'updated')
-            ->latest('id')
-            ->first();
+        foreach (['show', 'edit', 'update', 'destroy'] as $action) {
+            $this->assertFalse(Route::has("admin.permissions.{$action}"));
+        }
 
-        $this->assertNotNull($grantLog);
-        $this->assertSame(['demo.new', 'выдано'], $grantLog->changes['permission'] ?? null);
+        $this->put('/admin/permissions/'.$permission->id, ['name' => 'users.renamed'])->assertNotFound();
+        $this->delete('/admin/permissions/'.$permission->id)->assertNotFound();
+
+        $this->assertDatabaseHas('permissions', ['id' => $permission->id, 'name' => 'users.view']);
     }
 
     public function test_matrix_toggle_invalidates_permission_cache(): void
@@ -109,20 +103,5 @@ class PermissionTest extends TestCase
         ])->assertRedirect();
 
         $this->assertFalse($bob->fresh()->hasPermissionTo('users.view'));
-    }
-
-    public function test_creating_permission_is_immediately_effective(): void
-    {
-        $this->actingAsAdmin();
-
-        $admin = User::factory()->create();
-        $admin->assignRole('admin');
-
-        $this->assertTrue($admin->hasPermissionTo('users.view'));
-
-        $this->post(route('admin.permissions.store'), ['name' => 'demo.new'])
-            ->assertRedirect(route('admin.permissions.index'));
-
-        $this->assertTrue($admin->fresh()->hasPermissionTo('demo.new'));
     }
 }

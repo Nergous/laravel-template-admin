@@ -13,11 +13,14 @@
 #  To connect to an already existing external DB — set DB_HOST to the external
 #  address and comment out the `db` service + its depends_on.
 #
-#  IMPORTANT (TLS): the stack serves the app over PLAIN HTTP (port APP_PORT->8000,
-#  auto_https off). This is NOT a fully publicly-facing prod on its own — put
-#  it BEHIND an external reverse proxy that terminates TLS (Caddy/Traefik/nginx/ingress).
-#  Behind HTTPS, mandatory: SESSION_SECURE_COOKIE=true and HSTS (see .env.example),
-#  and it makes sense to narrow trustProxies in bootstrap/app.php to your proxy's CIDR.
+#  IMPORTANT (network/TLS): the stack serves the app over PLAIN HTTP and publishes
+#  it on the LOOPBACK interface only (127.0.0.1:APP_PORT -> 8000, auto_https off).
+#  Docker writes its own iptables rules, so a port published on 0.0.0.0 would be
+#  reachable from the internet even with ufw/firewalld denying it. The intended
+#  setup is nginx on the same host terminating TLS and proxying the domain to
+#  http://127.0.0.1:APP_PORT (see docker/nginx.conf.example). Behind HTTPS set
+#  TRUSTED_PROXIES (the container sees nginx as the docker bridge gateway, see
+#  .env.example); SESSION_SECURE_COOKIE is enabled automatically in production.
 #
 #  Resource limits (mem_limit/cpus) and log rotation (logging) below are a
 #  conservative STARTING point for a single host; tune them for your load.
@@ -40,8 +43,13 @@ services:
       # leave it "false" and create the admin via `app:create-admin`, or set
       # RUN_SEEDS=true with ADMIN_PASSWORD before the first boot.
       RUN_SEEDS: "${RUN_SEEDS:-false}"
+      # nginx on the host reaches the container through the docker bridge gateway
+      # (172.x.0.1). The port is bound to 127.0.0.1, so only local processes get
+      # here and trusting the bridge range is safe. Override in .env if needed.
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-172.16.0.0/12}"
     ports:
-      - "${APP_PORT:-8888}:8000"
+      # Loopback only: nginx on this host proxies to it. Never publish on 0.0.0.0.
+      - "127.0.0.1:${APP_PORT:-8888}:8000"
     volumes:
       # User data only. Code and vendor live inside the image (immutable).
       - storage-data:/app/storage
@@ -52,7 +60,9 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # Laravel health endpoint (bootstrap/app.php -> health: '/up')
+      # Liveness: GET /up checks the database and writable storage only. The queue
+      # backlog is NOT part of it (a long job must not mark the web container
+      # unhealthy, and queue/scheduler wait for this check); see /up?full=1.
       test: ["CMD", "wget", "-qO-", "http://localhost:8000/up"]
       interval: 30s
       timeout: 5s
@@ -68,8 +78,8 @@ services:
         max-file: "3"
 
   queue:
-    # Queue worker: processes Jobs (currently — the asynchronous media upload
-    # UploadMedia). Don't want a worker — set QUEUE_CONNECTION=sync in .env and
+    # Queue worker: processes Jobs (media uploads/replacements UploadMedia and
+    # manual backups CreateBackup). Don't want a worker — set QUEUE_CONNECTION=sync in .env and
     # don't bring up this service: the jobs run right inside the app HTTP request. The
     # trade-off and details are in the README (Troubleshooting / Docker section).
     image: ${APP_IMAGE:-laravel-admin-template}:latest
@@ -87,7 +97,8 @@ services:
     depends_on:
       # service_healthy ⇒ app has already passed entrypoint (migrations applied, the
       # jobs table exists) — the worker doesn't go into a restart loop on a cold start.
-      # restart: unless-stopped remains a safety net against runtime failures.
+      # /up does not look at the queue, so a backlog cannot keep the worker that
+      # would drain it from starting. restart: unless-stopped remains a safety net.
       app:
         condition: service_healthy
       db:
@@ -140,7 +151,9 @@ services:
         max-file: "3"
 
   db:
-    image: mariadb:11
+    # MariaDB 12.3 LTS (maintained until June 2029). Pinned to the LTS line so a
+    # rebuild never moves the database to another major version on its own.
+    image: mariadb:12.3
     container_name: ${APP_CONTAINER_NAME:-admin-template}-db
     restart: unless-stopped
     environment:

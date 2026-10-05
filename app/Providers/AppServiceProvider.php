@@ -87,12 +87,18 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * Checks behind GET /up (used by Docker/orchestrator health checks). Any
-     * exception turns the response into a 500:
-     *  - the database answers a trivial query;
-     *  - storage (uploads, backups, temp files) is writable;
-     *  - with the database queue, no job has waited longer than 15 minutes —
-     *    a stuck or missing worker otherwise goes unnoticed (uploads never finish).
+     * Checks behind GET /up. Any exception turns the response into a 500.
+     *
+     * Plain /up is a liveness probe used by the Docker health check, and the queue
+     * worker and scheduler containers wait for it: it only checks that
+     * the database answers a trivial query and storage (uploads, backups, temp
+     * files) is writable. A queue backlog must not fail it — otherwise one long
+     * job would mark the web container unhealthy and keep the worker that drains
+     * the queue from starting.
+     *
+     * /up?full=1 additionally fails when, with the database queue, a job has
+     * waited longer than QueueStats::STALLED_AFTER_MINUTES (a stuck or missing
+     * worker), for external monitoring. The admin queue page shows the same lag.
      */
     private function diagnoseHealth(): void
     {
@@ -102,9 +108,9 @@ class AppServiceProvider extends ServiceProvider
             throw new \RuntimeException('storage/app is not writable');
         }
 
-        $oldest = $this->app->make(QueueStats::class)->oldestPendingAt();
-        if ($oldest !== null && $oldest->lt(now()->subMinutes(15))) {
-            throw new \RuntimeException('Queue backlog: a job has waited more than 15 minutes');
+        $full = $this->app->bound('request') && $this->app->make('request')->boolean('full');
+        if ($full && $this->app->make(QueueStats::class)->isStalled()) {
+            throw new \RuntimeException('Queue backlog: a job has waited more than '.QueueStats::STALLED_AFTER_MINUTES.' minutes');
         }
     }
 }

@@ -13,8 +13,10 @@ use App\Models\Role;
 use App\Models\User;
 use App\Providers\SettingsServiceProvider;
 use App\Services\UserService;
+use App\Support\FilterValues;
 use App\Support\Impersonation;
 use App\Support\RbacGuard;
+use App\Support\TableExport;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -74,13 +76,12 @@ class AdminUserController extends Controller
             ...$sort->toArray(), // currentSort + currentDirection from the validated Sort
             ...$perPage->toArray(), // perPage + perPageOptions for the page-size selector
             'filters' => $request->only('search', 'role', 'status', 'must_change_password'),
+            'exportColumns' => TableExport::options($this->exportColumns()),
         ]);
     }
 
-    public function create(Request $request): Response
+    public function create(): Response
     {
-        abort_unless($request->user()?->can('users.create'), 403);
-
         return Inertia::render('Users/FormPage', [
             'mode' => 'create',
             'allRoles' => Role::orderBy('name')->get(['id', 'name', 'description']),
@@ -107,10 +108,8 @@ class AdminUserController extends Controller
 
     public function edit(Request $request, User $user): Response
     {
-        abort_unless(
-            $request->user()?->can('users.edit') && RbacGuard::canManageUser($request->user(), $user),
-            403,
-        );
+        // users.edit is checked by the route; the target must not be above the actor.
+        abort_unless(RbacGuard::canManageUser($request->user(), $user), 403);
 
         return Inertia::render('Users/FormPage', [
             'mode' => 'edit',
@@ -122,7 +121,8 @@ class AdminUserController extends Controller
 
     /**
      * Updates a user and their roles. The password is changed only if provided;
-     * does not allow an admin to remove the admin role from themselves (rule in the service).
+     * roles are synced only when roles[] is sent (a client that omits the key
+     * keeps them); an admin cannot remove the admin role from themselves (rule in the service).
      */
     public function update(UserRequest $request, User $user): RedirectResponse
     {
@@ -145,7 +145,7 @@ class AdminUserController extends Controller
         $this->users->update(
             $user,
             $data,
-            $request->input('roles', []),
+            $request->exists('roles') ? ($request->input('roles') ?? []) : null,
             $request->user(),
         );
 
@@ -177,11 +177,7 @@ class AdminUserController extends Controller
             : $this->users->bulkDelete($request->validated('ids'), $request->user());
 
         return $this->redirectToList('admin.users.index')
-            ->with('success', $this->bulkMessage(
-                'Перемещено в корзину',
-                $result,
-                'нет прав или собственная учётная запись',
-            ));
+            ->with('success', $this->bulkSummary('Перемещено в корзину', $result['processed'], $result['skipped'], 'нет прав или собственная учётная запись'));
     }
 
     /** Blocks or unblocks selected users, or every user matching current filters. */
@@ -206,16 +202,17 @@ class AdminUserController extends Controller
             );
 
         return $this->redirectToList('admin.users.index')
-            ->with('success', $this->bulkMessage(
+            ->with('success', $this->bulkSummary(
                 $active ? 'Разблокировано' : 'Заблокировано',
-                $result,
+                $result['processed'],
+                $result['skipped'],
                 'нет прав или собственная учётная запись',
             ));
     }
 
     /**
-     * Streams the filtered and sorted user list as a semicolon-separated CSV
-     * (UTF-8 with BOM for Excel). lazy() keeps the roles eager load per chunk.
+     * Streams the filtered and sorted user list as CSV or XLSX with the chosen
+     * columns (see TableExport). lazy() keeps the roles eager load per chunk.
      */
     public function export(Request $request, UserSort $sort): StreamedResponse
     {
@@ -225,42 +222,34 @@ class AdminUserController extends Controller
             ->orderBy($sort->getSort(), $sort->getDirection())
             ->orderBy('id');
 
-        return response()->streamDownload(function () use ($query, $timezone) {
-            $out = fopen('php://output', 'wb');
-            fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, [
-                'ID',
-                'Имя',
-                'Email',
-                'Роли',
-                'Статус',
-                'Смена пароля',
-                'Последний вход',
-                'Создан',
-            ], ';');
+        return TableExport::fromRequest($request, $this->exportColumns())->download(
+            $query->lazy(500),
+            'users-'.now($timezone)->format('Y-m-d_His'),
+            'Пользователи',
+            fn (int $count) => ActivityLog::record(null, 'users_exported', ['rows' => [null, $count]]),
+        );
+    }
 
-            $count = 0;
-            foreach ($query->lazy(500) as $user) {
-                /** @var User $user */
-                fputcsv($out, array_map($this->csvCell(...), [
-                    $user->id,
-                    $user->name,
-                    $user->email,
-                    $user->roles->pluck('name')->implode(', '),
-                    $user->is_active ? 'Активен' : 'Заблокирован',
-                    $user->must_change_password ? 'Да' : 'Нет',
-                    $user->last_login_at?->timezone($timezone)->format('Y-m-d H:i:s') ?? '',
-                    $user->created_at?->timezone($timezone)->format('Y-m-d H:i:s') ?? '',
-                ]), ';');
-                $count++;
-            }
+    /**
+     * Columns of the user export, in file order.
+     *
+     * @return array<string, array{0: string, 1: \Closure(User): (string|int|null)}>
+     */
+    private function exportColumns(): array
+    {
+        $timezone = SettingsServiceProvider::displayTimezone();
+        $date = fn ($value) => $value?->timezone($timezone)->format('Y-m-d H:i:s');
 
-            fclose($out);
-
-            ActivityLog::record(null, 'users_exported', ['rows' => [null, $count]]);
-        }, 'users-'.now($timezone)->format('Y-m-d_His').'.csv', [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-        ]);
+        return [
+            'id' => ['ID', fn (User $user) => $user->id],
+            'name' => ['Имя', fn (User $user) => $user->name],
+            'email' => ['Email', fn (User $user) => $user->email],
+            'roles' => ['Роли', fn (User $user) => $user->roles->pluck('name')->implode(', ')],
+            'status' => ['Статус', fn (User $user) => $user->is_active ? 'Активен' : 'Заблокирован'],
+            'must_change_password' => ['Смена пароля', fn (User $user) => $user->must_change_password ? 'Да' : 'Нет'],
+            'last_login_at' => ['Последний вход', fn (User $user) => $date($user->last_login_at)],
+            'created_at' => ['Создан', fn (User $user) => $date($user->created_at)],
+        ];
     }
 
     /**
@@ -383,11 +372,7 @@ class AdminUserController extends Controller
             : $this->users->bulkRestore($request->validated('ids'), $request->user());
 
         return $this->redirectToList('admin.users.trashed')
-            ->with('success', $this->bulkMessage(
-                'Восстановлено пользователей',
-                $result,
-                'нет прав или email занят',
-            ));
+            ->with('success', $this->bulkSummary('Восстановлено пользователей', $result['processed'], $result['skipped'], 'нет прав или email занят'));
     }
 
     /**
@@ -402,21 +387,7 @@ class AdminUserController extends Controller
             : $this->users->bulkForceDelete($request->validated('ids'), $request->user());
 
         return $this->redirectToList('admin.users.trashed')
-            ->with('success', $this->bulkMessage('Удалено навсегда', $result, 'нет прав'));
-    }
-
-    /**
-     * Flash text for a bulk action, mentioning skipped users.
-     *
-     * @param  array{processed: int, skipped: int}  $result
-     */
-    private function bulkMessage(string $label, array $result, string $skippedReason): string
-    {
-        $message = "{$label}: {$result['processed']}";
-
-        return $result['skipped'] > 0
-            ? "{$message}. Пропущено: {$result['skipped']} ({$skippedReason})"
-            : $message;
+            ->with('success', $this->bulkSummary('Удалено навсегда', $result['processed'], $result['skipped'], 'нет прав'));
     }
 
     /** The list query with the index filters from the query string. */
@@ -424,7 +395,7 @@ class AdminUserController extends Controller
     {
         return $this->users->listQuery(
             $request->string('search')->toString(),
-            $request->string('role')->toString(),
+            FilterValues::strings($request->input('role')),
             $request->string('status')->toString(),
             $request->boolean('must_change_password'),
         );
@@ -445,13 +416,5 @@ class AdminUserController extends Controller
         $user->roles->each->makeHidden('permissions');
 
         return $user;
-    }
-
-    /** Neutralizes spreadsheet formulas in exported cells. */
-    private function csvCell(mixed $value): string
-    {
-        $value = (string) $value;
-
-        return preg_match('/^[=+\-@\t\r]/', $value) === 1 ? "'".$value : $value;
     }
 }

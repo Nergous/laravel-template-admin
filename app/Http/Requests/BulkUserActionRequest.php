@@ -2,15 +2,17 @@
 
 namespace App\Http\Requests;
 
-use App\Models\User;
+use App\Http\Requests\Concerns\SelectsUsers;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 /**
- * Bulk operations on active and trashed users.
+ * Bulk deletion of active users and bulk restore/permanent deletion in the
+ * trash (all under users.delete).
  */
 class BulkUserActionRequest extends FormRequest
 {
+    use SelectsUsers;
+
     public function authorize(): bool
     {
         return $this->user()?->can('users.delete') === true;
@@ -18,30 +20,6 @@ class BulkUserActionRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
-            'all' => ['sometimes', 'boolean'],
-            'search' => ['nullable', 'string', 'max:255'],
-            'role' => [
-                'nullable', 'string',
-                Rule::when($this->input('role') !== User::WITHOUT_ROLES, ['exists:roles,name']),
-            ],
-            'status' => ['nullable', Rule::in(['active', 'blocked'])],
-            'must_change_password' => ['nullable', 'boolean'],
-            'ids' => [
-                Rule::requiredIf(fn () => ! $this->boolean('all')),
-                'array',
-                'min:1',
-            ],
-            'ids.*' => ['integer', 'exists:users,id'],
-        ];
-    }
-
-    public function messages(): array
-    {
-        return [
-            'ids.required' => 'Выберите хотя бы одного пользователя',
-            'ids.min' => 'Выберите хотя бы одного пользователя',
-            'ids.*.exists' => 'Один или несколько пользователей не найдены',
-        ];
+        return $this->userSelectionRules();
     }
 }

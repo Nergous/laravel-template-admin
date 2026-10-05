@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -235,29 +234,6 @@ class RbacTest extends TestCase
         ])->assertForbidden();
 
         $this->assertDatabaseHas('roles', ['id' => $role->id, 'name' => 'editor']);
-    }
-
-    public function test_permission_store_requires_create_not_just_edit(): void
-    {
-        $this->actingAsUserWith(['permissions.view', 'permissions.edit']); // no create
-
-        $this->post(route('admin.permissions.store'), [
-            'name' => 'demo.new',
-        ])->assertForbidden();
-
-        $this->assertDatabaseMissing('permissions', ['name' => 'demo.new']);
-    }
-
-    public function test_permission_update_requires_edit_not_just_create(): void
-    {
-        $this->actingAsUserWith(['permissions.view', 'permissions.create']); // no edit
-        $perm = Permission::findOrCreate('demo.old', 'web');
-
-        $this->put(route('admin.permissions.update', $perm), [
-            'name' => 'demo.renamed',
-        ])->assertForbidden();
-
-        $this->assertDatabaseHas('permissions', ['id' => $perm->id, 'name' => 'demo.old']);
     }
 
     public function test_permissions_edit_holder_cannot_grant_permission_they_lack_via_matrix(): void

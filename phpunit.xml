@@ -18,8 +18,13 @@
         </include>
     </source>
     <php>
+        <!-- Everything below is forced, so a value from .env or the shell can never point
+             the suite at a real database, backup folder or framework cache. -->
         <env name="APP_ENV" value="testing" force="true"/>
-        <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
+        <!-- Maintenance mode lives in the array cache: the file driver would write
+             storage/framework/down of the working copy and take a local server down. -->
+        <env name="APP_MAINTENANCE_DRIVER" value="cache" force="true"/>
+        <env name="APP_MAINTENANCE_STORE" value="array" force="true"/>
         <env name="BCRYPT_ROUNDS" value="4" force="true"/>
         <env name="BROADCAST_CONNECTION" value="null" force="true"/>
         <env name="CACHE_STORE" value="array" force="true"/>
@@ -27,11 +32,17 @@
         <env name="DB_DATABASE" value=":memory:" force="true"/>
         <env name="DB_URL" value="" force="true"/>
         <env name="APP_CONFIG_CACHE" value="bootstrap/cache/testing-config.php" force="true"/>
+        <env name="APP_ROUTES_CACHE" value="bootstrap/cache/testing-routes.php" force="true"/>
+        <env name="APP_EVENTS_CACHE" value="bootstrap/cache/testing-events.php" force="true"/>
+        <env name="APP_SERVICES_CACHE" value="bootstrap/cache/testing-services.php" force="true"/>
+        <env name="APP_PACKAGES_CACHE" value="bootstrap/cache/testing-packages.php" force="true"/>
         <env name="MAIL_MAILER" value="array" force="true"/>
         <env name="QUEUE_CONNECTION" value="sync" force="true"/>
         <env name="SESSION_DRIVER" value="array" force="true"/>
         <env name="LOG_CHANNEL" value="null" force="true"/>
         <env name="MEDIA_DISK" value="public" force="true"/>
+        <!-- Backup tests set their own temporary backup.path; this is the fallback. -->
+        <env name="BACKUP_PATH" value="storage/framework/testing/backups" force="true"/>
         <env name="BACKUP_DISK" value="" force="true"/>
         <env name="BACKUP_ENCRYPTION_KEY" value="" force="true"/>
         <env name="PULSE_ENABLED" value="false" force="true"/>

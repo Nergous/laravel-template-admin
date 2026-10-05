@@ -3,9 +3,14 @@
 .git
 .gitignore
 .gitattributes
+.github
 .idea
 .vscode
 .claude
+
+# Local Composer executable and installer (the image copies composer from composer:2).
+composer.phar
+composer-setup.php
 
 # --- dependencies/artifacts (installed/built inside the image) ---
 
@@ -22,12 +27,16 @@ storage/app/public/*
 !storage/app/public/.gitkeep
 storage/app/private/*
 !storage/app/private/.gitkeep
+# Local database dumps (app:db-backup) — real data, never part of the image.
+storage/app/backups
 storage/framework/cache/*
 !storage/framework/cache/.gitkeep
 storage/framework/sessions/*
 !storage/framework/sessions/.gitkeep
 storage/framework/views/*
 !storage/framework/views/.gitkeep
+# Fake disks left by the test suite (Storage::fake).
+storage/framework/testing
 storage/logs/*
 !storage/logs/.gitkeep
 bootstrap/cache/*
@@ -62,6 +71,13 @@ compose.*.yaml
 figma
 docs
 design-system
+
+# Any database dump or transfer archive at any depth (real user data).
+**/*.sql
+**/*.sql.gz
+**/*.sql.enc
+**/*.sqlite.enc
+transfer
 
 # --- local instructions and audit reports (not needed in the prod image) ---
 

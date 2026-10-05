@@ -41,7 +41,9 @@ return [
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+            // Root-relative by default: media keeps working whatever host/port
+            // serves the app (artisan serve on :8000, a proxy, a new domain).
+            'url' => rtrim(env('PUBLIC_STORAGE_URL', '/storage'), '/'),
             'visibility' => 'public',
             'throw' => false,
             'report' => false,

@@ -8,11 +8,11 @@ use App\Models\User;
 use App\Support\RbacGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Spatie\Permission\Models\Permission;
 
 /**
- * Domain operations on permissions: the "role x permission" matrix toggle and
- * CRUD over the permissions themselves, with anti-escalation and logging.
+ * Domain operations on the "role x permission" matrix, with anti-escalation and
+ * logging. Permissions themselves are defined in code (seeders and migrations,
+ * all marked is_system) and are not edited from the panel.
  */
 class PermissionService
 {
@@ -103,57 +103,6 @@ class PermissionService
     }
 
     /**
-     * Creates a new permission (guard web), auto-grants it to the system admin role
-     * and logs both actions.
-     */
-    public function create(string $name): Permission
-    {
-        return DB::transaction(function () use ($name) {
-            $permission = Permission::create([
-                'name' => $name,
-                'guard_name' => 'web',
-            ]);
-
-            ActivityLog::record($permission, 'created');
-
-            /** @var Role|null $adminRole */
-            $adminRole = Role::where('name', RbacGuard::superadminRole())->first();
-            if ($adminRole) {
-                $adminRole->givePermissionTo($permission);
-                ActivityLog::record($adminRole, 'updated', [
-                    'permission' => [$permission->name, 'выдано'],
-                ]);
-            }
-
-            return $permission;
-        });
-    }
-
-    /** Renames a permission and logs the name change. */
-    public function update(Permission $permission, string $name): Permission
-    {
-        $this->ensureNotSystem($permission, 'переименовать');
-
-        $old = $permission->name;
-        $permission->update(['name' => $name]);
-        ActivityLog::record($permission, 'updated', $old !== $permission->name ? ['name' => [$old, $permission->name]] : null);
-
-        return $permission;
-    }
-
-    /** Deletes a permission, recording it in the log. */
-    public function delete(Permission $permission): void
-    {
-        $this->ensureNotSystem($permission, 'удалить');
-
-        // Log only a deletion that actually happened.
-        DB::transaction(function () use ($permission) {
-            $permission->delete();
-            ActivityLog::record($permission, 'deleted');
-        });
-    }
-
-    /**
      * @throws ValidationException If the role is the superadmin or the actor may not manage it.
      */
     private function ensureRoleEditable(Role $role, ?User $actor): void
@@ -166,22 +115,9 @@ class PermissionService
 
         if (! RbacGuard::canManageRole($actor, $role)) {
             throw ValidationException::withMessages([
-                'matrix' => 'Права системной роли может менять только администратор',
-            ]);
-        }
-    }
-
-    /**
-     * System permissions are referenced by the application code (routes,
-     * FormRequests); renaming or deleting them would break access checks.
-     *
-     * @throws ValidationException If the permission is a system one.
-     */
-    private function ensureNotSystem(Permission $permission, string $verb): void
-    {
-        if ($permission->is_system) {
-            throw ValidationException::withMessages([
-                'permission' => "Системное разрешение «{$permission->name}» нельзя {$verb}: на него опирается код приложения",
+                'matrix' => $role->is_system || $actor === null
+                    ? 'Права системной роли может менять только администратор'
+                    : 'У роли «'.$role->name.'» есть права, которых нет у вас: '.RbacGuard::missingPermissions($actor, $role)->implode(', '),
             ]);
         }
     }

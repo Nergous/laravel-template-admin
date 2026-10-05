@@ -43,16 +43,4 @@ class PermissionServiceTest extends TestCase
 
         (new PermissionService)->toggle($editor->id, 'users.delete', true, $actor);
     }
-
-    public function test_create_auto_grants_new_permission_to_admin_role(): void
-    {
-        $this->seedRolesAndPermissions();
-        $admin = Role::findByName('admin', 'web');
-
-        $permission = (new PermissionService)->create('demo.brand-new');
-
-        $this->assertDatabaseHas('permissions', ['name' => 'demo.brand-new']);
-        $this->assertSame('demo.brand-new', $permission->name);
-        $this->assertTrue($admin->fresh()->hasPermissionTo('demo.brand-new'));
-    }
 }

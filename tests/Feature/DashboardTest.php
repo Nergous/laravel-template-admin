@@ -101,6 +101,17 @@ class DashboardTest extends TestCase
         );
     }
 
+    public function test_media_card_reports_images_without_alt(): void
+    {
+        $this->actingAsUserWith(['media.view']);
+        Media::create(['filename' => 'media/a.webp', 'type' => 'image', 'alt' => '']);
+        Media::create(['filename' => 'media/b.webp', 'type' => 'image', 'alt' => 'Описание']);
+
+        $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+            ->where('stats.media.no_alt', 1)
+        );
+    }
+
     public function test_system_health_is_gated_by_permissions(): void
     {
         $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'dash-backups-'.uniqid();

@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use App\Services\ImageOptimizer;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\Rule;
 
 /**
  * Form Request for uploading files to the media library.
@@ -13,14 +14,15 @@ use Illuminate\Http\UploadedFile;
  * After validation, files are queued via the UploadMedia Job.
  *
  * Accepts images, video, audio and documents (see ALLOWED_EXTENSIONS).
- * A thumbnail is generated only for images (in UploadMedia).
+ * A thumbnail is generated only for images (in UploadMedia). AVIF is
+ * processed when GD can decode it, otherwise stored as is.
  */
 class MediaRequest extends FormRequest
 {
     /** Allowed file extensions for the media library. */
     public const ALLOWED_EXTENSIONS = [
         // images
-        'jpg', 'jpeg', 'png', 'webp', 'gif',
+        'jpg', 'jpeg', 'png', 'webp', 'avif', 'gif',
         // video
         'mp4', 'webm', 'mov',
         // audio
@@ -40,11 +42,21 @@ class MediaRequest extends FormRequest
         return $this->user()?->can('media.upload') === true;
     }
 
+    /** An empty folder means the library root. */
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('folder')) {
+            $folder = trim((string) $this->input('folder'));
+            $this->merge(['folder' => $folder === '' ? null : $folder]);
+        }
+    }
+
     /**
      * Validation rules:
      * - media     — required array of 1 to 10 files
      * - media.*   — each file must be of an allowed format
      *               (image/video/audio/document) no larger than 50 MB
+     * - folder    — optional existing folder the files go into
      */
     public function rules(): array
     {
@@ -59,6 +71,7 @@ class MediaRequest extends FormRequest
                 'max:'.self::MAX_SIZE_KB,
                 $this->imageWithinPixelLimit(...),
             ],
+            'folder' => ['nullable', 'string', 'max:255', Rule::exists('media_folders', 'name')],
         ];
     }
 
@@ -100,6 +113,7 @@ class MediaRequest extends FormRequest
             'media.*.file' => 'Не удалось загрузить файл',
             'media.*.mimes' => 'Недопустимый формат файла',
             'media.*.max' => 'Размер файла не должен превышать 50 МБ',
+            'folder.exists' => 'Папка не найдена — обновите страницу',
         ];
     }
 }

@@ -6,7 +6,9 @@ use App\Services\ImageOptimizer;
 use App\Traits\HasSearch;
 use App\Traits\LogsActivity;
 use App\Traits\TracksAuthor;
+use Database\Factories\MediaFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
@@ -27,7 +29,7 @@ use Illuminate\Support\Facades\Storage;
  * @property string $filename File path relative to the media disk (for example: media/abc123.webp)
  * @property string|null $original_name Original file name at upload time
  * @property string|null $alt Alternative text for images
- * @property string|null $folder Library folder (a flat label; null — outside any folder)
+ * @property string|null $folder Library folder path ("Banners/2026", see MediaFolderPath; null — outside any folder)
  * @property string|null $mime_type MIME type (for example image/webp, video/mp4)
  * @property string|null $type Category: image|video|audio|document|other
  * @property int|null $size Size in bytes
@@ -41,7 +43,8 @@ use Illuminate\Support\Facades\Storage;
  */
 class Media extends Model
 {
-    use HasSearch, LogsActivity, TracksAuthor;
+    /** @use HasFactory<MediaFactory> */
+    use HasFactory, HasSearch, LogsActivity, TracksAuthor;
 
     protected $fillable = [
         'filename',
@@ -83,6 +86,16 @@ class Media extends Model
      * cards) immediately gets links to the original and the thumbnail.
      */
     protected $appends = ['url', 'thumb_url', 'srcset'];
+
+    /** A file put into a folder by name registers that folder (see MediaFolder). */
+    protected static function booted(): void
+    {
+        static::saving(function (Media $media) {
+            if ($media->isDirty('folder')) {
+                MediaFolder::register($media->folder);
+            }
+        });
+    }
 
     public function getUrlAttribute(): string
     {

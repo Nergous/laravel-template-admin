@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Setting;
+use App\Rules\SafeUrl;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -23,11 +24,16 @@ class UpdateSettingsRequest extends FormRequest
         $rules = ['settings' => ['required', 'array']];
 
         foreach (Setting::SCHEMA as $group => $keys) {
+            if (! in_array($group, Setting::SETTINGS_PAGE_GROUPS, true)) {
+                continue;
+            }
+
             foreach ($keys as $key => [$type]) {
                 $rules["settings.{$group}.{$key}"] = match ($type) {
                     'bool' => ['required', 'boolean'],
                     'int' => ['required', 'integer', 'min:1', 'max:100000'],
                     'text' => ['nullable', 'string', 'max:1000'],
+                    'html' => ['nullable', 'string', 'max:20000'],
                     default => ['nullable', 'string', 'max:255'],
                 };
             }
@@ -38,8 +44,12 @@ class UpdateSettingsRequest extends FormRequest
         $rules['settings.security.session_lifetime'] = ['required', 'integer', 'min:1', 'max:43200'];
         $rules['settings.security.login_throttle'] = ['required', 'integer', 'min:1', 'max:1000'];
 
-        foreach (['settings.general.favicon', 'settings.seo.og_image'] as $assetKey) {
-            $rules[$assetKey] = ['nullable', 'string', 'max:255', $this->safeAssetUrl(...)];
+        foreach ([
+            'settings.general.favicon',
+            'settings.seo.og_image',
+        ] as $assetKey) {
+            // Empty, a root-relative path (/storage/...) or an absolute http(s) URL.
+            $rules[$assetKey] = ['nullable', 'string', 'max:255', new SafeUrl('Значение должно быть относительным путём (/…) или http(s)-ссылкой.')];
         }
 
         $rules['settings.seo.canonical_domain'] = ['nullable', 'string', 'max:255', 'regex:~^https?://[^/\s?#]+$~i'];
@@ -56,29 +66,5 @@ class UpdateSettingsRequest extends FormRequest
             'settings.security.login_throttle.min' => 'Минимум 1 попытка',
             'settings.seo.canonical_domain.regex' => 'Укажите домен вида https://example.com без пути и слэша в конце',
         ];
-    }
-
-    /**
-     * Rule: empty, or a root-relative path (/storage/...), or an
-     * absolute http(s) URL. Everything else (javascript:, data:, //host, other
-     * schemes) is rejected.
-     */
-    protected function safeAssetUrl(string $attribute, mixed $value, \Closure $fail): void
-    {
-        if (! is_string($value) || $value === '') {
-            return;
-        }
-
-        // Root-relative path, but not protocol-relative (//host).
-        if (str_starts_with($value, '/') && ! str_starts_with($value, '//')) {
-            return;
-        }
-
-        // Absolute http(s) URL.
-        if (preg_match('#^https?://#i', $value) && filter_var($value, FILTER_VALIDATE_URL) !== false) {
-            return;
-        }
-
-        $fail('Значение должно быть относительным путём (/…) или http(s)-ссылкой.');
     }
 }

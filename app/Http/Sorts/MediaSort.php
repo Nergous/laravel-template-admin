@@ -9,7 +9,7 @@ namespace App\Http\Sorts;
  */
 class MediaSort extends Sort
 {
-    protected array $allowedSorts = ['id', 'original_name', 'created_at'];
+    protected array $allowedSorts = ['id', 'original_name', 'created_at', 'size', 'mime_type'];
 
     protected string $defaultSort = 'created_at';
 }

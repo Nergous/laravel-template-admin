@@ -6,8 +6,9 @@
 #  internet directly. This config terminates TLS and proxies plain HTTP inward.
 #
 #  Where to put it: this is a server block (as for /etc/nginx/conf.d/). Connection options:
-#    • nginx container in the same compose network → upstream `app:8000` (the default below);
-#    • nginx on the HOST → upstream `127.0.0.1:8888` (the published APP_PORT, see below).
+#    • nginx on the HOST → upstream `127.0.0.1:8888` (the default below): docker-compose.yml
+#      publishes the app on 127.0.0.1:APP_PORT only, so it is not reachable from outside;
+#    • nginx container in the same compose network → upstream `app:8000`.
 #  Copy the file (e.g. to `docker/nginx.conf`), fill in the domain and the certificate paths.
 #
 #  ⚠ TRUSTED_PROXIES (.env) — MUST be kept in sync. Laravel trusts the
@@ -15,8 +16,9 @@
 #      — $request->ip() = the nginx address, not the client's (breaks the audit log and the
 #        login-throttle keys — effectively a rate-limit bypass, finding S4);
 #      — the scheme is treated as http → secure-cookie/HTTPS-URLs are generated incorrectly.
-#    For an nginx container, specify the docker network's subnet (or '*', since the app is then
-#    not reachable directly). For nginx on the host — the IP/subnet it connects from.
+#    The app sees the address the connection arrives from INSIDE the container: for nginx on
+#    the host that is the docker bridge gateway (e.g. 172.18.0.1), not 127.0.0.1, so use the
+#    docker subnet: TRUSTED_PROXIES=172.16.0.0/12. The same value fits an nginx container.
 #
 #  ⚠ What is DELIBERATELY NOT here (to avoid duplication):
 #      — Security headers (CSP with nonce, HSTS, X-Frame-Options, nosniff) are set by
@@ -28,8 +30,8 @@
 # --- Where we proxy to -------------------------------------------------------
 # A compose service name resolves within the docker network. Uncomment the option you need.
 upstream laravel_app {
-    server app:8000;                 # nginx in the same compose network
-    # server 127.0.0.1:8888;         # nginx on the host → published APP_PORT (8888)
+    server 127.0.0.1:8888;           # nginx on the host → APP_PORT published on loopback
+    # server app:8000;               # nginx in the same compose network
     keepalive 16;                    # reuse connections to the upstream
 }
 

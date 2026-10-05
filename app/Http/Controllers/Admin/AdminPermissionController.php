@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\PermissionRequest;
 use App\Models\Role;
 use App\Services\PermissionService;
 use App\Support\RbacGuard;
@@ -16,15 +15,16 @@ use Inertia\Response;
 use Spatie\Permission\Models\Permission;
 
 /**
- * Permission management: the "role × permission" matrix and CRUD over permissions.
+ * Permission management: the "role × permission" matrix. Permissions themselves
+ * come from code (seeders and migrations, all is_system): a permission nothing
+ * checks would do nothing, and renaming one the code checks would break access.
  *
  * The controller handles HTTP: validates input, assembles the matrix props, and
  * redirects. Orchestration and invariants (anti-escalation, protecting the superadmin
- * role, logging, auto-grant on creation) live in App\Services\PermissionService.
+ * role, logging) live in App\Services\PermissionService.
  *
  * The superadmin role's permissions (config('rbac.superadmin_role')) are protected
- * from changes. There are no separate create/edit/show pages — everything is edited
- * in the matrix, so these resource methods merely redirect to index.
+ * from changes.
  */
 class AdminPermissionController extends Controller
 {
@@ -125,51 +125,6 @@ class AdminPermissionController extends Controller
         );
 
         return back()->with('success', "Матрица доступа обновлена. Изменено ролей: {$changed}");
-    }
-
-    public function create(): RedirectResponse
-    {
-        return redirect()->route('admin.permissions.index');
-    }
-
-    /** Creates a new permission (guard web), auto-grants it to the admin role, and logs the action. */
-    public function store(PermissionRequest $request): RedirectResponse
-    {
-        $this->permissions->create($request->name);
-
-        return redirect()
-            ->route('admin.permissions.index')
-            ->with('success', 'Разрешение создано');
-    }
-
-    public function edit(Permission $permission): RedirectResponse
-    {
-        return redirect()->route('admin.permissions.index');
-    }
-
-    /** Renames a permission and logs the name change. */
-    public function update(PermissionRequest $request, Permission $permission): RedirectResponse
-    {
-        $this->permissions->update($permission, $request->name);
-
-        return redirect()
-            ->route('admin.permissions.index')
-            ->with('success', 'Разрешение обновлено');
-    }
-
-    /** Deletes a permission and writes an entry to the activity log. */
-    public function destroy(Permission $permission): RedirectResponse
-    {
-        $this->permissions->delete($permission);
-
-        return redirect()
-            ->route('admin.permissions.index')
-            ->with('success', 'Разрешение удалено');
-    }
-
-    public function show(Permission $permission): RedirectResponse
-    {
-        return redirect()->route('admin.permissions.index');
     }
 
     /**

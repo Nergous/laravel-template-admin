@@ -24,4 +24,16 @@ return [
     // The same per-kind rotation is applied on that disk.
     'disk' => env('BACKUP_DISK'),
     'disk_path' => env('BACKUP_DISK_PATH', 'backups'),
+
+    // Folder with the database client tools (mariadb-dump/mysqldump, mariadb/mysql,
+    // pg_dump/psql) when they are not in PATH, for example when the database runs
+    // in Docker and PHP runs on the host. It is checked before PATH.
+    'binary_path' => env('BACKUP_BINARY_PATH'),
+
+    // Seconds mariadb-dump/pg_dump may run (minimum 60). The queued "Create backup"
+    // job (App\Jobs\CreateBackup) is allowed this plus 60 seconds, so the tool hits
+    // its limit first and the job still reports the failure. Keep the queue
+    // retry_after (DB_QUEUE_RETRY_AFTER/REDIS_QUEUE_RETRY_AFTER, config/queue.php)
+    // above that job timeout. SQLite dumps (VACUUM INTO) are not limited.
+    'timeout' => (int) env('BACKUP_TIMEOUT', 600),
 ];

@@ -3,7 +3,8 @@
 # =============================================================================
 #  Laravel Admin Template — multi-stage image.
 #
-#  Runtime: FrankenPHP (Caddy + PHP-FPM in one process, optional worker mode).
+#  Runtime: FrankenPHP (Caddy web server with PHP embedded in the same process,
+#           no PHP-FPM; optional worker mode).
 #  Stages:  vendor             → composer dependencies (without dev)
 #           assets             → frontend build (Vite/Vue)
 #           frankenphp-builder → server binary with patched Go dependencies
@@ -91,10 +92,14 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # right to bind privileged ports isn't needed — we listen on :8000.
 # mariadb-client / postgresql-client provide mariadb-dump / pg_dump (and the
 # mariadb / psql clients for app:db-restore) for the backups page on MySQL/PostgreSQL.
+# Caddy keeps its autosave config and storage locks in /config and /data
+# (XDG_CONFIG_HOME/XDG_DATA_HOME); the server runs as www-data after su-exec.
 RUN set -eux; \
     apk add --no-cache shadow su-exec mariadb-client postgresql-client; \
     usermod -u 1000 www-data 2>/dev/null || true; \
-    groupmod -g 1000 www-data 2>/dev/null || true
+    groupmod -g 1000 www-data 2>/dev/null || true; \
+    mkdir -p /config/caddy /data/caddy; \
+    chown -R www-data:www-data /config /data
 
 WORKDIR /app
 
@@ -115,7 +120,8 @@ FROM base AS dev
 ENV APP_ENV=local
 # The code is mounted via bind-mount from compose.dev.yaml; vendor/build are installed
 # in place by the entrypoint on the first run. The entrypoint starts as root
-# (chown bind-mount/volumes), then drops privileges to www-data via su-exec.
+# (composer install, chown of storage), runs artisan as www-data and then drops
+# privileges to www-data via su-exec — the same flow as prod.
 
 # ---------- prod (final self-contained image) ----------
 FROM base AS prod
@@ -126,12 +132,16 @@ COPY . /app
 COPY --from=vendor /app/vendor       /app/vendor
 COPY --from=assets /app/public/build /app/public/build
 
-# Authoritative classmap against the final paths + permissions on storage/cache
+# Authoritative classmap against the final paths. The code stays owned by root and
+# read-only for www-data; only storage/ and bootstrap/cache are writable. The
+# public/storage symlink is created here because public/ is not writable at runtime.
 RUN set -eux; \
     composer dump-autoload --optimize --classmap-authoritative --no-dev; \
     mkdir -p storage/framework/cache storage/framework/sessions \
-             storage/framework/views storage/logs bootstrap/cache; \
-    chown -R www-data:www-data /app
+             storage/framework/views storage/logs storage/app/public \
+             storage/app/private storage/app/backups bootstrap/cache; \
+    ln -sfn /app/storage/app/public /app/public/storage; \
+    chown -R www-data:www-data storage bootstrap/cache
 
 # The container starts as root to chown the mounted storage volume on the first
 # run; entrypoint.sh then drops privileges to www-data (su-exec) before

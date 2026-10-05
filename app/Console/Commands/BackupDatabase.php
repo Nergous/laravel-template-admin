@@ -31,6 +31,8 @@ class BackupDatabase extends Command
                 is_numeric($keep) ? (int) $keep : null,
             );
         } catch (\Throwable $e) {
+            // The scheduler discards the console output: keep the cause in the log.
+            report($e);
             $this->error('Дамп не создан: '.$e->getMessage());
 
             return self::FAILURE;

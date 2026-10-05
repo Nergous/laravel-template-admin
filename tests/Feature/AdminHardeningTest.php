@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ActivityLog;
 use App\Models\Media;
 use App\Models\Role;
@@ -112,19 +113,6 @@ class AdminHardeningTest extends TestCase
             ->assertJsonFragment(['type' => 'media', 'label' => 'Квартальный отчёт.pdf']);
     }
 
-    public function test_system_permission_cannot_be_deleted_but_custom_one_can(): void
-    {
-        $this->actingAsAdmin();
-        $system = Permission::findByName('users.view', 'web');
-        $custom = Permission::create(['name' => 'reports.view', 'guard_name' => 'web']);
-
-        $this->delete(route('admin.permissions.destroy', $system))->assertSessionHasErrors('permission');
-        $this->delete(route('admin.permissions.destroy', $custom))->assertSessionHasNoErrors();
-
-        $this->assertDatabaseHas('permissions', ['name' => 'users.view']);
-        $this->assertDatabaseMissing('permissions', ['name' => 'reports.view']);
-    }
-
     public function test_matrix_bulk_toggle_grants_a_row_to_manageable_roles_only(): void
     {
         $this->actingAsAdmin();
@@ -230,5 +218,15 @@ class AdminHardeningTest extends TestCase
         $this->assertStringContainsString('content="noindex, nofollow"', $html);
         $this->assertStringContainsString('content="https://acme.test/storage/media/cover.webp"', $html);
         $this->assertStringContainsString('rel="canonical" href="https://acme.test/"', $html);
+    }
+
+    public function test_inertia_shared_props_are_built_for_admin_routes_only(): void
+    {
+        $router = app('router');
+        $middleware = fn (string $name) => $router->gatherRouteMiddleware($router->getRoutes()->getByName($name));
+
+        $this->assertContains(HandleInertiaRequests::class, $middleware('login'));
+        $this->assertContains(HandleInertiaRequests::class, $middleware('admin.dashboard'));
+        $this->assertNotContains(HandleInertiaRequests::class, $middleware('robots'));
     }
 }

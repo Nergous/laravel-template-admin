@@ -11,11 +11,13 @@ use App\Http\Controllers\Admin\AdminSearchController;
 use App\Http\Controllers\Admin\AdminSettingsController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\ImpersonationController;
+use App\Http\Controllers\Admin\NotificationController;
 use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\SessionController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\SeoController;
 use App\Http\Middleware\EnsureAccountIsActive;
+use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RequirePasswordChange;
 use Illuminate\Session\Middleware\AuthenticateSession;
 use Illuminate\Support\Facades\Route;
@@ -26,7 +28,10 @@ Route::redirect('/', '/admin');
 Route::get('/robots.txt', [SeoController::class, 'robots'])->name('robots');
 Route::get('/sitemap.xml', [SeoController::class, 'sitemap'])->name('sitemap');
 
-Route::prefix('/admin')->group(function () {
+// The admin panel is the only Inertia application: its shared props (user,
+// permissions, sidebar counts) are built for these routes only. A public site
+// added later (Blade or a separate Inertia bundle) stays outside this group.
+Route::prefix('/admin')->middleware(HandleInertiaRequests::class)->group(function () {
 
     Route::middleware('guest')->group(function () {
         Route::get('/login', [LoginController::class, 'show'])
@@ -52,15 +57,19 @@ Route::prefix('/admin')->group(function () {
         Route::post('session/ping', [SessionController::class, 'ping'])
             ->name('admin.session.ping');
 
-        // Own account: available to every signed-in user.
+        // Own account: available to every signed-in user. Actions that check the
+        // current password share a small attempt budget against password guessing
+        // from a hijacked session.
         Route::get('profile', [ProfileController::class, 'show'])
             ->name('admin.profile.show');
-        Route::put('profile', [ProfileController::class, 'update'])
-            ->name('admin.profile.update');
-        Route::put('profile/password', [ProfileController::class, 'password'])
-            ->name('admin.profile.password');
-        Route::post('profile/sessions/logout-others', [ProfileController::class, 'logoutOthers'])
-            ->name('admin.profile.sessions.logout-others');
+        Route::middleware('throttle:6,1,profile-password')->group(function () {
+            Route::put('profile', [ProfileController::class, 'update'])
+                ->name('admin.profile.update');
+            Route::put('profile/password', [ProfileController::class, 'password'])
+                ->name('admin.profile.password');
+            Route::post('profile/sessions/logout-others', [ProfileController::class, 'logoutOthers'])
+                ->name('admin.profile.sessions.logout-others');
+        });
         Route::delete('profile/sessions/{key}', [ProfileController::class, 'destroySession'])
             ->name('admin.profile.sessions.destroy');
 
@@ -81,13 +90,13 @@ Route::prefix('/admin')->group(function () {
 
         // Notifications — the latest actions of other users (activity log feed for the bell).
         Route::middleware('permission:activity-log.view')->group(function () {
-            Route::get('notifications/recent', [AdminActivityLogController::class, 'recent'])
+            Route::get('notifications/recent', [NotificationController::class, 'recent'])
                 ->name('admin.notifications.recent');
-            Route::get('notifications/count', [AdminActivityLogController::class, 'count'])
+            Route::get('notifications/count', [NotificationController::class, 'count'])
                 ->name('admin.notifications.count');
-            Route::post('notifications/seen', [AdminActivityLogController::class, 'markSeen'])
+            Route::post('notifications/seen', [NotificationController::class, 'markSeen'])
                 ->name('admin.notifications.seen');
-            Route::put('notifications/preferences', [AdminActivityLogController::class, 'preferences'])
+            Route::put('notifications/preferences', [NotificationController::class, 'preferences'])
                 ->name('admin.notifications.preferences');
         });
 
@@ -118,23 +127,28 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.users.destroy');
         });
 
-        // Viewing/creating/editing users.
+        // Viewing/creating/editing users; creating and editing need their own permission.
         Route::middleware('permission:users.view')->group(function () {
             // CSV of the list with the current filters.
             Route::get('users/export', [AdminUserController::class, 'export'])
                 ->middleware('permission:users.export')
                 ->name('admin.users.export');
 
-            // Bulk block/unblock; gated by users.edit in BulkUserStatusRequest.
+            // Bulk block/unblock.
             Route::patch('users/bulk-status', [AdminUserController::class, 'bulkStatus'])
+                ->middleware('permission:users.edit')
                 ->name('admin.users.bulk-status');
 
-            Route::name('admin')->resource('users', AdminUserController::class)->except('destroy');
+            Route::name('admin')->resource('users', AdminUserController::class)->except('destroy')
+                ->middlewareFor(['create', 'store'], 'permission:users.create')
+                ->middlewareFor(['edit', 'update'], 'permission:users.edit');
         });
 
         // Roles
         Route::middleware('permission:roles.view')->group(function () {
-            Route::name('admin')->resource('roles', AdminRoleController::class)->except('destroy');
+            Route::name('admin')->resource('roles', AdminRoleController::class)->except('destroy')
+                ->middlewareFor(['create', 'store'], 'permission:roles.create')
+                ->middlewareFor(['edit', 'update'], 'permission:roles.edit');
         });
 
         Route::middleware('permission:roles.delete')->group(function () {
@@ -150,12 +164,10 @@ Route::prefix('/admin')->group(function () {
                 ->name('admin.permissions.sync-many');
         });
 
-        // Permissions
+        // Permissions are defined in code (seeders/migrations); the panel only shows the matrix.
         Route::middleware('permission:permissions.view')->group(function () {
-            Route::name('admin')->resource('permissions', AdminPermissionController::class)->except('destroy');
-        });
-        Route::middleware('permission:permissions.delete')->group(function () {
-            Route::name('admin')->resource('permissions', AdminPermissionController::class)->only('destroy');
+            Route::get('permissions', [AdminPermissionController::class, 'index'])
+                ->name('admin.permissions.index');
         });
 
         // Media library: viewing under media.view, uploading under media.upload,
@@ -186,7 +198,10 @@ Route::prefix('/admin')->group(function () {
             Route::patch('media/bulk-folder', [AdminMediaController::class, 'bulkFolder'])
                 ->name('admin.media.bulk-folder');
 
-            // Rename a folder, or dissolve it (its files move out of any folder).
+            // Create an empty folder, rename one, or dissolve it (its files move
+            // out of any folder).
+            Route::post('media/folders', [AdminMediaController::class, 'createFolder'])
+                ->name('admin.media.folders.store');
             Route::patch('media/folders', [AdminMediaController::class, 'renameFolder'])
                 ->name('admin.media.folders.rename');
             Route::delete('media/folders', [AdminMediaController::class, 'clearFolder'])

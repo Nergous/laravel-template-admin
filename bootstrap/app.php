@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SecurityHeaders;
+use App\Support\RbacGuard;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -27,25 +27,23 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         // Security headers (X-Frame-Options, nosniff, HSTS, CSP with nonce) on all web responses.
-        // HandleInertiaRequests — handling of Inertia requests and shared props.
+        // HandleInertiaRequests is attached to the /admin route group only (routes/web.php):
+        // a public site added later needs none of the admin shared props.
         $middleware->web(append: [
             SecurityHeaders::class,
-            HandleInertiaRequests::class,
         ]);
 
-        // Which proxies to trust X-Forwarded-* headers from — taken from TRUSTED_PROXIES
-        // (CIDR/IP, comma-separated). The default is EMPTY = trust no one: then
-        // $request->ip()/scheme are taken from the direct connection and the client CANNOT
-        // forge X-Forwarded-For. This matters: otherwise forging XFF spoofs the IP in
-        // rate-limit keys (bypassing login-throttle, S4) and in audit logs. Behind a trusted
-        // reverse-proxy/ingress, list its subnet: TRUSTED_PROXIES=10.0.0.0/8,...
-        // The value '*' (trust everyone) is acceptable ONLY when the application is not
-        // reachable directly, but only through a trusted proxy.
-        $trustedProxies = (string) env('TRUSTED_PROXIES', '');
+        // The guest-only login page sends a signed-in user to the admin panel.
+        // Laravel's default target is "/" (no "dashboard"/"home" route exists):
+        // when the idle timer sends an Inertia visit to /admin/login while the
+        // session is still alive, it would otherwise bounce through the "/" redirect.
+        $middleware->redirectUsersTo(fn () => route('admin.dashboard'));
+
+        // Which proxies to trust X-Forwarded-* headers from: config/trustedproxy.php
+        // (TRUSTED_PROXIES). No "at:" here on purpose — the TrustProxies middleware
+        // then reads config('trustedproxy.proxies') per request, which survives
+        // config:cache (this callback runs before the configuration is loaded).
         $middleware->trustProxies(
-            at: $trustedProxies === '*'
-                ? '*'
-                : array_values(array_filter(array_map('trim', explode(',', $trustedProxies)))),
             headers: Request::HEADER_X_FORWARDED_FOR |
                 Request::HEADER_X_FORWARDED_HOST |
                 Request::HEADER_X_FORWARDED_PORT |
@@ -53,6 +51,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 Request::HEADER_X_FORWARDED_AWS_ELB
         );
     })
+    // The superadmin passes every ability check, so no permission row (or a
+    // route's permission: middleware) can lock them out of the panel.
+    ->booted(fn () => RbacGuard::registerSuperadminGate())
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->render(function (NotFoundHttpException $e, Request $request) {
             if ($request->expectsJson() || $request->is('admin', 'admin/*')) {
@@ -86,6 +87,10 @@ return Application::configure(basePath: dirname(__DIR__))
             $status = $response->getStatusCode();
 
             if (in_array($status, [403, 404, 419, 429, 500, 503], true)) {
+                // Maintenance mode (503) stops the request before the route
+                // middleware, so HandleInertiaRequests never sets the root view.
+                Inertia::setRootView('admin');
+
                 return Inertia::render('Error', ['status' => $status])
                     ->toResponse($request)
                     ->setStatusCode($status);

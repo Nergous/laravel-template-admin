@@ -50,6 +50,9 @@ class Setting extends Model
         ],
     ];
 
+    /** Groups edited on the /admin/settings page. */
+    public const SETTINGS_PAGE_GROUPS = ['general', 'seo', 'security'];
+
     private static function castValue(string $type, mixed $raw): mixed
     {
         return match ($type) {

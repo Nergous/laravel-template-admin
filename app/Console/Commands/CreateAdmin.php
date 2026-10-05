@@ -14,11 +14,14 @@ use Illuminate\Validation\Rules\Password;
 /**
  * Creates or updates an administrator.
  *
- * First seeds the base permission catalog (RolePermissionSeeder, idempotent) —
+ * First ensures the base permission catalog (RolePermissionSeeder::ensure()) —
  * otherwise on a fresh DB (after `migrate` without seeds, as in Docker prod with
  * RUN_SEEDS=false or a manual install) the superadmin role would be created
- * without a single permission, and the admin would get 403 in every section. Then
- * assigns the superadmin role from config('rbac.superadmin_role').
+ * without a single permission, and the admin would get 403 in every section.
+ * ensure() only adds what is missing: permissions configured in the admin panel
+ * for the operator or any other role stay as they are, so the command is safe
+ * to repeat on a live database. Then assigns the superadmin role from
+ * config('rbac.superadmin_role').
  *
  * Missing arguments (email, name) and the password are requested interactively.
  * Returns SUCCESS on a successful create / update and FAILURE on a password
@@ -72,8 +75,8 @@ class CreateAdmin extends Command
         }
 
         // Ensure the base RBAC (permission catalog + granting to the superadmin)
-        // exists BEFORE assigning the role. Idempotent, so safe on every run.
-        $this->callSilent('db:seed', ['--class' => RolePermissionSeeder::class, '--force' => true]);
+        // exists BEFORE assigning the role. Non-destructive, so safe on every run.
+        app(RolePermissionSeeder::class)->ensure();
 
         // An account with this email in the trash is restored instead of
         // creating a second user with the same email.

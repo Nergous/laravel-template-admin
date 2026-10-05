@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\FilterValues;
 use App\Traits\HasSearch;
 use App\Traits\LogsActivity;
 use App\Traits\TracksAuthor;
@@ -117,22 +118,31 @@ class User extends Authenticatable
     }
 
     /**
-     * Filter by role name (spatie).
+     * Filter by role names (spatie): a user with any of them matches.
      *
-     * @param  string|null  $role  Role name (spatie); empty — filter is not applied;
-     *                             self::WITHOUT_ROLES — users without any role
+     * @param  string|list<string>|null  $role  Role names, comma-separated or a list
+     *                                          (FilterValues); empty — filter is not applied;
+     *                                          self::WITHOUT_ROLES — users without any role
      */
-    public function scopeFilterByRole(Builder $query, ?string $role): Builder
+    public function scopeFilterByRole(Builder $query, string|array|null $role): Builder
     {
-        if (blank($role)) {
+        $names = FilterValues::strings($role);
+
+        if ($names === []) {
             return $query;
         }
 
-        if ($role === self::WITHOUT_ROLES) {
-            return $query->doesntHave('roles');
-        }
+        $withoutRoles = in_array(self::WITHOUT_ROLES, $names, true);
+        $names = array_values(array_diff($names, [self::WITHOUT_ROLES]));
 
-        return $query->role($role);
+        return $query->where(function (Builder $query) use ($names, $withoutRoles) {
+            if ($names !== []) {
+                $query->whereHas('roles', fn (Builder $roles) => $roles->whereIn('name', $names));
+            }
+            if ($withoutRoles) {
+                $query->orWhereDoesntHave('roles');
+            }
+        });
     }
 
     /** Role filter value that selects users without any role. */

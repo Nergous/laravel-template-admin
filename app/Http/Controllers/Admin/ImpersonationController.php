@@ -62,8 +62,12 @@ class ImpersonationController extends Controller
 
         ActivityLog::record($impersonated, 'impersonation_stopped');
 
-        return redirect()
-            ->route('admin.users.show', $impersonated)
-            ->with('success', 'Вы вернулись к своему аккаунту');
+        // Back to the user's page, or to the dashboard for an actor who may
+        // impersonate but not view users.
+        $target = $impersonator->can('users.view')
+            ? route('admin.users.show', $impersonated)
+            : route('admin.dashboard');
+
+        return redirect()->to($target)->with('success', 'Вы вернулись к своему аккаунту');
     }
 }

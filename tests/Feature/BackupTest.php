@@ -7,7 +7,11 @@ use App\Models\ActivityLog;
 use App\Models\User;
 use App\Services\BackupCipher;
 use App\Services\BackupService;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -341,6 +345,35 @@ class BackupTest extends TestCase
         $this->get('/admin/backups')->assertInertia(fn (Assert $page) => $page->where('pending', true));
     }
 
+    public function test_missing_dump_tool_reports_how_to_fix_it(): void
+    {
+        // A MariaDB connection that is never opened: the dump fails on the tool lookup.
+        config([
+            'database.connections.dumpcheck' => ['driver' => 'mariadb', 'host' => '127.0.0.1', 'database' => 'app'],
+            'backup.binary_path' => $this->scratch,
+        ]);
+        $defaultConnection = config('database.default');
+        $path = getenv('PATH');
+
+        config(['database.default' => 'dumpcheck']);
+        putenv('PATH=');
+
+        try {
+            app(BackupService::class)->create();
+            $this->fail('The dump must fail without mariadb-dump and mysqldump.');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('mariadb-dump или mysqldump', $e->getMessage());
+            $this->assertStringContainsString('BACKUP_BINARY_PATH', $e->getMessage());
+            $this->assertSame($e->getMessage(), CreateBackup::publicMessage($e));
+        } finally {
+            putenv('PATH='.$path);
+            config(['database.default' => $defaultConnection]);
+        }
+
+        $this->assertSame([], File::glob($this->dir.DIRECTORY_SEPARATOR.'*'));
+        $this->assertSame([], File::glob($this->dir.DIRECTORY_SEPARATOR.'.partial-*'));
+    }
+
     public function test_restore_refuses_an_in_memory_database(): void
     {
         $name = app(BackupService::class)->create()['name'];
@@ -375,6 +408,191 @@ class BackupTest extends TestCase
             $this->assertSame('before', DB::connection('restore_test')->table('notes')->value('body'));
             $this->assertSame('db-20260924-120500-prerestore.sqlite', $safety);
             $this->assertSame('prerestore', BackupService::kindOf((string) $safety));
+        } finally {
+            DB::purge('restore_test');
+            config(['database.default' => $previous]);
+        }
+    }
+
+    public function test_restore_from_an_encrypted_dump_leaves_no_plaintext_behind(): void
+    {
+        $this->requireSodium();
+        config(['backup.encryption_key' => BackupCipher::generateKey()]);
+
+        $this->withOnDiskSqlite(function ($db) {
+            $service = app(BackupService::class);
+            $name = $service->create()['name'];
+            $this->assertStringEndsWith('.sqlite.enc', $name);
+            $db->table('notes')->update(['body' => 'after']);
+
+            $this->assertNull($service->restore($name, safetyDump: false));
+
+            $this->assertSame('before', DB::connection('restore_test')->table('notes')->value('body'));
+            $this->assertSame([$name], array_values(array_diff(scandir($this->dir), ['.', '..'])));
+        });
+    }
+
+    public function test_restore_command_clears_the_cache_and_brings_the_app_back_up(): void
+    {
+        $this->isolateStoragePath();
+
+        $this->withOnDiskSqlite(function ($db) {
+            $name = app(BackupService::class)->create()['name'];
+            $db->table('notes')->update(['body' => 'after']);
+            Cache::put('settings.grouped', ['stale' => true]);
+            Cache::put('media.usage-index', ['stale.jpg' => []]);
+
+            $this->artisan('app:db-restore', ['file' => $name, '--force' => true, '--no-safety-backup' => true])
+                ->expectsOutputToContain('остановите обработчик очереди и планировщик')
+                ->assertSuccessful();
+
+            $this->assertSame('before', DB::connection('restore_test')->table('notes')->value('body'));
+            $this->assertFalse(Cache::has('settings.grouped'));
+            $this->assertFalse(Cache::has('media.usage-index'));
+            $this->assertFalse($this->app->maintenanceMode()->active());
+        });
+    }
+
+    public function test_restore_command_keeps_maintenance_mode_it_did_not_enable(): void
+    {
+        $this->isolateStoragePath();
+        $this->app->maintenanceMode()->activate([]);
+
+        $this->withOnDiskSqlite(function () {
+            $name = app(BackupService::class)->create()['name'];
+
+            $this->artisan('app:db-restore', ['file' => $name, '--force' => true, '--no-safety-backup' => true])
+                ->assertSuccessful();
+        });
+
+        $this->assertTrue($this->app->maintenanceMode()->active());
+        $this->app->maintenanceMode()->deactivate();
+    }
+
+    public function test_stale_work_files_are_removed_and_fresh_ones_kept(): void
+    {
+        File::ensureDirectoryExists($this->dir);
+        $stale = [];
+        foreach (['.partial-db-20260924-080000.sql', '.restore-db-20260924-080000.sql', '.verify-db-20260924-080000.sql.enc'] as $file) {
+            $stale[] = $path = $this->dir.DIRECTORY_SEPARATOR.$file;
+            File::put($path, 'plain dump');
+            touch($path, now()->subHours(3)->getTimestamp());
+        }
+        // A dump that is still being written by another process.
+        $running = $this->dir.DIRECTORY_SEPARATOR.'.partial-db-20260924-115500.sql';
+        File::put($running, 'in progress');
+        touch($running, now()->subMinutes(5)->getTimestamp());
+
+        app(BackupService::class)->list();
+
+        foreach ($stale as $path) {
+            $this->assertFileDoesNotExist($path);
+        }
+        $this->assertFileExists($running);
+    }
+
+    public function test_backup_job_outlives_the_dump_tool_and_stays_below_retry_after(): void
+    {
+        $job = new CreateBackup('token');
+
+        $this->assertGreaterThan(BackupService::dumpTimeout(), $job->timeout);
+        foreach (['database', 'redis', 'beanstalkd'] as $connection) {
+            $this->assertGreaterThan($job->timeout, config("queue.connections.{$connection}.retry_after"), $connection);
+        }
+    }
+
+    public function test_a_killed_backup_job_reports_the_failure_and_releases_the_page(): void
+    {
+        Cache::put(CreateBackup::PENDING_KEY, 'token', 600);
+
+        (new CreateBackup('token'))->failed(new TimeoutExceededException('timed out'));
+
+        $this->assertFalse(Cache::has(CreateBackup::PENDING_KEY));
+        $this->assertSame(1, ActivityLog::where('action', 'backup_failed')->count());
+
+        $this->actingAsUserWith(['backups.view']);
+        $this->get('/admin/backups')->assertInertia(fn (Assert $page) => $page
+            ->where('pending', false)
+            ->where('lastFailure.message', fn (string $message) => str_contains($message, 'BACKUP_TIMEOUT')));
+    }
+
+    public function test_failed_scheduled_backup_is_flagged_until_the_next_successful_run(): void
+    {
+        $event = $this->scheduledBackupEvent();
+        app(BackupService::class)->create();
+        $this->actingAsUserWith(['backups.view']);
+        $this->get('/admin/backups')->assertInertia(fn (Assert $page) => $page->where('scheduleWarning', null));
+
+        Carbon::setTestNow(Carbon::parse('2026-09-25 03:00:00', 'UTC'));
+        $event->finish($this->app, 1);
+
+        $this->assertTrue(Cache::has(BackupService::SCHEDULED_FAILURE_KEY));
+        $this->assertSame(1, ActivityLog::where('action', 'backup_failed')->count());
+        $this->get('/admin/backups')->assertInertia(fn (Assert $page) => $page
+            ->where('scheduleWarning.message', fn (string $message) => str_contains($message, 'завершился ошибкой')));
+
+        $event->finish($this->app, 0);
+        $this->assertFalse(Cache::has(BackupService::SCHEDULED_FAILURE_KEY));
+    }
+
+    public function test_backups_page_warns_when_the_newest_scheduled_dump_is_too_old(): void
+    {
+        $this->actingAsUserWith(['backups.view']);
+        $this->get('/admin/backups')->assertInertia(fn (Assert $page) => $page
+            ->where('scheduleWarning.message', fn (string $message) => str_contains($message, 'Плановых копий нет')));
+
+        app(BackupService::class)->create();
+        app(BackupService::class)->create('manual');
+        Carbon::setTestNow(Carbon::parse('2026-09-25 14:30:00', 'UTC'));
+        // A fresh manual dump does not hide a stalled scheduler.
+        app(BackupService::class)->create('manual');
+
+        $this->get('/admin/backups')->assertInertia(fn (Assert $page) => $page
+            ->where('scheduleWarning.at', '2026-09-24T12:00:00+00:00')
+            ->where('scheduleWarning.message', fn (string $message) => str_contains($message, 'больше 26 часов')));
+    }
+
+    /** The app:db-backup event registered in routes/console.php. */
+    private function scheduledBackupEvent(): Event
+    {
+        $this->app->make(ConsoleKernel::class)->all();
+
+        $event = collect($this->app->make(Schedule::class)->events())
+            ->first(fn (Event $event) => str_contains((string) $event->command, 'app:db-backup'));
+        $this->assertNotNull($event, 'app:db-backup is not scheduled');
+
+        return $event;
+    }
+
+    /**
+     * The down/up commands write storage/framework/maintenance.php: point
+     * storage_path() at the scratch directory so the real storage is untouched.
+     */
+    private function isolateStoragePath(): void
+    {
+        $storage = $this->scratch.DIRECTORY_SEPARATOR.'storage';
+        File::ensureDirectoryExists($storage.DIRECTORY_SEPARATOR.'framework');
+        $this->app->useStoragePath($storage);
+    }
+
+    /** Runs $callback with the default connection on a SQLite file holding notes(body = 'before'). */
+    private function withOnDiskSqlite(callable $callback): void
+    {
+        File::ensureDirectoryExists($this->scratch);
+        $database = $this->scratch.DIRECTORY_SEPARATOR.'restore.sqlite';
+        touch($database);
+        $previous = config('database.default');
+        config([
+            'database.connections.restore_test' => ['driver' => 'sqlite', 'database' => $database, 'prefix' => '', 'foreign_key_constraints' => true],
+            'database.default' => 'restore_test',
+        ]);
+
+        try {
+            $db = DB::connection('restore_test');
+            $db->statement('CREATE TABLE notes (body TEXT)');
+            $db->table('notes')->insert(['body' => 'before']);
+
+            $callback($db);
         } finally {
             DB::purge('restore_test');
             config(['database.default' => $previous]);

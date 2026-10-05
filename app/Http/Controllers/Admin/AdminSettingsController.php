@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateSettingsRequest;
 use App\Models\ActivityLog;
 use App\Models\Setting;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -23,7 +24,7 @@ class AdminSettingsController extends Controller
     public function index(): Response
     {
         return Inertia::render('Settings/Index', [
-            'settings' => Setting::grouped(),
+            'settings' => Arr::only(Setting::grouped(), Setting::SETTINGS_PAGE_GROUPS),
         ]);
     }
 
@@ -35,7 +36,7 @@ class AdminSettingsController extends Controller
     public function update(UpdateSettingsRequest $request): RedirectResponse
     {
         /** @var array<string, array<string, mixed>> $settings */
-        $settings = $request->validated()['settings'];
+        $settings = Arr::only($request->validated()['settings'], Setting::SETTINGS_PAGE_GROUPS);
         $before = Setting::grouped();
 
         DB::transaction(fn () => Setting::setMany($settings));

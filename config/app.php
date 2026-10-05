@@ -123,4 +123,21 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Initial Administrator
+    |--------------------------------------------------------------------------
+    |
+    | Used by Database\Seeders\UserSeeder in production (app:seed-fresh --users,
+    | RUN_SEEDS=true) on an empty database. Without a password no account is
+    | created; use php artisan app:create-admin instead.
+    |
+    */
+
+    'initial_admin' => [
+        'email' => env('ADMIN_EMAIL', 'admin@example.com'),
+        'name' => env('ADMIN_NAME', 'Администратор'),
+        'password' => env('ADMIN_PASSWORD'),
+    ],
+
 ];

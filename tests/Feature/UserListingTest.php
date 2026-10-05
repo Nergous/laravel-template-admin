@@ -267,6 +267,57 @@ class UserListingTest extends TestCase
         $this->get(route('admin.users.export'))->assertForbidden();
     }
 
+    public function test_export_writes_only_the_chosen_columns(): void
+    {
+        $this->actingAsAdmin();
+        User::factory()->create(['name' => 'Zed', 'email' => 'zed@example.com']);
+
+        $csv = $this->get(route('admin.users.export', ['columns' => 'email,bogus,name', 'search' => 'Zed']))
+            ->assertOk()
+            ->streamedContent();
+        $lines = array_values(array_filter(explode("\n", $csv)));
+
+        // Declared order wins over the request order; unknown keys are ignored.
+        $this->assertSame("\xEF\xBB\xBFИмя;Email", $lines[0]);
+        $this->assertSame('Zed;zed@example.com', $lines[1]);
+    }
+
+    public function test_export_as_xlsx_builds_a_workbook_and_logs_it(): void
+    {
+        $this->actingAsAdmin();
+        User::factory()->create(['name' => '=HYPERLINK(1)', 'email' => 'f@example.com']);
+
+        $response = $this->get(route('admin.users.export', [
+            'format' => 'xlsx',
+            'columns' => 'id,name',
+            'search' => 'HYPERLINK',
+        ]))->assertOk();
+
+        $this->assertStringContainsString('spreadsheetml.sheet', $response->headers->get('Content-Type'));
+        $this->assertStringContainsString('.xlsx', $response->headers->get('Content-Disposition'));
+
+        $path = tempnam(sys_get_temp_dir(), 'xlsx-test');
+        file_put_contents($path, $response->streamedContent());
+        $zip = new \ZipArchive;
+        $this->assertTrue($zip->open($path));
+        $sheet = $zip->getFromName('xl/worksheets/sheet1.xml');
+        $this->assertNotFalse($zip->getFromName('xl/workbook.xml'));
+        $zip->close();
+        unlink($path);
+
+        $xml = simplexml_load_string($sheet);
+        $rows = $xml->sheetData->row;
+        $this->assertCount(2, $rows);
+        $this->assertSame(['ID', 'Имя'], array_map(fn ($c) => (string) $c->is->t, iterator_to_array($rows[0]->c, false)));
+        // Numbers stay numeric; text stays text, so a formula-like name is not a formula.
+        $this->assertNotEmpty((string) $rows[1]->c[0]->v);
+        $this->assertSame('inlineStr', (string) $rows[1]->c[1]['t']);
+        $this->assertSame('=HYPERLINK(1)', (string) $rows[1]->c[1]->is->t);
+        $this->assertStringNotContainsString('<f>', $sheet);
+
+        $this->assertSame([null, 1], ActivityLog::where('action', 'users_exported')->sole()->changes['rows']);
+    }
+
     public function test_search_treats_like_wildcards_literally(): void
     {
         $this->actingAsUserWith(['users.view']);

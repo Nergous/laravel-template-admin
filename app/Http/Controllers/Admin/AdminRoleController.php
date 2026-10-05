@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Pagination\PerPage;
 use App\Http\Requests\RoleRequest;
+use App\Http\Sorts\RoleSort;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\RoleService;
@@ -32,18 +34,24 @@ class AdminRoleController extends Controller
     public function __construct(private readonly RoleService $roles) {}
 
     /**
-     * List of roles with permission and user counts, with search by name.
+     * List of roles with permission and user counts, search, sorting, and page size.
      */
-    public function index(Request $request): Response|RedirectResponse
+    public function index(Request $request, RoleSort $sort, PerPage $perPage): Response|RedirectResponse
     {
+        // Permissions are loaded for RbacGuard::canManageRole() (can_edit).
         $query = Role::query()
+            ->with('permissions:id,name')
             ->withCount(['permissions', 'users']);
 
         if ($request->filled('search')) {
             $query->search($request->search);
         }
 
-        $roles = $query->orderBy('name')->paginate(15)->withQueryString();
+        $roles = $query
+            ->orderBy($sort->getSort(), $sort->getDirection())
+            ->orderBy('id')
+            ->paginate($perPage->get())
+            ->withQueryString();
 
         if ($redirect = $this->redirectPastLastPage($roles, $request)) {
             return $redirect;
@@ -58,19 +66,20 @@ class AdminRoleController extends Controller
             'can_edit' => $request->user()?->can('roles.edit') && RbacGuard::canManageRole($request->user(), $role),
             'permissions_count' => $role->permissions_count,
             'users_count' => $role->users_count,
+            'created_at' => optional($role->created_at)->toIso8601String(),
         ]));
 
         return Inertia::render('Roles/Index', [
             'roles' => $roles,
             'permissionsTotal' => Permission::count(),
             'filters' => $request->only('search'),
+            ...$sort->toArray(),
+            ...$perPage->toArray(),
         ]);
     }
 
-    public function create(Request $request): Response
+    public function create(): Response
     {
-        abort_unless($request->user()?->can('roles.create'), 403);
-
         return Inertia::render('Roles/FormPage', [
             'mode' => 'create',
             'allPermissions' => $this->groupedPermissions(),
@@ -93,7 +102,8 @@ class AdminRoleController extends Controller
 
     public function edit(Request $request, Role $role): Response
     {
-        abort_unless($request->user()?->can('roles.edit') && RbacGuard::canManageRole($request->user(), $role), 403);
+        // roles.edit is checked by the route; the role must not be above the actor.
+        abort_unless(RbacGuard::canManageRole($request->user(), $role), 403);
 
         return Inertia::render('Roles/FormPage', [
             'mode' => 'edit',
@@ -102,13 +112,17 @@ class AdminRoleController extends Controller
         ]);
     }
 
-    /** Updates a role and its permissions (a system role's name cannot be changed — rule in the service), and logs the action. */
+    /**
+     * Updates a role and its permissions (a system role's name cannot be changed — rule
+     * in the service), and logs the action. Permissions are synced only when
+     * permissions[] is sent; a client that omits the key keeps them.
+     */
     public function update(RoleRequest $request, Role $role): RedirectResponse
     {
         $this->roles->update(
             $role,
             ['name' => $request->name, 'description' => $request->input('description')],
-            $request->input('permissions', []),
+            $request->exists('permissions') ? ($request->input('permissions') ?? []) : null,
             $request->user(),
         );
 

@@ -51,7 +51,7 @@ class ActivityLog extends Model
     private const AUTH_ACTIONS = ['login_failed', 'session_ended', 'sessions_ended', 'impersonation_started', 'impersonation_stopped'];
 
     /** Media actions written without a subject row (folders, failed uploads). */
-    private const MEDIA_ACTIONS = ['upload_failed', 'folder_renamed', 'folder_cleared'];
+    private const MEDIA_ACTIONS = ['upload_failed', 'folder_created', 'folder_renamed', 'folder_cleared'];
 
     protected $fillable = [
         'user_id',

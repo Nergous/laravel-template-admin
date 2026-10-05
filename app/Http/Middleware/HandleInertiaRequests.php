@@ -8,12 +8,18 @@ use App\Models\Role;
 use App\Models\User;
 use App\Providers\SettingsServiceProvider;
 use App\Support\Impersonation;
+use App\Support\RbacGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\PermissionRegistrar;
 
+/**
+ * Inertia handling and shared props of the admin panel. Attached to the /admin
+ * route group only (routes/web.php), not to the whole web group.
+ */
 class HandleInertiaRequests extends Middleware
 {
     /**
@@ -83,8 +89,15 @@ class HandleInertiaRequests extends Middleware
                 'impersonator' => $user ? $this->impersonator() : null,
 
                 // Names of all the user's permissions — for conditional rendering in Vue
-                // (can('users.view')). The server still checks independently.
-                'can' => $user ? $user->getAllPermissions()->pluck('name')->all() : [],
+                // (can('users.view')). The server still checks independently. The
+                // superadmin passes every check (RbacGuard::registerSuperadminGate), so
+                // they get every permission name.
+                'can' => match (true) {
+                    $user === null => [],
+                    RbacGuard::isAdmin($user) => app(PermissionRegistrar::class)
+                        ->getPermissions(['guard_name' => 'web'])->pluck('name')->values()->all(),
+                    default => $user->getAllPermissions()->pluck('name')->all(),
+                },
             ],
 
             // Record counts for the sidebar badges. The raw aggregates are global

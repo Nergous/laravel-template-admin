@@ -14,6 +14,10 @@ use Illuminate\Http\Request;
  *  - seo.meta_description, seo.og_image — defaults for description/og:image;
  *  - seo.canonical_domain — base of canonical/og:url (the current host if empty);
  *  - seo.indexable — false adds robots "noindex, nofollow".
+ *
+ * Values are plain text; the template escapes them on output. The canonical
+ * URL keeps ?page=N for pages 2..N of a list, so they are not declared
+ * duplicates of the first page; other query parameters are dropped.
  */
 class SeoMeta
 {
@@ -38,7 +42,7 @@ class SeoMeta
                 : (str_contains($template, '%s') ? str_replace('%s', $title, $template) : $title),
             'description' => trim((string) ($description ?: $seo['meta_description'])),
             'image' => self::absolute($base, (string) ($image ?: $seo['og_image'])),
-            'canonical' => $base.($path === '' ? '/' : '/'.$path),
+            'canonical' => $base.($path === '' ? '/' : '/'.$path).self::pageQuery($request),
             'robots' => $seo['indexable'] ? null : 'noindex, nofollow',
             'site_name' => $siteName,
             'favicon' => ($settings['general']['favicon'] ?? '') ?: null,
@@ -51,6 +55,16 @@ class SeoMeta
         $domain = (string) Setting::value('seo', 'canonical_domain');
 
         return rtrim($domain !== '' ? $domain : $request->getSchemeAndHttpHost(), '/');
+    }
+
+    /** "?page=N" suffix of the canonical URL on list pages after the first. */
+    private static function pageQuery(Request $request): string
+    {
+        $page = $request->query('page');
+
+        return is_string($page) && preg_match('/^[1-9]\d{0,5}$/', $page) === 1 && (int) $page > 1
+            ? '?page='.(int) $page
+            : '';
     }
 
     /** Makes a root-relative asset path absolute (crawlers need full og:image URLs). */

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Media;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -14,8 +15,11 @@ use Illuminate\Support\Facades\Storage;
  *  - the media/ directory on the media disk (config('media.disk')) —
  *    originals/thumbnails left after failed jobs or manual database edits.
  *
- * Only files older than --hours (24 by default) are touched, so uploads still
- * waiting in the queue are safe. Runs daily from the scheduler (routes/console.php).
+ * Only files older than --hours (24 by default, at least 1) are touched: a
+ * job writes its new files before it points the row at them (an upload, a
+ * replacement, a crop), and a job attempt is capped at 5 minutes. Temp files
+ * of jobs still waiting in a database queue are kept at any age. Runs daily
+ * from the scheduler (routes/console.php).
  *
  * Usage:
  *   php artisan media:prune-orphans --dry-run
@@ -34,7 +38,8 @@ class PruneOrphanMedia extends Command
         $cutoff = now()->subHours(max(1, (int) $this->option('hours')))->getTimestamp();
         $dryRun = (bool) $this->option('dry-run');
 
-        $temp = $this->prune('local', 'temp', $cutoff, $dryRun, fn () => false);
+        $queued = $this->queuedTempFiles();
+        $temp = $this->prune('local', 'temp', $cutoff, $dryRun, fn (string $file) => isset($queued[$file]));
 
         $known = [];
         Media::query()->select(['id', 'filename', 'variants'])->lazyById()->each(function (Media $media) use (&$known) {
@@ -49,6 +54,38 @@ class PruneOrphanMedia extends Command
         $this->info("{$verb}: temp — {$temp}, media — {$media}");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Temp paths named by jobs waiting in the database queue (a backlog older
+     * than the age window). Other queue drivers rely on the window alone.
+     *
+     * @return array<string, true>
+     */
+    private function queuedTempFiles(): array
+    {
+        $connection = (string) config('queue.default');
+        $config = (array) config("queue.connections.{$connection}", []);
+        if (($config['driver'] ?? null) !== 'database') {
+            return [];
+        }
+
+        $paths = [];
+        DB::connection($config['connection'] ?? null)
+            ->table((string) ($config['table'] ?? 'jobs'))
+            ->select(['id', 'payload'])
+            ->where('payload', 'like', '%UploadMedia%')
+            ->lazyById()
+            ->each(function (object $job) use (&$paths) {
+                $command = (string) (json_decode((string) $job->payload, true)['data']['command'] ?? '');
+                if (preg_match_all('~"(temp/[^"]+)"~', $command, $matches)) {
+                    foreach ($matches[1] as $path) {
+                        $paths[$path] = true;
+                    }
+                }
+            });
+
+        return $paths;
     }
 
     /**

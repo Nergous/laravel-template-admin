@@ -13,9 +13,9 @@ class UserSeeder extends Seeder
     /**
      * Seeding users.
      *
-     * - production            — only the administrator; the password is taken from env
-     *                           (ADMIN_PASSWORD) and hashed. Without a password the account
-     *                           is not created.
+     * - production            — only the administrator from config('app.initial_admin')
+     *                           (ADMIN_EMAIL/ADMIN_NAME/ADMIN_PASSWORD); the password is hashed.
+     *                           Without a password the account is not created.
      * - local / other envs    — test administrator and operator with the password
      *                           "password123". Not for production.
      */
@@ -31,16 +31,16 @@ class UserSeeder extends Seeder
     }
 
     /**
-     * Creates the administrator from environment data.
+     * Creates the administrator from config('app.initial_admin').
      *
      * If ADMIN_PASSWORD is not set — prints a warning and creates nothing,
      * so that no account with a known/empty password appears.
      */
     private function seedProductionAdmin(): void
     {
-        $email = env('ADMIN_EMAIL', 'admin@example.com');
-        $name = env('ADMIN_NAME', 'Администратор');
-        $password = env('ADMIN_PASSWORD');
+        $email = (string) config('app.initial_admin.email', 'admin@example.com');
+        $name = (string) config('app.initial_admin.name', 'Администратор');
+        $password = config('app.initial_admin.password');
 
         if (blank($password)) {
             $this->command?->warn(
@@ -51,7 +51,7 @@ class UserSeeder extends Seeder
             return;
         }
 
-        $this->upsertUser($email, $name, $password, RbacGuard::superadminRole());
+        $this->upsertUser($email, $name, (string) $password, RbacGuard::superadminRole());
     }
 
     /**

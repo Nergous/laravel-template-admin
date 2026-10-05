@@ -1,12 +1,14 @@
 name: CI
 
-# Lint, PHP tests, frontend build, build and scan of the prod image.
+# Code style, dependency audit, PHP tests, frontend checks, prod image build,
+# image leak check, container smoke test and Trivy scan.
 on:
   push:
     branches: [main]
     tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 # Cancel outdated runs on the same branch/PR.
 concurrency:
@@ -16,9 +18,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  IMAGE: laravel-admin-template:ci
+
 jobs:
   # --------------------------------------------------------------------------
-  # Code style (Laravel Pint, PSR-12) — fail on deviations.
+  # Code style (Laravel Pint) and known vulnerabilities in Composer packages.
   # --------------------------------------------------------------------------
   lint-php:
     runs-on: ubuntu-latest
@@ -46,23 +51,24 @@ jobs:
       - name: Pint (check only)
         run: ./vendor/bin/pint --test
 
+      - name: Composer audit
+        run: composer audit --locked --no-interaction
+
   # --------------------------------------------------------------------------
-  # PHPUnit on SQLite (:memory:, see phpunit.xml). PHP version matrix.
+  # PHPUnit on SQLite :memory: (phpunit.xml forces the test database, so no
+  # real database is touched). sodium/exif/gd enable the backup encryption and
+  # image tests that local builds without these extensions skip.
   # --------------------------------------------------------------------------
   test-php:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        php: ["8.4"]
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup PHP ${{ matrix.php }}
+      - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: ${{ matrix.php }}
-          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_sqlite, gd, zip, pcntl
+          php-version: "8.4"
+          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_sqlite, gd, exif, sodium, zip, pcntl
           coverage: none
           tools: composer:v2
 
@@ -70,8 +76,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/composer
-          key: composer-${{ matrix.php }}-${{ hashFiles('**/composer.lock') }}
-          restore-keys: composer-${{ matrix.php }}-
+          key: composer-test-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-test-
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
@@ -85,7 +91,102 @@ jobs:
         run: php artisan test
 
   # --------------------------------------------------------------------------
-  # Frontend build (Vite). The public/build artifact is a repo smoke test.
+  # Migrations and backup/restore on MariaDB (production engine). PHPUnit stays
+  # on SQLite :memory: (tests/TestCase.php refuses anything else), so this job
+  # drives a throwaway MariaDB service with artisan commands only:
+  #   - every migration applies, rolls back completely and applies again;
+  #   - a dump restores over a schema that has a table from a NEWER migration
+  #     (the deploy runbook: migrate -> problem -> restore -> migrate).
+  # --------------------------------------------------------------------------
+  migrations-mariadb:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:12.3
+        env:
+          MARIADB_DATABASE: admin_ci
+          MARIADB_USER: admin
+          MARIADB_PASSWORD: ci-password
+          MARIADB_ROOT_PASSWORD: ci-root-password
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+    env:
+      DB_CONNECTION: mariadb
+      DB_HOST: 127.0.0.1
+      DB_PORT: "3306"
+      DB_DATABASE: admin_ci
+      DB_USERNAME: admin
+      DB_PASSWORD: ci-password
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      BACKUP_PATH: /tmp/admin-ci-backups
+      MYSQL_PWD: ci-password
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_mysql, pdo_sqlite, gd, exif, sodium, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache composer
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/composer
+          key: composer-test-${{ hashFiles('**/composer.lock') }}
+          restore-keys: composer-test-
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      # mariadb-dump / mariadb for app:db-backup and app:db-restore (the runner ships MySQL tools).
+      - name: Install MariaDB client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mariadb-client
+          mariadb-dump --version
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+
+      - name: Migrate, roll everything back, migrate again
+        run: |
+          php artisan migrate:fresh --force
+          php artisan app:seed-fresh --users --no-interaction
+          php artisan migrate:reset --force
+          php artisan migrate --force
+          php artisan app:seed-fresh --users --no-interaction
+
+      - name: Restore a dump over a newer schema
+        run: |
+          php artisan app:db-backup
+          dump=$(ls -1t "$BACKUP_PATH"/db-*.sql | head -n 1)
+          sql() { mariadb -h 127.0.0.1 -u admin -N -e "$1" admin_ci; }
+
+          # What a migration released after the dump leaves behind.
+          sql "CREATE TABLE ci_newer_table (id INT PRIMARY KEY); INSERT INTO migrations (migration, batch) VALUES ('2099_01_01_000000_ci_newer_table', 99);"
+
+          php artisan app:db-restore "$(basename "$dump")" --force
+
+          test -z "$(sql "SHOW TABLES LIKE 'ci_newer_table'")" || { echo "a table of a newer migration survived the restore"; exit 1; }
+          test "$(sql "SELECT COUNT(*) FROM migrations WHERE migration LIKE '2099%'")" = "0"
+          test "$(sql "SELECT COUNT(*) FROM users")" -gt 0
+          ls -A "$BACKUP_PATH" | grep -q '^db-.*-prerestore\.sql$' || { echo "no safety dump"; exit 1; }
+          ls -A "$BACKUP_PATH" | grep -q '^\.partial-' && { echo "work file left behind"; exit 1; } || true
+
+          php artisan migrate --force
+          php artisan migrate:status
+
+  # --------------------------------------------------------------------------
+  # Frontend: formatting, types, JS unit tests, npm audit and the Vite build.
   # --------------------------------------------------------------------------
   build-frontend:
     runs-on: ubuntu-latest
@@ -95,7 +196,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
-          node-version: "20"
+          node-version: "26"
           cache: npm
 
       - name: Install dependencies
@@ -107,24 +208,23 @@ jobs:
       - name: TypeScript (check only)
         run: npm run typecheck
 
+      # node:test on TypeScript files: Node 26 strips the types itself.
+      - name: JS unit tests
+        run: npm run test:js
+
+      - name: npm audit (high and critical)
+        run: npm audit --audit-level=high
+
       - name: Build
         run: npm run build
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: frontend-build
-          path: public/build
-          retention-days: 7
-
   # --------------------------------------------------------------------------
-  # Build the prod image (only on push to main/tags). Layer cache via GHA.
-  # The image is uploaded as an artifact for the scan job.
+  # Prod image: build, check that no secrets or data were baked in, boot it on
+  # a throwaway SQLite database and probe the web server, then scan with Trivy.
   # --------------------------------------------------------------------------
-  build-image:
+  image:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    needs: [lint-php, test-php, build-frontend]
+    needs: [lint-php, test-php, migrations-mariadb, build-frontend]
     steps:
       - uses: actions/checkout@v7
 
@@ -136,75 +236,68 @@ jobs:
         with:
           context: .
           target: prod
-          tags: laravel-admin-template:ci
+          tags: ${{ env.IMAGE }}
           pull: true
+          load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          outputs: type=docker,dest=/tmp/image.tar
 
-      # --- Publishing to GHCR (optional) -------------------------------------
-      # Uncomment + add `permissions: packages: write` at the job level
-      # to push the image to ghcr.io by sha/tags:
-      # - name: Login to GHCR
-      #   uses: docker/login-action@v3
-      #   with:
-      #     registry: ghcr.io
-      #     username: ${{ github.actor }}
-      #     password: ${{ secrets.GITHUB_TOKEN }}
-      # - name: Push
-      #   uses: docker/build-push-action@v6
-      #   with:
-      #     context: .
-      #     target: prod
-      #     push: true
-      #     tags: ghcr.io/${{ github.repository }}:${{ github.sha }}
-      #     cache-from: type=gha
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: prod-image
-          path: /tmp/image.tar
-          retention-days: 1
-
-  # --------------------------------------------------------------------------
-  # Image scan: Trivy (HIGH/CRITICAL) + anti-regression #1 — verify that
-  # no .env / *.sqlite (secrets/data) got into the prod image.
-  # --------------------------------------------------------------------------
-  scan:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    needs: [build-image]
-    steps:
-      - name: Download image artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: prod-image
-          path: /tmp
-
-      - name: Load image
-        run: docker load -i /tmp/image.tar
-
-      - name: Assert no secrets/data baked into image
+      - name: Assert no secrets or data baked into the image
         run: |
-          docker run --rm --entrypoint sh laravel-admin-template:ci -c '
+          docker run --rm --entrypoint sh "$IMAGE" -c '
             bad=""
-            [ -f .env ] && bad="$bad .env"
-            for f in .env.production .env.local .env.backup; do
+            for f in .env .env.production .env.local .env.backup; do
               [ -f "$f" ] && bad="$bad $f"
             done
-            ls database/*.sqlite *.sqlite >/dev/null 2>&1 && bad="$bad sqlite"
+            found=$(find /app -path /app/vendor -prune -o -type f \( -name "*.sql" -o -name "*.sql.gz" -o -name "*.sql.enc" -o -name "*.sqlite" -o -name "*.sqlite.enc" \) -print)
+            [ -n "$found" ] && bad="$bad $found"
+            [ -d storage/app/backups ] && [ -n "$(ls -A storage/app/backups)" ] && bad="$bad storage/app/backups"
             if [ -n "$bad" ]; then
               echo "LEAK: sensitive files got into the image:$bad"
               exit 1
             fi
-            echo "OK: no .env/*.sqlite found in the image"
+            echo "OK: no .env, dumps or databases in the image"
           '
+
+      - name: Smoke test the container
+        run: |
+          docker run -d --name admin-smoke -p 8000:8000 \
+            -e APP_ENV=production -e APP_DEBUG=false \
+            -e APP_KEY="base64:$(openssl rand -base64 32)" \
+            -e APP_URL=http://localhost:8000 \
+            -e DB_CONNECTION=sqlite -e DB_DATABASE=/app/storage/ci.sqlite \
+            -e ALLOW_SQLITE_IN_PRODUCTION=true -e RUN_MIGRATIONS=true \
+            -e SESSION_DRIVER=database -e CACHE_STORE=database -e QUEUE_CONNECTION=sync \
+            -e LOG_CHANNEL=stderr \
+            --entrypoint sh "$IMAGE" -c 'touch /app/storage/ci.sqlite && exec /usr/local/bin/entrypoint.sh frankenphp run --config /etc/frankenphp/Caddyfile'
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8000/up >/dev/null && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/up >/dev/null || { docker logs admin-smoke; exit 1; }
+
+          # Media: PDF inline, anything else forced to download in a sandbox.
+          docker exec admin-smoke sh -c 'mkdir -p storage/app/public/ci && printf "%%PDF-1.4" > storage/app/public/ci/a.pdf && printf "<b>x</b>" > storage/app/public/ci/a.html'
+          pdf=$(curl -fsSI http://localhost:8000/storage/ci/a.pdf)
+          html=$(curl -fsSI http://localhost:8000/storage/ci/a.html)
+          echo "$pdf" | grep -qi '^content-disposition' && { echo "PDF must open inline"; echo "$pdf"; exit 1; }
+          echo "$html" | grep -qi '^content-disposition: attachment' || { echo "HTML must download"; echo "$html"; exit 1; }
+          echo "$html" | grep -qi 'sandbox' || { echo "HTML must be sandboxed"; echo "$html"; exit 1; }
+
+          # The root answers (a redirect to /admin); a hashed build asset is cached for a year.
+          curl -fsS -o /dev/null http://localhost:8000/
+          asset=$(docker exec admin-smoke sh -c 'ls public/build/assets | head -n 1')
+          curl -fsSI "http://localhost:8000/build/assets/$asset" | grep -qi 'immutable' || { echo "build assets must be immutable"; exit 1; }
+          echo "OK: smoke test passed"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs admin-smoke || true
 
       - name: Trivy scan (HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: laravel-admin-template:ci
+          image-ref: ${{ env.IMAGE }}
           format: table
           exit-code: "1"
           ignore-unfixed: true

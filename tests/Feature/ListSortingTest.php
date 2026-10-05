@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Media;
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -71,6 +73,20 @@ class ListSortingTest extends TestCase
             );
     }
 
+    public function test_media_index_sorts_by_size_for_the_file_list(): void
+    {
+        $this->actingAsAdmin();
+        Media::create(['filename' => 'media/small.txt', 'original_name' => 'small.txt', 'size' => 10]);
+        Media::create(['filename' => 'media/big.txt', 'original_name' => 'big.txt', 'size' => 5000]);
+
+        $this->get('/admin/media?sort=size&direction=desc')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('currentSort', 'size')
+                ->where('media.data.0.original_name', 'big.txt')
+                ->where('media.data.1.original_name', 'small.txt')
+            );
+    }
+
     public function test_media_index_rejects_invalid_sort_column(): void
     {
         $this->actingAsAdmin();
@@ -110,6 +126,44 @@ class ListSortingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('perPage', 10)
                 ->where('users.per_page', 10)
+            );
+    }
+
+    public function test_reference_lists_share_sort_and_page_size_with_users(): void
+    {
+        $this->actingAsAdmin();
+
+        foreach (['roles' => 'Roles/Index'] as $list => $component) {
+            $this->get("/admin/{$list}?sort=created_at&direction=desc&per_page=25")
+                ->assertInertia(fn (Assert $page) => $page
+                    ->component($component)
+                    ->where('currentSort', 'created_at')
+                    ->where('currentDirection', 'desc')
+                    ->where('perPage', 25)
+                    ->where("{$list}.per_page", 25)
+                    ->where('perPageOptions', [10, 25, 50, 100])
+                );
+
+            $this->get("/admin/{$list}?sort=bogus&per_page=5000")
+                ->assertInertia(fn (Assert $page) => $page
+                    ->where('currentSort', 'name')
+                    ->where('currentDirection', 'asc')
+                    ->where('perPage', 10)
+                );
+        }
+    }
+
+    public function test_roles_index_sorts_by_user_count(): void
+    {
+        $this->actingAsAdmin();
+        $busy = Role::create(['name' => 'busy', 'guard_name' => 'web']);
+        Role::create(['name' => 'idle', 'guard_name' => 'web']);
+        User::factory()->count(3)->create()->each->assignRole($busy);
+
+        $this->get('/admin/roles?sort=users_count&direction=desc')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('roles.data.0.name', 'busy')
+                ->where('roles.data.0.users_count', 3)
             );
     }
 }

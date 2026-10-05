@@ -40,8 +40,10 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            // Must exceed the longest job $timeout (UploadMedia/CreateBackup: 300s).
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 330),
+            // Must exceed the longest job $timeout: CreateBackup runs up to
+            // BACKUP_TIMEOUT + 60 s (660 s by default), UploadMedia 300 s. A shorter
+            // value lets a second worker pick up a dump that is still running.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 720),
             'after_commit' => false,
         ],
 
@@ -49,7 +51,7 @@ return [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),
             'queue' => env('BEANSTALKD_QUEUE', 'default'),
-            'retry_after' => (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 330),
+            'retry_after' => (int) env('BEANSTALKD_QUEUE_RETRY_AFTER', 720),
             'block_for' => 0,
             'after_commit' => false,
         ],
@@ -69,7 +71,7 @@ return [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 330),
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 720),
             'block_for' => null,
             'after_commit' => false,
         ],

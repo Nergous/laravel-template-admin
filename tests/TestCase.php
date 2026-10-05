@@ -15,12 +15,20 @@ abstract class TestCase extends BaseTestCase
     {
         $app = parent::createApplication();
 
-        // This runs before RefreshDatabase can migrate or clear any tables.
+        // This runs before RefreshDatabase can migrate or clear any tables. The
+        // suite only ever runs on SQLite :memory: (phpunit.xml forces it); CI
+        // checks MariaDB with artisan commands instead (.github/workflows/ci.yml).
         if (! $app->environment('testing')
             || $app['config']->get('database.default') !== 'sqlite'
             || $app['config']->get('database.connections.sqlite.database') !== ':memory:'
             || $app['config']->get('database.connections.sqlite.url')) {
             throw new \RuntimeException('Tests require isolated SQLite :memory: with no DB_URL.');
+        }
+
+        // Backup tests create, rotate and delete dumps: never in the real folder.
+        $backups = rtrim(str_replace('\\', '/', (string) $app['config']->get('backup.path')), '/');
+        if ($backups === '' || $backups === rtrim(str_replace('\\', '/', $app->storagePath('app/backups')), '/')) {
+            throw new \RuntimeException('Tests require BACKUP_PATH outside storage/app/backups (see phpunit.xml).');
         }
 
         Http::preventStrayRequests();

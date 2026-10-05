@@ -43,8 +43,6 @@ class AdminDashboardController extends Controller
             ->unique()
             ->count();
 
-        $mediaCategories = Media::query()->distinct()->count('type');
-
         // KPI cards: a primary number + a secondary line with a real metric.
         // These are the template's demo metrics (admin entities) — replace them with
         // your own domain's indicators along with the markup in pages/Dashboard.vue.
@@ -60,11 +58,7 @@ class AdminDashboardController extends Controller
                 'value' => $permissionsTotal,
                 'sub' => "{$resourceCount} ресурсов",
             ] : null,
-            'media' => $user->can('media.view') ? [
-                'value' => Media::count(),
-                'sub' => "{$mediaCategories} категорий",
-                'bytes' => (int) Media::sum('size'),
-            ] : null,
+            'media' => $user->can('media.view') ? $this->mediaCard() : null,
             'logins' => $user->can('activity-log.view') ? $this->loginsCard() : null,
         ]);
 
@@ -117,6 +111,20 @@ class AdminDashboardController extends Controller
         return [
             'value' => User::count(),
             'sub' => $blocked > 0 ? "{$blocked} заблокировано" : 'все активны',
+        ];
+    }
+
+    /** @return array{value: int, sub: string, bytes: int, no_alt: int} */
+    private function mediaCard(): array
+    {
+        $noAlt = Media::query()->where('type', 'image')->where(fn ($q) => $q->whereNull('alt')->orWhere('alt', ''))->count();
+
+        return [
+            'value' => Media::count(),
+            'sub' => $noAlt > 0 ? "без альтернативного текста: {$noAlt}" : 'у всех изображений есть альтернативный текст',
+            'bytes' => (int) Media::sum('size'),
+            // The card opens the files to fix when there are any.
+            'no_alt' => $noAlt,
         ];
     }
 

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\UploadMedia;
 use App\Models\ActivityLog;
 use App\Models\Media;
+use App\Models\MediaFolder;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\ImageOptimizer;
@@ -264,7 +265,12 @@ class MediaLibraryTest extends TestCase
         $this->assertNull($media->alt);
         $this->assertNull($media->folder);
 
-        $this->patch(route('admin.media.update', $media), ['folder' => 'a/b'])->assertSessionHasErrors('folder');
+        // A path nests folders; backslashes and ".." parts are rejected.
+        $this->patch(route('admin.media.update', $media), ['folder' => ' Бренд / Логотипы '])->assertSessionHasNoErrors();
+        $this->assertSame('Бренд/Логотипы', $media->fresh()->folder);
+        $this->assertTrue(MediaFolder::where('name', 'Бренд')->exists());
+        $this->patch(route('admin.media.update', $media), ['folder' => 'a\\b'])->assertSessionHasErrors('folder');
+        $this->patch(route('admin.media.update', $media), ['folder' => 'a/../b'])->assertSessionHasErrors('folder');
         $this->patch(route('admin.media.update', $media), ['original_name' => ''])->assertSessionHasErrors('original_name');
     }
 
@@ -288,7 +294,9 @@ class MediaLibraryTest extends TestCase
         $this->assertNull($a->fresh()->folder);
 
         $this->patch(route('admin.media.bulk-folder'), ['ids' => [$a->id], 'folder' => '../x'])
-            ->assertSessionHasErrors('folder');
+            ->assertSessionHasErrors('target');
+        $this->patch(route('admin.media.bulk-folder'), ['ids' => [$a->id], 'target' => '../x'])
+            ->assertSessionHasErrors('target');
     }
 
     public function test_bulk_folder_requires_edit_permission(): void
@@ -300,20 +308,55 @@ class MediaLibraryTest extends TestCase
         $this->assertNull($media->fresh()->folder);
     }
 
-    public function test_index_filters_by_folder_and_counts_types(): void
+    public function test_bulk_actions_can_take_every_matching_file(): void
+    {
+        Storage::fake('public');
+        $this->actingAsUserWith(['media.view', 'media.edit', 'media.delete']);
+        $rootPdf = Media::create(['filename' => 'media/a.pdf', 'type' => 'document']);
+        $rootImage = Media::create(['filename' => 'media/b.webp', 'type' => 'image']);
+        $nested = Media::create(['filename' => 'media/c.pdf', 'type' => 'document', 'folder' => 'Архив']);
+
+        // Filters are flat, under the index query names; the destination is target.
+        // The root level without search holds only its own files.
+        $this->patch(route('admin.media.bulk-folder'), ['all' => true, 'folder' => '', 'target' => 'Новая'])
+            ->assertSessionHas('success', 'Перемещено файлов: 2');
+        $this->assertSame('Новая', $rootPdf->fresh()->folder);
+        $this->assertSame('Новая', $rootImage->fresh()->folder);
+        $this->assertSame('Архив', $nested->fresh()->folder);
+
+        // With all=1 the destination cannot hide in folder: that is the list filter.
+        $this->patch(route('admin.media.bulk-folder'), ['all' => true, 'folder' => 'Новая'])
+            ->assertSessionHasErrors('target');
+
+        // The type filter narrows "all" too.
+        $this->delete(route('admin.media.bulk-destroy'), ['all' => true, 'folder' => 'Новая', 'type' => 'document'])
+            ->assertSessionHas('success', 'Удалено медиа: 1');
+        $this->assertNull($rootPdf->fresh());
+        $this->assertNotNull($rootImage->fresh());
+        $this->assertNotNull($nested->fresh());
+
+        $this->delete(route('admin.media.bulk-destroy'), [])->assertSessionHasErrors('ids');
+    }
+
+    public function test_index_browses_folders_and_counts_types(): void
     {
         $this->actingAsUserWith(['media.view']);
         Media::create(['filename' => 'media/1.webp', 'type' => 'image', 'folder' => 'Баннеры']);
         Media::create(['filename' => 'media/2.webp', 'type' => 'image', 'folder' => 'Баннеры']);
         Media::create(['filename' => 'media/3.pdf', 'type' => 'document', 'folder' => 'Баннеры']);
         Media::create(['filename' => 'media/4.pdf', 'type' => 'document']);
+        MediaFolder::create(['name' => 'Пустая']);
 
         $this->get(route('admin.media.index', ['folder' => 'Баннеры', 'type' => 'image']))
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Media/Index')
                 ->has('media.data', 2)
                 ->where('filters.folder', 'Баннеры')
-                ->where('folders', ['Баннеры'])
+                ->has('folders', 2)
+                ->where('folders.0.name', 'Баннеры')
+                ->where('folders.0.count', 3)
+                ->where('folders.1.name', 'Пустая')
+                ->where('folders.1.count', 0)
                 // Counts ignore the type filter but respect the folder.
                 ->where('typeCounts', ['document' => 1, 'image' => 2])
                 ->where('uploadRules.maxFiles', 10)
@@ -321,12 +364,111 @@ class MediaLibraryTest extends TestCase
                 ->has('uploadRules.extensions')
             );
 
-        $this->get(route('admin.media.index', ['folder' => '__none__']))
+        // The root lists only files outside any folder (the folders come separately).
+        $this->get(route('admin.media.index'))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('media.data', 1)
                 ->where('media.data.0.filename', 'media/4.pdf')
                 ->where('typeCounts', ['document' => 1])
             );
+
+        // Search at the root looks through every folder.
+        $this->get(route('admin.media.index', ['search' => 'pdf']))
+            ->assertInertia(fn (Assert $page) => $page->has('media.data', 2));
+
+        $this->get(route('admin.media.index', ['folder' => 'Нет такой']))
+            ->assertRedirect(route('admin.media.index'));
+    }
+
+    public function test_folders_nest(): void
+    {
+        $this->actingAsUserWith(['media.view', 'media.edit']);
+        $this->post(route('admin.media.folders.store'), ['name' => 'Баннеры'])->assertSessionHasNoErrors();
+        $this->post(route('admin.media.folders.store'), ['parent' => 'Баннеры', 'name' => '2026'])->assertSessionHasNoErrors();
+        $this->post(route('admin.media.folders.store'), ['parent' => 'Баннеры', 'name' => '2026'])->assertSessionHasErrors('name');
+        $this->post(route('admin.media.folders.store'), ['parent' => 'Нет такой', 'name' => 'x'])->assertSessionHasErrors('parent');
+        Media::create(['filename' => 'media/top.webp', 'folder' => 'Баннеры', 'size' => 10]);
+        Media::create(['filename' => 'media/deep.webp', 'folder' => 'Баннеры/2026', 'size' => 5]);
+
+        $this->get(route('admin.media.index', ['folder' => 'Баннеры/2026']))
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('media.data', 1)
+                ->where('media.data.0.filename', 'media/deep.webp')
+                ->where('folders.0.name', 'Баннеры')
+                ->where('folders.0.count', 1)
+                ->where('folders.0.subfolders', 1)
+                ->where('folders.0.total', 2)
+                ->where('folders.0.size', 15)
+                ->where('folders.1.name', 'Баннеры/2026'));
+
+        // Renaming moves the subfolders and their files along.
+        $this->patch(route('admin.media.folders.rename'), ['folder' => 'Баннеры', 'name' => 'Афиши'])->assertSessionHasNoErrors();
+        $this->assertSame(['Афиши', 'Афиши/2026'], MediaFolder::orderBy('name')->pluck('name')->all());
+        $this->assertSame('Афиши/2026', Media::firstWhere('filename', 'media/deep.webp')->folder);
+
+        // A deleted subfolder's address leads to the folder above it.
+        $this->delete(route('admin.media.folders.clear'), ['folder' => 'Афиши/2026'])->assertSessionHasNoErrors();
+        $this->assertSame('Афиши', Media::firstWhere('filename', 'media/deep.webp')->folder);
+        $this->get(route('admin.media.index', ['folder' => 'Афиши/2026']))
+            ->assertRedirect(route('admin.media.index', ['folder' => 'Афиши']));
+
+        // Deleting a top-level folder takes the whole subtree; files go to the root.
+        $this->post(route('admin.media.folders.store'), ['parent' => 'Афиши', 'name' => 'Старое'])->assertSessionHasNoErrors();
+        $this->delete(route('admin.media.folders.clear'), ['folder' => 'Афиши'])->assertSessionHasNoErrors();
+        $this->assertSame(0, MediaFolder::count());
+        $this->assertSame(2, Media::whereNull('folder')->count());
+    }
+
+    public function test_empty_folder_can_be_created(): void
+    {
+        $this->actingAsUserWith(['media.view', 'media.edit']);
+
+        $this->post(route('admin.media.folders.store'), ['name' => '  Баннеры  '])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+        $this->assertTrue(MediaFolder::where('name', 'Баннеры')->exists());
+        $this->assertSame(1, ActivityLog::where('action', 'folder_created')->count());
+
+        $this->get(route('admin.media.index', ['folder' => 'Баннеры']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->has('media.data', 0)->where('filters.folder', 'Баннеры'));
+
+        $this->post(route('admin.media.folders.store'), ['name' => 'Баннеры'])->assertSessionHasErrors('name');
+        $this->post(route('admin.media.folders.store'), ['name' => 'a/b'])->assertSessionHasErrors('name');
+        $this->post(route('admin.media.folders.store'), ['name' => ''])->assertSessionHasErrors('name');
+    }
+
+    public function test_creating_a_folder_requires_edit_permission(): void
+    {
+        $this->actingAsUserWith(['media.view', 'media.upload']);
+
+        $this->post(route('admin.media.folders.store'), ['name' => 'X'])->assertForbidden();
+        $this->assertSame(0, MediaFolder::count());
+    }
+
+    public function test_files_uploaded_inside_a_folder_land_in_it(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+        MediaFolder::create(['name' => 'Документы']);
+
+        Storage::disk('local')->put('temp/a.txt', 'a');
+        (new UploadMedia('temp/a.txt', 'a.txt', null, null, null, 'Документы'))->handle();
+        $this->assertSame('Документы', Media::firstWhere('original_name', 'a.txt')->folder);
+
+        // A folder deleted while the job waited leaves the file at the root.
+        Storage::disk('local')->put('temp/b.txt', 'b');
+        (new UploadMedia('temp/b.txt', 'b.txt', null, null, null, 'Удалённая'))->handle();
+        $this->assertNull(Media::firstWhere('original_name', 'b.txt')->folder);
+
+        Queue::fake();
+        $this->actingAsUserWith(['media.upload']);
+        $file = fn () => UploadedFile::fake()->create('c.txt', 1, 'text/plain');
+        $this->post(route('admin.media.store'), ['media' => [$file()], 'folder' => 'Документы'])->assertOk();
+        $this->postJson(route('admin.media.store'), ['media' => [$file()], 'folder' => 'Нет такой'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('folder');
+        Queue::assertPushed(UploadMedia::class, 1);
     }
 
     public function test_files_used_in_settings_are_flagged(): void
@@ -438,21 +580,33 @@ class MediaLibraryTest extends TestCase
         $this->assertSame([0.25, 0.75], [$media->fresh()->focal_x, $media->fresh()->focal_y]);
     }
 
-    public function test_folders_can_be_renamed_merged_and_dissolved(): void
+    public function test_folders_can_be_renamed_merged_and_deleted(): void
     {
         $this->actingAsUserWith(['media.view', 'media.edit']);
         foreach (['Old', 'Old', 'Target'] as $i => $folder) {
             Media::create(['filename' => "media/{$i}.txt", 'folder' => $folder]);
         }
+        $this->assertSame(['Old', 'Target'], MediaFolder::orderBy('name')->pluck('name')->all());
 
-        $this->patch(route('admin.media.folders.rename'), ['folder' => 'Old', 'name' => 'Target'])
+        $this->patch(route('admin.media.folders.rename'), ['folder' => 'Old', 'name' => 'Target', 'open' => true])
             ->assertRedirect(route('admin.media.index', ['folder' => 'Target']));
         $this->assertSame(3, Media::where('folder', 'Target')->count());
+        $this->assertSame(['Target'], MediaFolder::pluck('name')->all());
         $this->assertSame(1, ActivityLog::where('action', 'folder_renamed')->count());
+
+        // An empty folder renames too.
+        MediaFolder::create(['name' => 'Empty']);
+        $this->patch(route('admin.media.folders.rename'), ['folder' => 'Empty', 'name' => 'Renamed'])
+            ->assertSessionHasNoErrors();
+        $this->assertTrue(MediaFolder::where('name', 'Renamed')->exists());
 
         $this->delete(route('admin.media.folders.clear'), ['folder' => 'Target'])->assertRedirect();
         $this->assertSame(3, Media::whereNull('folder')->count());
+        $this->assertFalse(MediaFolder::where('name', 'Target')->exists());
         $this->assertSame(1, ActivityLog::where('action', 'folder_cleared')->count());
+
+        $this->delete(route('admin.media.folders.clear'), ['folder' => 'Renamed'])->assertSessionHasNoErrors();
+        $this->assertSame(0, MediaFolder::count());
 
         $this->delete(route('admin.media.folders.clear'), ['folder' => 'Missing'])->assertSessionHasErrors('folder');
     }

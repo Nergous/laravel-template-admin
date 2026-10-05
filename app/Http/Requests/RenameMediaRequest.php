@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Support\MediaFolderPath;
 use Illuminate\Foundation\Http\FormRequest;
 
 /**
@@ -22,6 +23,9 @@ class RenameMediaRequest extends FormRequest
             }
 
             $value = trim((string) $this->input($field));
+            if ($field === 'folder') {
+                $value = (string) MediaFolderPath::normalize($value);
+            }
             $this->merge([$field => $value === '' && $field !== 'original_name' ? null : $value]);
         }
     }
@@ -31,7 +35,7 @@ class RenameMediaRequest extends FormRequest
         return [
             'original_name' => ['sometimes', 'required', 'string', 'max:255', 'not_regex:/[\/\\\\\x00-\x1F\x7F]/'],
             'alt' => ['sometimes', 'nullable', 'string', 'max:255'],
-            'folder' => ['sometimes', 'nullable', 'string', 'max:100', 'not_regex:/[\/\\\\\x00-\x1F\x7F]/'],
+            'folder' => ['sometimes', 'nullable', 'string', 'max:'.MediaFolderPath::MAX, ...MediaFolderPath::PATH_RULES],
             // Focal point as fractions of the width/height, always sent as a pair;
             // null resets it to the center. No "sometimes": it would skip the
             // required_with check on the missing half.
@@ -47,8 +51,8 @@ class RenameMediaRequest extends FormRequest
             'original_name.max' => 'Имя файла не должно превышать :max символов',
             'original_name.not_regex' => 'Имя файла не должно содержать символы / и \\',
             'alt.max' => 'Alt-текст не должен превышать :max символов',
-            'folder.max' => 'Название папки не должно превышать :max символов',
-            'folder.not_regex' => 'Название папки не должно содержать слеши и управляющие символы',
+            'folder.max' => 'Путь к папке не должен превышать :max символов',
+            'folder.not_regex' => 'Путь к папке не должен содержать «\\», управляющие символы и части «.» или «..»',
         ];
     }
 }

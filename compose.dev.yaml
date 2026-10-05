@@ -10,12 +10,26 @@
 #            via bind-mount (PHP edits are picked up: opcache validate_timestamps=1).
 #    vite  — Vite dev server (HMR) at http://localhost:5173.
 #    queue — queue:listen (re-reads the code on every job, handy in dev).
-#    db    — MariaDB (or use SQLite: DB_CONNECTION=sqlite in .env, in which case the
-#            db service doesn't need to be started).
+#    db    — MariaDB. app and queue are pointed at it through `environment:` below
+#            (it overrides DB_* from .env, whose default is the host SQLite file), so the
+#            stack really runs on the same database engine as production.
+#
+#  Every port is published on 127.0.0.1 only: the dev database has well-known
+#  passwords and must not be reachable from the local network.
 #
 #  First start: the entrypoint installs vendor/ automatically (composer install),
 #  node_modules is installed by the vite service (npm ci) into its own anonymous volume.
 # =============================================================================
+
+# Database connection of the dev containers (same values as the db service below).
+x-dev-db-env: &dev-db-env
+  DB_CONNECTION: mariadb
+  DB_HOST: db
+  DB_PORT: "3306"
+  DB_DATABASE: laravel
+  DB_USERNAME: laravel
+  DB_PASSWORD: secret
+  DB_URL: ""
 
 services:
   app:
@@ -27,12 +41,13 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
+      <<: *dev-db-env
       APP_ENV: local
       OPTIMIZE: "false"
       RUN_MIGRATIONS: "true" # initialize the separate development database
       RUN_SEEDS: "true"   # create demo users only when the database is empty
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - .:/app
       # vendor/ in a named volume — so it isn't clobbered by an empty folder from the host
@@ -45,7 +60,8 @@ services:
         condition: service_healthy
 
   vite:
-    image: node:20-alpine
+    # Same Node major as the Dockerfile assets stage and CI.
+    image: node:26-alpine
     container_name: admin-template-dev-vite
     working_dir: /app
     command: sh -c "npm ci && npm run dev"
@@ -54,7 +70,7 @@ services:
       VITE_HOST: "0.0.0.0"
       VITE_HMR_HOST: "localhost"
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     volumes:
       - .:/app
       - node-modules-dev:/app/node_modules
@@ -66,6 +82,7 @@ services:
     restart: unless-stopped
     env_file: [.env]
     environment:
+      <<: *dev-db-env
       APP_ENV: local
       RUN_MIGRATIONS: "false"
       RUN_SEEDS: "false"
@@ -83,16 +100,18 @@ services:
         condition: service_healthy
 
   db:
-    image: mariadb:11
+    # Same LTS line as production (docker-compose.yml).
+    image: mariadb:12.3
     container_name: admin-template-dev-db
     restart: unless-stopped
     environment:
-      MARIADB_DATABASE: ${DB_DATABASE:-laravel}
-      MARIADB_USER: ${DB_USERNAME:-laravel}
-      MARIADB_PASSWORD: ${DB_PASSWORD:-secret}
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      # Development-only credentials (see x-dev-db-env); the port is bound to localhost.
+      MARIADB_DATABASE: laravel
+      MARIADB_USER: laravel
+      MARIADB_PASSWORD: secret
+      MARIADB_ROOT_PASSWORD: root
     ports:
-      - "${DB_PORT:-3306}:3306"
+      - "127.0.0.1:${DEV_DB_PORT:-3306}:3306"
     volumes:
       - db-data-dev:/var/lib/mysql
     networks: [internal]
@@ -108,7 +127,7 @@ services:
     container_name: admin-template-dev-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${DEV_REDIS_PORT:-6379}:6379"
     networks: [internal]
 
 volumes:

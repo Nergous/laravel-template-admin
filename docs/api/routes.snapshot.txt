@@ -7,6 +7,8 @@
   GET|HEAD        admin/backups .............................. admin.backups.index › Admin\AdminBackupController@index
   POST            admin/backups .............................. admin.backups.store › Admin\AdminBackupController@store
   GET|HEAD        admin/backups/{file} ................. admin.backups.download › Admin\AdminBackupController@download
+  DELETE          admin/backups/{file} ................... admin.backups.destroy › Admin\AdminBackupController@destroy
+  POST            admin/impersonation/stop ............. admin.impersonation.stop › Admin\ImpersonationController@stop
   GET|HEAD        admin/login ...................................................... login › Auth\LoginController@show
   POST            admin/login ............................................... admin.login › Auth\LoginController@login
   POST            admin/logout .................................................. logout › Auth\LoginController@logout
@@ -14,27 +16,33 @@
   POST            admin/media ................................... admin.media.store › Admin\AdminMediaController@store
   GET|HEAD        admin/media/browse .......................... admin.media.browse › Admin\AdminMediaController@browse
   DELETE          admin/media/bulk ................. admin.media.bulk-destroy › Admin\AdminMediaController@bulkDestroy
+  PATCH           admin/media/bulk-folder ............ admin.media.bulk-folder › Admin\AdminMediaController@bulkFolder
+  POST            admin/media/folders ............ admin.media.folders.store › Admin\AdminMediaController@createFolder
+  PATCH           admin/media/folders ........... admin.media.folders.rename › Admin\AdminMediaController@renameFolder
+  DELETE          admin/media/folders ............. admin.media.folders.clear › Admin\AdminMediaController@clearFolder
   GET|HEAD        admin/media/poll ................................ admin.media.poll › Admin\AdminMediaController@poll
   GET|HEAD        admin/media/{media} ............................. admin.media.show › Admin\AdminMediaController@show
   PATCH           admin/media/{media} ......................... admin.media.update › Admin\AdminMediaController@update
   DELETE          admin/media/{media} ....................... admin.media.destroy › Admin\AdminMediaController@destroy
+  POST            admin/media/{media}/crop ........................ admin.media.crop › Admin\AdminMediaController@crop
   POST            admin/media/{media}/replace ............... admin.media.replace › Admin\AdminMediaController@replace
-  GET|HEAD        admin/notifications/recent .... admin.notifications.recent › Admin\AdminActivityLogController@recent
-  POST            admin/notifications/seen ...... admin.notifications.seen › Admin\AdminActivityLogController@markSeen
+  GET|HEAD        admin/notifications/count ........... admin.notifications.count › Admin\NotificationController@count
+  PUT             admin/notifications/preferences admin.notifications.preferences › Admin\NotificationController@pref…
+  GET|HEAD        admin/notifications/recent ........ admin.notifications.recent › Admin\NotificationController@recent
+  POST            admin/notifications/seen .......... admin.notifications.seen › Admin\NotificationController@markSeen
   GET|HEAD        admin/permissions .................. admin.permissions.index › Admin\AdminPermissionController@index
-  POST            admin/permissions .................. admin.permissions.store › Admin\AdminPermissionController@store
-  GET|HEAD        admin/permissions/create ......... admin.permissions.create › Admin\AdminPermissionController@create
   PATCH           admin/permissions/matrix ............. admin.permissions.sync › Admin\AdminPermissionController@sync
   PATCH           admin/permissions/matrix/bulk admin.permissions.sync-many › Admin\AdminPermissionController@syncMany
-  GET|HEAD        admin/permissions/{permission} ....... admin.permissions.show › Admin\AdminPermissionController@show
-  PUT|PATCH       admin/permissions/{permission} ... admin.permissions.update › Admin\AdminPermissionController@update
-  DELETE          admin/permissions/{permission} . admin.permissions.destroy › Admin\AdminPermissionController@destroy
-  GET|HEAD        admin/permissions/{permission}/edit .. admin.permissions.edit › Admin\AdminPermissionController@edit
   GET|HEAD        admin/profile .................................... admin.profile.show › Admin\ProfileController@show
   PUT             admin/profile ................................ admin.profile.update › Admin\ProfileController@update
   PUT             admin/profile/password ................... admin.profile.password › Admin\ProfileController@password
   POST            admin/profile/sessions/logout-others admin.profile.sessions.logout-others › Admin\ProfileController…
   DELETE          admin/profile/sessions/{key} admin.profile.sessions.destroy › Admin\ProfileController@destroySession
+  GET|HEAD        admin/queue ................................... admin.queue.index › Admin\AdminQueueController@index
+  DELETE          admin/queue/failed ............................ admin.queue.flush › Admin\AdminQueueController@flush
+  POST            admin/queue/failed/retry-all ........... admin.queue.retry-all › Admin\AdminQueueController@retryAll
+  DELETE          admin/queue/failed/{uuid} ................. admin.queue.destroy › Admin\AdminQueueController@destroy
+  POST            admin/queue/failed/{uuid}/retry ............... admin.queue.retry › Admin\AdminQueueController@retry
   GET|HEAD        admin/roles .................................... admin.roles.index › Admin\AdminRoleController@index
   POST            admin/roles .................................... admin.roles.store › Admin\AdminRoleController@store
   GET|HEAD        admin/roles/create ........................... admin.roles.create › Admin\AdminRoleController@create
@@ -43,12 +51,15 @@
   DELETE          admin/roles/{role} ......................... admin.roles.destroy › Admin\AdminRoleController@destroy
   GET|HEAD        admin/roles/{role}/edit .......................... admin.roles.edit › Admin\AdminRoleController@edit
   GET|HEAD        admin/search ...................................... admin.search › Admin\AdminSearchController@index
+  POST            admin/session/ping ............................... admin.session.ping › Admin\SessionController@ping
   GET|HEAD        admin/settings .......................... admin.settings.index › Admin\AdminSettingsController@index
   PUT             admin/settings ........................ admin.settings.update › Admin\AdminSettingsController@update
   GET|HEAD        admin/users .................................... admin.users.index › Admin\AdminUserController@index
   POST            admin/users .................................... admin.users.store › Admin\AdminUserController@store
   DELETE          admin/users/bulk .................. admin.users.bulk-destroy › Admin\AdminUserController@bulkDestroy
+  PATCH           admin/users/bulk-status ............. admin.users.bulk-status › Admin\AdminUserController@bulkStatus
   GET|HEAD        admin/users/create ........................... admin.users.create › Admin\AdminUserController@create
+  GET|HEAD        admin/users/export ........................... admin.users.export › Admin\AdminUserController@export
   DELETE          admin/users/force/{id} ............ admin.users.force-delete › Admin\AdminUserController@forceDelete
   PATCH           admin/users/restore/{id} ................... admin.users.restore › Admin\AdminUserController@restore
   GET|HEAD        admin/users/trashed ........................ admin.users.trashed › Admin\AdminUserController@trashed
@@ -58,9 +69,12 @@
   GET|HEAD        admin/users/{user} ............................... admin.users.show › Admin\AdminUserController@show
   PUT|PATCH       admin/users/{user} ........................... admin.users.update › Admin\AdminUserController@update
   GET|HEAD        admin/users/{user}/edit .......................... admin.users.edit › Admin\AdminUserController@edit
+  POST            admin/users/{user}/impersonate ....... admin.users.impersonate › Admin\ImpersonationController@start
+  GET|HEAD        robots.txt ........................................................... robots › SeoController@robots
+  GET|HEAD        sitemap.xml ........................................................ sitemap › SeoController@sitemap
   GET|HEAD        storage/{path} storage.local › vendor/laravel/framework/src/Illuminate/Filesystem/FilesystemService…
   PUT             storage/{path} storage.local.upload › vendor/laravel/framework/src/Illuminate/Filesystem/Filesystem…
   GET|HEAD        up ..... vendor/laravel/framework/src/Illuminate/Foundation/Configuration/ApplicationBuilder.php:219
 
-                                                                                                   Showing [62] routes
+                                                                                                   Showing [76] routes
 

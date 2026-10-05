@@ -17,13 +17,14 @@ class RoleRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        $permission = $this->isMethod('POST') ? 'roles.create' : 'roles.edit';
+        $role = $this->route('role');
+        $permission = $role instanceof Role ? 'roles.edit' : 'roles.create';
 
         if ($this->user()?->can($permission) !== true) {
             return false;
         }
 
-        $role = $this->route('role');
+        // Editing: the role must not be above the actor (system role, permissions the actor lacks).
         if ($role instanceof Role && ! RbacGuard::canManageRole($this->user(), $role)) {
             return false;
         }

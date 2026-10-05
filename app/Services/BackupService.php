@@ -34,12 +34,31 @@ use Symfony\Component\Process\Process;
  * Every dump is checked before it is kept: SQLite copies pass PRAGMA
  * integrity_check, SQL dumps must end with the tool's completion marker, and an
  * encrypted file must decrypt with the configured key.
+ *
+ * Work files (.partial-*, .restore-*, .verify-*) never match db-*. A worker
+ * killed mid-dump cannot remove its .partial- file (an UNENCRYPTED dump), so
+ * create() and list() delete work files older than STALE_WORK_FILE_SECONDS.
  */
 class BackupService
 {
     public const KIND_SCHEDULED = 'scheduled';
 
     public const KIND_MANUAL = 'manual';
+
+    /**
+     * Cache key set by the scheduler when the nightly app:db-backup fails and
+     * cleared when it succeeds (routes/console.php); the backups page warns on it.
+     */
+    public const SCHEDULED_FAILURE_KEY = 'backups.scheduled_failure';
+
+    /**
+     * Work files older than this are leftovers of a killed process. Longer than
+     * the restore timeout (3600 s) plus decryption, so a running restore keeps its file.
+     */
+    public const STALE_WORK_FILE_SECONDS = 7200;
+
+    /** Work file prefixes; none of them matches the db-* listing pattern. */
+    private const WORK_FILE_PREFIXES = ['.partial-', '.restore-', '.verify-'];
 
     /** Timestamp, optional tag, optional collision counter, extension, optional .enc. */
     private const NAME_PATTERN = '/^db-(\d{8}-\d{6})(?:-([a-z][a-z0-9]*))?(?:-\d+)?\.[a-z0-9]+(\.enc)?$/';
@@ -78,6 +97,7 @@ class BackupService
 
         $dir = $this->directory();
         File::ensureDirectoryExists($dir);
+        $this->deleteStaleWorkFiles();
 
         $name = $this->uniqueName($dir, $tag, $driver === 'sqlite' ? 'sqlite' : 'sql', $key !== null);
         $target = $dir.DIRECTORY_SEPARATOR.$name;
@@ -129,9 +149,68 @@ class BackupService
      * Replaces the current database with a local dump. A safety dump of the
      * current state (kind "prerestore") is taken first unless $safetyDump is false.
      *
+     * For MySQL/MariaDB and PostgreSQL every table and view of the current
+     * schema is dropped before the dump is loaded: a dump made before a newer
+     * migration does not mention that migration's tables, and loading it over
+     * them would leave a schema the migrations table no longer describes ("table
+     * already exists" on the next migrate). The dump is verified first, so a
+     * truncated file never gets that far; if loading still fails, the safety
+     * dump is the way back.
+     *
+     * Stop the queue worker and the scheduler first (app:db-restore puts the
+     * application into maintenance mode): another process writing during the
+     * load, or holding a SQLite file open, would mix old and new data.
+     *
      * @return string|null Name of the safety dump, if one was made
      */
     public function restore(string $file, bool $safetyDump = true): ?string
+    {
+        $path = $this->assertRestorable($file);
+
+        $connection = (string) config('database.default');
+        $config = (array) config("database.connections.{$connection}");
+        $driver = $config['driver'] ?? null;
+        $plainName = preg_replace('/\.enc$/', '', basename($path)) ?? '';
+
+        $safety = $safetyDump ? $this->create('prerestore')['name'] : null;
+
+        $plain = $path;
+        $temp = null;
+        if (str_ends_with($path, '.enc')) {
+            $temp = $this->directory().DIRECTORY_SEPARATOR.'.restore-'.$plainName;
+            @unlink($temp);
+            $this->decrypt($path, $temp);
+            $plain = $temp;
+        }
+
+        try {
+            $this->verify($plain, (string) $driver);
+
+            match ($driver) {
+                'sqlite' => $this->restoreSqlite($connection, (string) $config['database'], $plain),
+                'mysql', 'mariadb' => $this->restoreMysql($connection, $config, $plain),
+                'pgsql' => $this->restorePgsql($connection, $config, $plain),
+            };
+        } catch (ProcessFailedException $e) {
+            throw new RuntimeException(trim($e->getProcess()->getErrorOutput()) ?: $e->getMessage(), 0, $e);
+        } finally {
+            if ($temp !== null && is_file($temp)) {
+                @unlink($temp);
+            }
+        }
+
+        return $safety;
+    }
+
+    /**
+     * Checks that $file can replace the current database (it exists, matches the
+     * driver, the database is not :memory:) without touching anything.
+     *
+     * @return string Absolute path of the dump
+     *
+     * @throws RuntimeException
+     */
+    public function assertRestorable(string $file): string
     {
         $path = $this->path($file);
         if ($path === null) {
@@ -152,39 +231,13 @@ class BackupService
             throw new RuntimeException('Нельзя восстановить базу в памяти (:memory:).');
         }
 
-        $safety = $safetyDump ? $this->create('prerestore')['name'] : null;
-
-        $plain = $path;
-        $temp = null;
-        if (str_ends_with($path, '.enc')) {
-            $temp = $this->directory().DIRECTORY_SEPARATOR.'.restore-'.$plainName;
-            @unlink($temp);
-            $this->decrypt($path, $temp);
-            $plain = $temp;
-        }
-
-        try {
-            $this->verify($plain, (string) $driver);
-
-            match ($driver) {
-                'sqlite' => $this->restoreSqlite($connection, (string) $config['database'], $plain),
-                'mysql', 'mariadb' => $this->restoreMysql($config, $plain),
-                'pgsql' => $this->restorePgsql($config, $plain),
-            };
-        } catch (ProcessFailedException $e) {
-            throw new RuntimeException(trim($e->getProcess()->getErrorOutput()) ?: $e->getMessage(), 0, $e);
-        } finally {
-            if ($temp !== null && is_file($temp)) {
-                @unlink($temp);
-            }
-        }
-
-        return $safety;
+        return $path;
     }
 
     /**
-     * Local dumps, newest first. Has no side effects: a missing directory is an
-     * empty list (the dashboard calls this on every render).
+     * Local dumps, newest first. A missing directory is an empty list and is not
+     * created (the backups page and rotation call this). Stale work files of a
+     * killed dump or restore are removed on the way.
      *
      * @return list<array{name: string, size: int, created_at: string, kind: string, encrypted: bool}>
      */
@@ -194,6 +247,8 @@ class BackupService
         if (! is_dir($directory)) {
             return [];
         }
+
+        $this->deleteStaleWorkFiles();
 
         return collect(glob($directory.DIRECTORY_SEPARATOR.'db-*') ?: [])
             ->filter(fn (string $path): bool => is_file($path))
@@ -207,6 +262,47 @@ class BackupService
     public function latest(): ?array
     {
         return $this->list()[0] ?? null;
+    }
+
+    /** @return array{name: string, size: int, created_at: string, kind: string, encrypted: bool}|null */
+    public function latestOfKind(string $kind): ?array
+    {
+        foreach ($this->list() as $backup) {
+            if ($backup['kind'] === $kind) {
+                return $backup;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Deletes work files (.partial-*, .restore-*, .verify-*) older than
+     * STALE_WORK_FILE_SECONDS: leftovers of a process killed by a timeout or a
+     * restart. A .partial- file is an unencrypted dump, so it must not linger.
+     *
+     * @return int How many files were deleted
+     */
+    public function deleteStaleWorkFiles(): int
+    {
+        $directory = $this->directory();
+        if (! is_dir($directory)) {
+            return 0;
+        }
+
+        $threshold = now()->getTimestamp() - self::STALE_WORK_FILE_SECONDS;
+        $deleted = 0;
+
+        foreach (self::WORK_FILE_PREFIXES as $prefix) {
+            foreach (glob($directory.DIRECTORY_SEPARATOR.$prefix.'*') ?: [] as $path) {
+                clearstatcache(true, $path);
+                if (is_file($path) && (int) filemtime($path) < $threshold && @unlink($path)) {
+                    $deleted++;
+                }
+            }
+        }
+
+        return $deleted;
     }
 
     /** Absolute path of a local dump by its file name; null for a foreign or missing name. */
@@ -387,7 +483,7 @@ class BackupService
     private function dumpMysql(array $config, string $target): void
     {
         $this->runToFile(new Process([
-            $this->mysqlBinary('mariadb-dump', 'mysqldump'),
+            $this->binary('mariadb-dump', 'mysqldump'),
             '--host='.($config['host'] ?? '127.0.0.1'),
             '--port='.($config['port'] ?? 3306),
             '--user='.($config['username'] ?? ''),
@@ -395,14 +491,14 @@ class BackupService
             '--quick',
             '--no-tablespaces',
             (string) ($config['database'] ?? ''),
-        ], env: ['MYSQL_PWD' => (string) ($config['password'] ?? '')], timeout: 1800), $target);
+        ], env: ['MYSQL_PWD' => (string) ($config['password'] ?? '')], timeout: self::dumpTimeout()), $target);
     }
 
     /** @param  array<string, mixed>  $config */
     private function dumpPgsql(array $config, string $target): void
     {
         $this->runToFile(new Process([
-            'pg_dump',
+            $this->binary('pg_dump'),
             '--host='.($config['host'] ?? '127.0.0.1'),
             '--port='.($config['port'] ?? 5432),
             '--username='.($config['username'] ?? ''),
@@ -412,18 +508,50 @@ class BackupService
             '--clean',
             '--if-exists',
             (string) ($config['database'] ?? ''),
-        ], env: ['PGPASSWORD' => (string) ($config['password'] ?? '')], timeout: 1800), $target);
+        ], env: ['PGPASSWORD' => (string) ($config['password'] ?? '')], timeout: self::dumpTimeout()), $target);
     }
 
     /**
-     * The MariaDB client tools are named mariadb-*; the mysql* names are
-     * deprecated aliases that recent packages no longer ship.
+     * Seconds the dump tool may run (config backup.timeout). The queued manual
+     * dump (App\Jobs\CreateBackup) gets a longer job timeout, so the tool is
+     * stopped by this limit and the job can still clean up and report.
      */
-    private function mysqlBinary(string $preferred, string $fallback): string
+    public static function dumpTimeout(): int
     {
+        return max(60, (int) config('backup.timeout', 600));
+    }
+
+    /**
+     * Full path of the first client tool found: in backup.binary_path first,
+     * then in PATH. The MariaDB tools are named mariadb-*; the mysql* names are
+     * deprecated aliases that recent packages no longer ship.
+     *
+     * @throws RuntimeException when none of the names is installed
+     */
+    private function binary(string ...$names): string
+    {
+        $dir = rtrim((string) config('backup.binary_path'), '\\/');
         $finder = new ExecutableFinder;
 
-        return $finder->find($preferred) ?? $finder->find($fallback) ?? $fallback;
+        foreach ($names as $name) {
+            foreach (DIRECTORY_SEPARATOR === '\\' ? ['.exe', ''] : [''] as $suffix) {
+                $file = $dir.DIRECTORY_SEPARATOR.$name.$suffix;
+                if ($dir !== '' && is_file($file) && (DIRECTORY_SEPARATOR === '\\' || is_executable($file))) {
+                    return $file;
+                }
+            }
+        }
+
+        foreach ($names as $name) {
+            if (($file = $finder->find($name)) !== null) {
+                return $file;
+            }
+        }
+
+        throw new RuntimeException(sprintf(
+            'Не найдена программа %s. Установите клиент базы данных на сервер приложения или укажите папку с программой в BACKUP_BINARY_PATH.',
+            implode(' или ', $names),
+        ));
     }
 
     /**
@@ -487,6 +615,14 @@ class BackupService
 
     private function restoreSqlite(string $connection, string $database, string $source): void
     {
+        // Fold the WAL into the main file first, so the -wal file removed below is
+        // empty. Other processes must not have the database open (see restore()).
+        try {
+            DB::connection($connection)->statement('PRAGMA wal_checkpoint(TRUNCATE)');
+        } catch (\Throwable) {
+            // Not in WAL mode or the file is unreadable: nothing to fold in.
+        }
+
         DB::disconnect($connection);
 
         $staging = $database.'.restoring';
@@ -508,11 +644,28 @@ class BackupService
         DB::purge($connection);
     }
 
-    /** @param  array<string, mixed>  $config */
-    private function restoreMysql(array $config, string $source): void
+    /**
+     * Drops every table and view of the target schema (foreign key checks are
+     * switched off by the schema builder), so the dump is loaded into an empty
+     * schema and tables of migrations newer than the dump do not survive.
+     */
+    private function wipeSchema(string $connection): void
     {
+        $schema = DB::connection($connection)->getSchemaBuilder();
+        $schema->dropAllViews();
+        $schema->dropAllTables();
+
+        DB::purge($connection);
+    }
+
+    /** @param  array<string, mixed>  $config */
+    private function restoreMysql(string $connection, array $config, string $source): void
+    {
+        $client = $this->binary('mariadb', 'mysql');
+        $this->wipeSchema($connection);
+
         $this->runFromFile(new Process([
-            $this->mysqlBinary('mariadb', 'mysql'),
+            $client,
             '--host='.($config['host'] ?? '127.0.0.1'),
             '--port='.($config['port'] ?? 3306),
             '--user='.($config['username'] ?? ''),
@@ -521,10 +674,13 @@ class BackupService
     }
 
     /** @param  array<string, mixed>  $config */
-    private function restorePgsql(array $config, string $source): void
+    private function restorePgsql(string $connection, array $config, string $source): void
     {
+        $client = $this->binary('psql');
+        $this->wipeSchema($connection);
+
         $this->runFromFile(new Process([
-            'psql',
+            $client,
             '--host='.($config['host'] ?? '127.0.0.1'),
             '--port='.($config['port'] ?? 5432),
             '--username='.($config['username'] ?? ''),

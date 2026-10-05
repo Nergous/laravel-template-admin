@@ -5,12 +5,15 @@ namespace App\Services;
 use App\Models\ActivityLog;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\RbacGuard;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
  * Domain operations on roles: create/update with a set of permissions and
- * deletion, with logging and protection of system roles.
+ * deletion, with logging, protection of system roles and the anti-escalation
+ * rules of App\Support\RbacGuard (the superadmin role's permissions are
+ * immutable; a role is changed only by someone who holds all its permissions).
  */
 class RoleService
 {
@@ -39,21 +42,24 @@ class RoleService
     }
 
     /**
-     * Updates a role and its permissions (a system role's name cannot be changed),
-     * logs the delta.
+     * Updates a role and, when $permissions is given, its permission set (a
+     * system role's name cannot be changed), logs the delta. A null
+     * $permissions keeps the current set.
      *
      * @param  array{name: string, description?: string|null}  $data
-     * @param  array<int, string>  $permissions
+     * @param  array<int, string>|null  $permissions
      *
-     * @throws ValidationException If a system role's name is changed.
+     * @throws ValidationException If a system role's name is changed or the actor may not make the change.
      */
-    public function update(Role $role, array $data, array $permissions, ?User $actor): Role
+    public function update(Role $role, array $data, ?array $permissions, ?User $actor): Role
     {
         if ($role->is_system && $data['name'] !== $role->name) {
             throw ValidationException::withMessages([
                 'name' => 'Имя системной роли нельзя менять',
             ]);
         }
+
+        $this->ensureCanChange($role, $permissions, $actor);
 
         $before = ['name' => $role->name, 'description' => $role->description];
         $permsBefore = $role->permissions->pluck('name')->all();
@@ -64,7 +70,10 @@ class RoleService
                 'description' => $data['description'] ?? null,
                 'updated_by' => $actor?->id,
             ]);
-            $role->syncPermissions($permissions);
+
+            if ($permissions !== null) {
+                $role->syncPermissions($permissions);
+            }
 
             $changes = [];
             foreach ($before as $field => $old) {
@@ -89,6 +98,45 @@ class RoleService
 
             return $role;
         });
+    }
+
+    /**
+     * @param  array<int, string>|null  $permissions
+     *
+     * @throws ValidationException If the actor may not manage the role, the superadmin
+     *                             role's permissions would change, or a permission the
+     *                             actor lacks would be granted.
+     */
+    private function ensureCanChange(Role $role, ?array $permissions, ?User $actor): void
+    {
+        if (! RbacGuard::canManageRole($actor, $role)) {
+            throw ValidationException::withMessages([
+                'role' => $role->is_system
+                    ? 'Системную роль может менять только администратор'
+                    : 'У роли есть права, которых нет у вас: её может менять только пользователь со всеми этими правами',
+            ]);
+        }
+
+        if ($permissions === null) {
+            return;
+        }
+
+        $current = $role->permissions->pluck('name')->all();
+        $added = array_values(array_diff($permissions, $current));
+
+        if (RbacGuard::isSuperadminRole($role) && ($added !== [] || array_diff($current, $permissions) !== [])) {
+            throw ValidationException::withMessages([
+                'permissions' => 'Права роли «'.$role->name.'» нельзя изменять',
+            ]);
+        }
+
+        $denied = array_values(array_filter($added, fn (string $permission) => ! RbacGuard::canGrantPermission($actor, $permission)));
+
+        if ($denied !== []) {
+            throw ValidationException::withMessages([
+                'permissions' => 'Нельзя назначить роли право, которого у вас нет: '.implode(', ', $denied),
+            ]);
+        }
     }
 
     /**

@@ -6,13 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Models\ActivityLog;
 use App\Services\QueueStats;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Queue\Failed\FailedJobProviderInterface;
 use Illuminate\Support\Facades\Artisan;
 use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Queue overview: waiting jobs (database driver) and failed jobs.
+ * Queue overview: one list of queued jobs (database driver) and failed jobs
+ * with their status.
  *
  * Viewing is gated by queue.view; retrying and deleting failed jobs by
  * queue.manage. Retries go through queue:retry so the job is pushed back to its
@@ -25,15 +27,22 @@ class AdminQueueController extends Controller
         private readonly FailedJobProviderInterface $failer,
     ) {}
 
-    public function index(): Response
+    public function index(Request $request): Response
     {
         $connection = (string) config('queue.default');
+        $status = $request->query('status');
+        $status = in_array($status, QueueStats::STATUSES, true) ? $status : null;
 
         return Inertia::render('Queue/Index', [
             'summary' => $this->stats->summary(),
+            // Same rule as /up?full=1: a runnable job waited too long (no live worker).
+            'stalled' => $this->stats->isStalled(),
+            'stalledAfterMinutes' => QueueStats::STALLED_AFTER_MINUTES,
+            'counts' => $this->stats->statusCounts(),
+            'status' => $status,
             'connection' => $connection,
             'driver' => config("queue.connections.{$connection}.driver"),
-            'failedJobs' => $this->stats->failedJobs(20),
+            'jobs' => $this->stats->jobs($status, 20),
         ]);
     }
 

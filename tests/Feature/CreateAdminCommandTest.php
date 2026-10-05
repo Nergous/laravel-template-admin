@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Models\Role;
 use App\Models\User;
 use App\Support\RbacGuard;
+use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -51,5 +53,22 @@ class CreateAdminCommandTest extends TestCase
         $user = User::where('email', 'boss@example.test')->firstOrFail();
         $this->assertSame('Boss Renamed', $user->name);
         $this->assertTrue($user->can('users.view'));
+    }
+
+    /** Permissions configured in the admin panel must survive (re)creating an admin on a live database. */
+    public function test_keeps_role_permissions_configured_in_the_admin(): void
+    {
+        $this->seed(RolePermissionSeeder::class);
+        Role::findByName('operator')->syncPermissions(['media.view']);
+        Role::findByName(RbacGuard::superadminRole())->revokePermissionTo('queue.manage');
+
+        $this->artisan('app:create-admin', ['email' => 'boss@example.test', 'name' => 'Boss'])
+            ->expectsQuestion('Введите пароль', 'Str0ng!Passw0rd#42')
+            ->expectsQuestion('Повторите пароль', 'Str0ng!Passw0rd#42')
+            ->assertSuccessful();
+
+        $this->assertSame(['media.view'], Role::findByName('operator')->permissions()->pluck('name')->all());
+        // The superadmin is the exception: it must hold every permission, so a missing one is restored.
+        $this->assertTrue(User::where('email', 'boss@example.test')->firstOrFail()->can('queue.manage'));
     }
 }

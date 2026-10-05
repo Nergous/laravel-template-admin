@@ -26,6 +26,13 @@ class AuthTest extends TestCase
         $this->get(route('login'))->assertOk();
     }
 
+    public function test_signed_in_user_on_login_page_goes_to_admin_dashboard(): void
+    {
+        $this->actingAs(User::factory()->create())
+            ->get(route('login'))
+            ->assertRedirect(route('admin.dashboard'));
+    }
+
     public function test_user_can_login_with_valid_credentials(): void
     {
         // The factory's default password is 'password'.
@@ -74,6 +81,8 @@ class AuthTest extends TestCase
     public function test_login_throttle_is_not_bypassed_by_spoofed_forwarded_for(): void
     {
         $user = User::factory()->create();
+        // A client connecting directly (not through the trusted local proxy).
+        $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.7']);
 
         foreach (range(1, 5) as $i) {
             $this->post(route('admin.login'), [

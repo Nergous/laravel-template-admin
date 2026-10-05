@@ -46,20 +46,20 @@ class UserService
     }
 
     /**
-     * Updates a user and their roles. The password changes only if provided;
-     * an admin cannot remove the admin role from themselves, and nobody can
-     * block their own account.
+     * Updates a user and, when $roles is given, their roles (null keeps the
+     * current ones). The password changes only if provided; an admin cannot
+     * remove the admin role from themselves, and nobody can block their own account.
      *
      * @param  array{name: string, email: string, password?: string|null, is_active?: bool, blocked_reason?: string|null, must_change_password?: bool}  $data
-     * @param  array<int, string>  $roles
+     * @param  array<int, string>|null  $roles
      *
      * @throws ValidationException If the actor may not manage the user or breaks a self-protection rule.
      */
-    public function update(User $user, array $data, array $roles, ?User $actor): User
+    public function update(User $user, array $data, ?array $roles, ?User $actor): User
     {
         $this->ensureCanManage($user, $actor);
 
-        if ($this->isRemovingOwnAdmin($user, $roles, $actor)) {
+        if ($roles !== null && $this->isRemovingOwnAdmin($user, $roles, $actor)) {
             throw ValidationException::withMessages([
                 'roles' => 'Вы не можете убрать у себя роль '.RbacGuard::superadminRole(),
             ]);
@@ -95,7 +95,10 @@ class UserService
             }
 
             $user->update($attributes);
-            $user->syncRoles($roles);
+
+            if ($roles !== null) {
+                $user->syncRoles($roles);
+            }
 
             return $user;
         });
@@ -138,7 +141,7 @@ class UserService
      */
     public function bulkDeleteAll(
         ?string $search,
-        ?string $role,
+        string|array|null $role,
         ?string $status,
         bool $mustChangePassword,
         ?User $actor,
@@ -165,7 +168,7 @@ class UserService
      */
     public function bulkSetActiveAll(
         ?string $search,
-        ?string $role,
+        string|array|null $role,
         ?string $status,
         bool $mustChangePassword,
         bool $active,
@@ -184,9 +187,10 @@ class UserService
      * The user list query with the index filters applied; shared by the list,
      * the CSV export, and the "all matching" bulk actions so they always agree.
      *
+     * @param  string|list<string>|null  $role  Role names, any of them matches (User::scopeFilterByRole)
      * @param  string|null  $status  "active", "blocked", or null for both
      */
-    public function listQuery(?string $search, ?string $role, ?string $status, bool $mustChangePassword): Builder
+    public function listQuery(?string $search, string|array|null $role, ?string $status, bool $mustChangePassword): Builder
     {
         return User::query()
             ->search($search)

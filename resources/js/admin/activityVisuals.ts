@@ -25,6 +25,8 @@ const VISUAL: Record<string, { tone: ActivityTone; icon: string }> = {
     upload_failed: { tone: "danger", icon: "alert-triangle" },
     upload_duplicate: { tone: "info", icon: "copy" },
     media_cropped: { tone: "info", icon: "edit" },
+    media_links_updated: { tone: "info", icon: "link" },
+    folder_created: { tone: "ok", icon: "plus" },
     folder_renamed: { tone: "info", icon: "edit" },
     folder_cleared: { tone: "danger", icon: "trash" },
     backup_failed: { tone: "danger", icon: "alert-triangle" },

@@ -26,3 +26,43 @@ export function listUrl(path: string): string {
     }
     return path;
 }
+
+const CURRENT_KEY = "admin-nav:current";
+const PREVIOUS_KEY = "admin-nav:previous";
+const pathOf = (url: string) => url.split(/[?#]/)[0];
+
+/**
+ * Tracks the page the user came from. Reloads of the same page (validation
+ * errors, filter changes) keep the earlier origin. Called on every Inertia
+ * navigation.
+ */
+export function rememberPreviousPage(url: string): void {
+    try {
+        const current = sessionStorage.getItem(CURRENT_KEY);
+        if (current !== null && pathOf(current) !== pathOf(url)) {
+            sessionStorage.setItem(PREVIOUS_KEY, current);
+        }
+        sessionStorage.setItem(CURRENT_KEY, url);
+    } catch {
+        // Storage unavailable: cameFrom() answers false.
+    }
+}
+
+/**
+ * Whether the user came to the current page from the given path (query
+ * string ignored). Works both before and after rememberPreviousPage() has
+ * recorded the current page: Inertia may render the new page first.
+ */
+export function cameFrom(path: string): boolean {
+    try {
+        const here = window.location.pathname;
+        const current = sessionStorage.getItem(CURRENT_KEY);
+        const origin =
+            current !== null && pathOf(current) !== here
+                ? current
+                : sessionStorage.getItem(PREVIOUS_KEY);
+        return origin !== null && pathOf(origin) === path;
+    } catch {
+        return false;
+    }
+}

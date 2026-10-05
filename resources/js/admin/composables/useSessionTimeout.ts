@@ -8,7 +8,7 @@ import {
 } from "@/lib/api";
 
 /** How long without input still counts as "working" (background polling stops after it). */
-export const ACTIVE_WINDOW_MS = 5 * 60_000;
+const ACTIVE_WINDOW_MS = 5 * 60_000;
 const WARN_BEFORE_MS = 60_000;
 const CHECK_EVERY_MS = 5_000;
 const ACTIVITY_EVENTS = [
@@ -17,6 +17,15 @@ const ACTIVITY_EVENTS = [
     "wheel",
     "touchstart",
 ] as const;
+
+// Shared by every caller: background requests made outside the layout (the
+// edit-lock heartbeat of a form page) check it before they extend the session.
+let lastActivity = Date.now();
+
+/** Whether the user has worked in this tab recently (input within the activity window). */
+export function isUserActive(): boolean {
+    return Date.now() - lastActivity < ACTIVE_WINDOW_MS;
+}
 
 /**
  * Tracks user activity against the server session lifetime.
@@ -36,12 +45,9 @@ export function useSessionTimeout(lifetimeMinutes: () => number | null): {
 } {
     const warning = ref(false);
     const secondsLeft = ref(0);
-    let lastActivity = Date.now();
     let pinging = false;
     let timer: ReturnType<typeof setInterval> | null = null;
-    let offFinish: (() => void) | null = null;
-
-    const isActive = () => Date.now() - lastActivity < ACTIVE_WINDOW_MS;
+    const offRouter: (() => void)[] = [];
 
     async function ping() {
         if (pinging) return;
@@ -91,11 +97,17 @@ export function useSessionTimeout(lifetimeMinutes: () => number | null): {
     }
 
     onMounted(() => {
+        lastActivity = Date.now();
         touchSession();
         for (const name of ACTIVITY_EVENTS) {
             window.addEventListener(name, onActivity, { passive: true });
         }
-        offFinish = router.on("finish", () => touchSession());
+        // Only a server answer extends the session: a page (success) or
+        // validation errors (error). Cancelled and failed visits do not.
+        offRouter.push(
+            router.on("success", () => touchSession()),
+            router.on("error", () => touchSession()),
+        );
         timer = setInterval(check, CHECK_EVERY_MS);
     });
 
@@ -103,9 +115,9 @@ export function useSessionTimeout(lifetimeMinutes: () => number | null): {
         for (const name of ACTIVITY_EVENTS) {
             window.removeEventListener(name, onActivity);
         }
-        offFinish?.();
+        for (const off of offRouter.splice(0)) off();
         if (timer) clearInterval(timer);
     });
 
-    return { warning, secondsLeft, isActive, stayActive };
+    return { warning, secondsLeft, isActive: isUserActive, stayActive };
 }

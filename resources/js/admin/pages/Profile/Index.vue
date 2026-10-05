@@ -10,9 +10,9 @@ import {
     NModal,
     NBadge,
     NEmptyState,
+    NConfirmDialog,
 } from "nergous-ui-vue";
-import AdminLayout from "@/admin/layouts/AdminLayout.vue";
-import ConfirmModal from "@/admin/components/ConfirmModal.vue";
+import { usePageHeader } from "@/admin/composables/usePageHeader";
 import { useUnsavedGuard } from "@/admin/composables/useUnsavedGuard";
 import { formatDateTime, formatRelative } from "@/lib/format";
 
@@ -101,6 +101,13 @@ function logoutOthers() {
 
 const endKey = ref<string | null>(null);
 const ending = ref(false);
+// The confirmation is open while a session is chosen; closing it drops the choice.
+const endOpen = computed({
+    get: () => endKey.value !== null,
+    set: (open: boolean) => {
+        if (!open) endKey.value = null;
+    },
+});
 function endSession() {
     if (!endKey.value) return;
     ending.value = true;
@@ -140,231 +147,219 @@ function deviceLabel(agent: string | null): string {
                 : "";
     return os ? `${browser} · ${os}` : browser;
 }
+
+usePageHeader(() => ({
+    title: "Мой профиль",
+    subtitle: "Учётная запись и безопасность",
+}));
 </script>
 
 <template>
-    <AdminLayout title="Мой профиль" subtitle="Учётная запись и безопасность">
-        <div class="page profile">
-            <div
-                v-if="profile.must_change_password"
-                class="profile__notice"
-                role="alert"
-            >
-                <b>Нужно сменить пароль.</b> Администратор попросил задать новый
-                пароль. Остальные разделы откроются после смены.
-            </div>
-
-            <NCard padding="var(--kpi-pad)">
-                <h2 class="profile__title">Профиль</h2>
-                <form class="profile__form" @submit.prevent="saveProfile">
-                    <NFormField
-                        label="Имя"
-                        :error="profileForm.errors.name"
-                        required
-                    >
-                        <NInput
-                            v-model="profileForm.name"
-                            autocomplete="name"
-                            :error="!!profileForm.errors.name"
-                        />
-                    </NFormField>
-                    <NFormField
-                        label="Email"
-                        :error="profileForm.errors.email"
-                        required
-                    >
-                        <NInput
-                            v-model="profileForm.email"
-                            type="email"
-                            icon="mail"
-                            autocomplete="email"
-                            :error="!!profileForm.errors.email"
-                        />
-                    </NFormField>
-                    <NFormField
-                        v-if="emailChanged"
-                        label="Текущий пароль"
-                        hint="Нужен для смены email"
-                        :error="profileForm.errors.current_password"
-                        required
-                    >
-                        <NInput
-                            v-model="profileForm.current_password"
-                            type="password"
-                            icon="lock"
-                            autocomplete="current-password"
-                            reveal-label="Показать пароль"
-                            hide-label="Скрыть пароль"
-                            :error="!!profileForm.errors.current_password"
-                        />
-                    </NFormField>
-                    <div class="profile__actions">
-                        <span class="profile__meta"
-                            >Последний вход:
-                            {{ formatDateTime(profile.last_login_at) }}</span
-                        >
-                        <NButton
-                            type="submit"
-                            variant="primary"
-                            :loading="profileForm.processing"
-                            :disabled="!profileForm.isDirty"
-                            >Сохранить</NButton
-                        >
-                    </div>
-                </form>
-            </NCard>
-
-            <NCard padding="var(--kpi-pad)">
-                <h2 class="profile__title">Пароль</h2>
-                <form class="profile__form" @submit.prevent="savePassword">
-                    <NFormField
-                        label="Текущий пароль"
-                        :error="passwordForm.errors.current_password"
-                        required
-                    >
-                        <NInput
-                            v-model="passwordForm.current_password"
-                            type="password"
-                            icon="lock"
-                            autocomplete="current-password"
-                            reveal-label="Показать пароль"
-                            hide-label="Скрыть пароль"
-                            :error="!!passwordForm.errors.current_password"
-                        />
-                    </NFormField>
-                    <NFormField
-                        label="Новый пароль"
-                        :error="passwordForm.errors.password"
-                        hint="Минимум 15 символов: заглавные и строчные буквы, цифры и спецсимволы."
-                        required
-                    >
-                        <NInput
-                            v-model="passwordForm.password"
-                            type="password"
-                            icon="lock"
-                            autocomplete="new-password"
-                            reveal-label="Показать пароль"
-                            hide-label="Скрыть пароль"
-                            :error="!!passwordForm.errors.password"
-                        />
-                    </NFormField>
-                    <NFormField label="Повторите новый пароль" required>
-                        <NInput
-                            v-model="passwordForm.password_confirmation"
-                            type="password"
-                            icon="lock"
-                            autocomplete="new-password"
-                            reveal-label="Показать пароль"
-                            hide-label="Скрыть пароль"
-                        />
-                    </NFormField>
-                    <div class="profile__actions">
-                        <span class="profile__meta"
-                            >Остальные сеансы завершатся после смены
-                            пароля.</span
-                        >
-                        <NButton
-                            type="submit"
-                            variant="primary"
-                            :loading="passwordForm.processing"
-                            >Сменить пароль</NButton
-                        >
-                    </div>
-                </form>
-            </NCard>
-
-            <NCard padding="var(--kpi-pad)">
-                <div class="profile__head">
-                    <h2 class="profile__title">Сеансы</h2>
-                    <NButton
-                        variant="secondary"
-                        icon="log-out"
-                        @click="openOthers"
-                        >Выйти на других устройствах</NButton
-                    >
-                </div>
-                <ul
-                    v-if="sessionsSupported && sessions.length"
-                    class="sessions"
-                >
-                    <li
-                        v-for="s in sessions"
-                        :key="s.key"
-                        class="sessions__row"
-                    >
-                        <div class="sessions__info">
-                            <b>{{ deviceLabel(s.agent) }}</b>
-                            <span
-                                >{{ s.ip || "IP неизвестен" }} ·
-                                {{ formatRelative(s.last_active_at) }}</span
-                            >
-                        </div>
-                        <NBadge v-if="s.current" tone="ok" pill>Текущий</NBadge>
-                        <NButton
-                            v-else
-                            variant="ghost"
-                            tone="danger"
-                            size="sm"
-                            @click="endKey = s.key"
-                            >Завершить</NButton
-                        >
-                    </li>
-                </ul>
-                <NEmptyState
-                    v-else
-                    icon="lock"
-                    title="Список сеансов недоступен"
-                    description="Он работает с SESSION_DRIVER=database. Кнопка выше всё равно завершает остальные сеансы."
-                />
-            </NCard>
+    <div class="page profile">
+        <div
+            v-if="profile.must_change_password"
+            class="profile__notice"
+            role="alert"
+        >
+            <b>Нужно сменить пароль.</b> Администратор попросил задать новый
+            пароль. Остальные разделы откроются после смены.
         </div>
 
-        <NModal
-            v-model="othersOpen"
-            title="Выйти на других устройствах"
-            width="420px"
-            close-label="Закрыть"
-        >
-            <NFormField
-                label="Текущий пароль"
-                :error="othersForm.errors.password"
-                hint="Текущий сеанс останется активным."
-                required
-            >
-                <NInput
-                    v-model="othersForm.password"
-                    type="password"
-                    icon="lock"
-                    autocomplete="current-password"
-                    :error="!!othersForm.errors.password"
-                    @keyup.enter="logoutOthers"
-                />
-            </NFormField>
-            <template #footer="{ close }">
-                <NButton variant="secondary" block @click="close"
-                    >Отмена</NButton
+        <NCard padding="var(--kpi-pad)">
+            <h2 class="profile__title">Профиль</h2>
+            <form class="profile__form" @submit.prevent="saveProfile">
+                <NFormField
+                    label="Имя"
+                    :error="profileForm.errors.name"
+                    required
                 >
-                <NButton
-                    variant="danger"
-                    block
-                    :loading="othersForm.processing"
-                    @click="logoutOthers"
-                    >Завершить сеансы</NButton
+                    <NInput
+                        v-model="profileForm.name"
+                        autocomplete="name"
+                        :error="!!profileForm.errors.name"
+                    />
+                </NFormField>
+                <NFormField
+                    label="Email"
+                    :error="profileForm.errors.email"
+                    required
                 >
-            </template>
-        </NModal>
+                    <NInput
+                        v-model="profileForm.email"
+                        type="email"
+                        icon="mail"
+                        autocomplete="email"
+                        :error="!!profileForm.errors.email"
+                    />
+                </NFormField>
+                <NFormField
+                    v-if="emailChanged"
+                    label="Текущий пароль"
+                    hint="Нужен для смены email"
+                    :error="profileForm.errors.current_password"
+                    required
+                >
+                    <NInput
+                        v-model="profileForm.current_password"
+                        type="password"
+                        icon="lock"
+                        autocomplete="current-password"
+                        reveal-label="Показать пароль"
+                        hide-label="Скрыть пароль"
+                        :error="!!profileForm.errors.current_password"
+                    />
+                </NFormField>
+                <div class="profile__actions">
+                    <span class="profile__meta"
+                        >Последний вход:
+                        {{ formatDateTime(profile.last_login_at) }}</span
+                    >
+                    <NButton
+                        type="submit"
+                        variant="primary"
+                        :loading="profileForm.processing"
+                        :disabled="!profileForm.isDirty"
+                        >Сохранить</NButton
+                    >
+                </div>
+            </form>
+        </NCard>
 
-        <ConfirmModal
-            :open="endKey !== null"
-            :loading="ending"
-            title="Завершить сеанс"
-            message="Устройство выйдет из панели при следующем запросе."
-            confirm-label="Завершить"
-            @confirm="endSession"
-            @cancel="endKey = null"
-            @update:open="!$event && (endKey = null)"
-        />
-    </AdminLayout>
+        <NCard padding="var(--kpi-pad)">
+            <h2 class="profile__title">Пароль</h2>
+            <form class="profile__form" @submit.prevent="savePassword">
+                <NFormField
+                    label="Текущий пароль"
+                    :error="passwordForm.errors.current_password"
+                    required
+                >
+                    <NInput
+                        v-model="passwordForm.current_password"
+                        type="password"
+                        icon="lock"
+                        autocomplete="current-password"
+                        reveal-label="Показать пароль"
+                        hide-label="Скрыть пароль"
+                        :error="!!passwordForm.errors.current_password"
+                    />
+                </NFormField>
+                <NFormField
+                    label="Новый пароль"
+                    :error="passwordForm.errors.password"
+                    hint="Минимум 15 символов: заглавные и строчные буквы, цифры и спецсимволы."
+                    required
+                >
+                    <NInput
+                        v-model="passwordForm.password"
+                        type="password"
+                        icon="lock"
+                        autocomplete="new-password"
+                        reveal-label="Показать пароль"
+                        hide-label="Скрыть пароль"
+                        :error="!!passwordForm.errors.password"
+                    />
+                </NFormField>
+                <NFormField label="Повторите новый пароль" required>
+                    <NInput
+                        v-model="passwordForm.password_confirmation"
+                        type="password"
+                        icon="lock"
+                        autocomplete="new-password"
+                        reveal-label="Показать пароль"
+                        hide-label="Скрыть пароль"
+                    />
+                </NFormField>
+                <div class="profile__actions">
+                    <span class="profile__meta"
+                        >Остальные сеансы завершатся после смены пароля.</span
+                    >
+                    <NButton
+                        type="submit"
+                        variant="primary"
+                        :loading="passwordForm.processing"
+                        >Сменить пароль</NButton
+                    >
+                </div>
+            </form>
+        </NCard>
+
+        <NCard padding="var(--kpi-pad)">
+            <div class="profile__head">
+                <h2 class="profile__title">Сеансы</h2>
+                <NButton variant="secondary" icon="log-out" @click="openOthers"
+                    >Выйти на других устройствах</NButton
+                >
+            </div>
+            <ul v-if="sessionsSupported && sessions.length" class="sessions">
+                <li v-for="s in sessions" :key="s.key" class="sessions__row">
+                    <div class="sessions__info">
+                        <b>{{ deviceLabel(s.agent) }}</b>
+                        <span
+                            >{{ s.ip || "IP неизвестен" }} ·
+                            {{ formatRelative(s.last_active_at) }}</span
+                        >
+                    </div>
+                    <NBadge v-if="s.current" tone="ok" pill>Текущий</NBadge>
+                    <NButton
+                        v-else
+                        variant="ghost"
+                        tone="danger"
+                        size="sm"
+                        @click="endKey = s.key"
+                        >Завершить</NButton
+                    >
+                </li>
+            </ul>
+            <NEmptyState
+                v-else
+                icon="lock"
+                title="Список сеансов недоступен"
+                description="Он работает с SESSION_DRIVER=database. Кнопка выше всё равно завершает остальные сеансы."
+            />
+        </NCard>
+    </div>
+
+    <NModal
+        v-model="othersOpen"
+        title="Выйти на других устройствах"
+        width="420px"
+    >
+        <NFormField
+            label="Текущий пароль"
+            :error="othersForm.errors.password"
+            hint="Текущий сеанс останется активным."
+            required
+        >
+            <NInput
+                v-model="othersForm.password"
+                type="password"
+                icon="lock"
+                autocomplete="current-password"
+                :error="!!othersForm.errors.password"
+            />
+        </NFormField>
+        <template #footer="{ close }">
+            <NButton variant="secondary" block @click="close">Отмена</NButton>
+            <NButton
+                variant="danger"
+                block
+                :loading="othersForm.processing"
+                data-enter-submit
+                @click="logoutOthers"
+                >Завершить сеансы</NButton
+            >
+        </template>
+    </NModal>
+
+    <NConfirmDialog
+        v-model="endOpen"
+        :loading="ending"
+        title="Завершить сеанс"
+        message="Устройство выйдет из панели при следующем запросе."
+        confirm-label="Завершить"
+        @confirm="endSession"
+        danger
+    />
 </template>
 
 <style scoped>

@@ -8,8 +8,15 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title inertia>{{ config('app.name') }}</title>
 
-    {{-- Favicon: from settings (media library), otherwise a static file --}}
-    @php($favicon = \App\Models\Setting::value('general', 'favicon'))
+    {{-- Favicon: from settings (media library), otherwise a static file. This
+         template also renders the 500 page, so a dead database must not break it. --}}
+    @php
+        try {
+            $favicon = \App\Models\Setting::value('general', 'favicon');
+        } catch (\Throwable) {
+            $favicon = null;
+        }
+    @endphp
     <link rel="icon" href="{{ $favicon ?: '/favicon.svg' }}">
 
 

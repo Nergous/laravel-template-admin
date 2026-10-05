@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { ref } from "vue";
 import type { PropType } from "vue";
-import { Link, router } from "@inertiajs/vue3";
-import AdminLayout from "@/admin/layouts/AdminLayout.vue";
+import { router } from "@inertiajs/vue3";
+import { usePageHeader } from "@/admin/composables/usePageHeader";
 import {
     NDataTable,
-    NPagination,
     NButton,
     NEmptyState,
     NInput,
+    NConfirmDialog,
 } from "nergous-ui-vue";
-import type { Column, Row } from "nergous-ui-vue";
+import type { Column } from "nergous-ui-vue";
 import type { AdminUser, Pagination } from "@/admin/types";
-import ConfirmModal from "@/admin/components/ConfirmModal.vue";
+import AdminPagination from "@/admin/components/AdminPagination.vue";
+import { useBulkSelection } from "@/admin/composables/useBulkSelection";
 import { useIndexFilters } from "@/admin/composables/useIndexFilters";
+import { tableRow } from "@/admin/composables/useTableRow";
 import { formatDateTime } from "@/lib/format";
 import { listUrl } from "@/lib/listUrl";
 
@@ -46,42 +48,24 @@ const { reload, onSearch, onSort } = useIndexFilters(
     }),
 );
 
-const selected = ref<number[]>([]);
-const allMatchingSelected = ref(false);
-const tableSelected = computed(() =>
-    allMatchingSelected.value
-        ? props.users.data.map((user) => user.id)
-        : selected.value,
+// Filters sent with "all matching" bulk actions (the index query parameters).
+function filterParams(): Record<string, string> {
+    const searchValue = search.value.trim();
+    return searchValue ? { search: searchValue } : {};
+}
+
+const {
+    selected,
+    allMatchingSelected,
+    selectedCount,
+    updateSelected,
+    clearSelection,
+    selectionPayload,
+} = useBulkSelection(
+    () => props.users.data.map((user) => user.id),
+    () => props.users.total,
+    filterParams,
 );
-const selectedCount = computed(() =>
-    allMatchingSelected.value ? props.users.total : selected.value.length,
-);
-
-function updateSelected(ids: Array<string | number>) {
-    allMatchingSelected.value = false;
-    selected.value = ids.map(Number);
-}
-
-function selectAllMatching() {
-    allMatchingSelected.value = true;
-}
-
-function clearSelection() {
-    selected.value = [];
-    allMatchingSelected.value = false;
-}
-
-function selectionLabel() {
-    return `${selectedCount.value} выбрано`;
-}
-
-function selectionPayload():
-    { ids: number[] } | { all: true; search?: string } {
-    if (!allMatchingSelected.value) return { ids: selected.value };
-
-    const search = props.filters.search?.trim();
-    return search ? { all: true, search } : { all: true };
-}
 
 const columns: Column[] = [
     { key: "name", label: "Имя", sortable: true },
@@ -89,14 +73,7 @@ const columns: Column[] = [
     { key: "deleted_at", label: "Удалён", width: "180px", sortable: true },
     { key: "actions", label: "", width: "200px", align: "right" },
 ];
-const userRow = (row: Row): AdminUser => row as AdminUser;
-
-// Keep the pager visible while a smaller page size could still split the list.
-const showPager = computed(
-    () =>
-        props.users.last_page > 1 ||
-        props.users.total > Math.min(...props.perPageOptions),
-);
+const userRow = tableRow<AdminUser>();
 
 function reloadPage(page: number, perPage = props.perPage) {
     reload({ page, per_page: perPage });
@@ -143,148 +120,118 @@ function confirmForce() {
         });
     }
 }
+
+usePageHeader(() => ({
+    title: "Корзина пользователей",
+    subtitle: "Удалённые пользователи",
+    crumbs: [{ label: "Пользователи", href: listUrl("/admin/users") }],
+}));
 </script>
 
 <template>
-    <AdminLayout
-        title="Корзина пользователей"
-        subtitle="Удалённые пользователи"
-    >
-        <div class="page">
-            <div class="page__head">
-                <Link :href="listUrl('/admin/users')" class="page__back"
-                    >← К списку</Link
-                >
-                <div class="page__search">
-                    <NInput
-                        v-model="search"
-                        icon="search"
-                        placeholder="Поиск по имени или email…"
-                        aria-label="Поиск в корзине"
-                        @update:model-value="
-                            () => {
-                                clearSelection();
-                                onSearch();
-                            }
-                        "
-                    />
-                </div>
-            </div>
-
-            <NDataTable
-                :columns="columns"
-                :rows="users.data"
-                :page-size="0"
-                selectable
-                :selected="tableSelected"
-                :selection-label="selectionLabel"
-                clear-label="Снять выделение"
-                select-all-label="Выбрать все"
-                select-row-label="Выбрать строку"
-                manual-sort
-                :sort-key="currentSort"
-                :sort-dir="currentDirection"
-                @update:selected="updateSelected"
-                @sort-change="onSort"
-            >
-                <template #bulk>
-                    <NButton
-                        v-if="
-                            !allMatchingSelected &&
-                            users.total > selected.length
-                        "
-                        variant="ghost"
-                        size="sm"
-                        @click="selectAllMatching"
-                    >
-                        Выбрать все {{ users.total }}
-                    </NButton>
-                    <NButton
-                        variant="secondary"
-                        size="sm"
-                        icon="upload"
-                        @click="bulkRestore"
-                        >Восстановить</NButton
-                    >
-                    <NButton
-                        variant="danger"
-                        size="sm"
-                        icon="trash"
-                        @click="askForceBulk"
-                        >Удалить навсегда</NButton
-                    >
-                </template>
-                <template #cell-deleted_at="{ row }">{{
-                    formatDateTime(userRow(row).deleted_at)
-                }}</template>
-                <template #cell-actions="{ row }">
-                    <div
-                        v-if="userRow(row).can_manage"
-                        class="row-actions row-actions--end"
-                    >
-                        <NButton
-                            variant="ghost"
-                            size="sm"
-                            icon="upload"
-                            @click="restoreOne(userRow(row).id)"
-                            >Восстановить</NButton
-                        >
-                        <NButton
-                            variant="ghost"
-                            tone="danger"
-                            size="sm"
-                            icon="trash"
-                            aria-label="Удалить навсегда"
-                            @click="askForceOne(userRow(row).id)"
-                        />
-                    </div>
-                    <span v-else class="muted">Нет прав</span>
-                </template>
-                <template #empty>
-                    <NEmptyState
-                        icon="trash"
-                        title="Корзина пуста"
-                        description="Удалённые пользователи появятся здесь."
-                    />
-                </template>
-            </NDataTable>
-
-            <div v-if="showPager" class="page__pager">
-                <NPagination
-                    :page="users.current_page"
-                    :pages="users.last_page"
-                    :page-size="perPage"
-                    :page-sizes="perPageOptions"
-                    page-size-label="Показывать по"
-                    jumpable
-                    prev-label="Назад"
-                    next-label="Вперёд"
-                    jump-label="Страница"
-                    jump-button-label="Перейти"
-                    total-label="из"
-                    jump-error-label="Введите корректный номер страницы"
-                    aria-label="Навигация по страницам"
-                    @update:page="reloadPage"
-                    @update:page-size="(size) => reloadPage(1, size)"
+    <div class="page">
+        <div class="page__head">
+            <div class="page__search">
+                <NInput
+                    v-model="search"
+                    icon="search"
+                    placeholder="Поиск по имени или email…"
+                    aria-label="Поиск в корзине"
+                    @update:model-value="onSearch"
                 />
             </div>
         </div>
 
-        <ConfirmModal
-            :open="forceConfirm"
-            title="Удалить навсегда"
-            :message="
-                forceOneId !== null
-                    ? 'Безвозвратно удалить пользователя? Действие необратимо.'
-                    : `Безвозвратно удалить выбранных пользователей (${selectedCount})? Действие необратимо.`
-            "
-            confirm-label="Удалить навсегда"
-            :loading="forceLoading"
-            @confirm="confirmForce"
-            @cancel="forceConfirm = false"
-            @update:open="forceConfirm = $event"
+        <NDataTable
+            :columns="columns"
+            :rows="users.data"
+            :page-size="0"
+            selectable
+            :selected="selected"
+            select-all-label="Выбрать все"
+            select-row-label="Выбрать строку"
+            manual-sort
+            :sort-key="currentSort"
+            :sort-dir="currentDirection"
+            @update:selected="updateSelected"
+            @sort-change="onSort"
+            stacked
+            :total="users.total"
+            v-model:all-matching="allMatchingSelected"
+        >
+            <template #bulk>
+                <NButton
+                    variant="secondary"
+                    size="sm"
+                    icon="upload"
+                    @click="bulkRestore"
+                    >Восстановить</NButton
+                >
+                <NButton
+                    variant="danger"
+                    size="sm"
+                    icon="trash"
+                    @click="askForceBulk"
+                    >Удалить навсегда</NButton
+                >
+            </template>
+            <template #cell-deleted_at="{ row }">{{
+                formatDateTime(userRow(row).deleted_at)
+            }}</template>
+            <template #cell-actions="{ row }">
+                <div
+                    v-if="userRow(row).can_manage"
+                    class="row-actions row-actions--end"
+                >
+                    <NButton
+                        variant="ghost"
+                        size="sm"
+                        icon="upload"
+                        @click="restoreOne(userRow(row).id)"
+                        >Восстановить</NButton
+                    >
+                    <NButton
+                        variant="ghost"
+                        tone="danger"
+                        size="sm"
+                        icon="trash"
+                        aria-label="Удалить навсегда"
+                        @click="askForceOne(userRow(row).id)"
+                    />
+                </div>
+                <span v-else class="muted">Нет прав</span>
+            </template>
+            <template #empty>
+                <NEmptyState
+                    icon="trash"
+                    title="Корзина пуста"
+                    description="Удалённые пользователи появятся здесь."
+                />
+            </template>
+        </NDataTable>
+
+        <AdminPagination
+            :paginator="users"
+            :per-page="perPage"
+            :per-page-options="perPageOptions"
+            @update:page="reloadPage"
+            @update:page-size="(size) => reloadPage(1, size)"
         />
-    </AdminLayout>
+    </div>
+
+    <NConfirmDialog
+        v-model="forceConfirm"
+        title="Удалить навсегда"
+        :message="
+            forceOneId !== null
+                ? 'Безвозвратно удалить пользователя? Действие необратимо.'
+                : `Безвозвратно удалить выбранных пользователей (${selectedCount})? Действие необратимо.`
+        "
+        confirm-label="Удалить навсегда"
+        :loading="forceLoading"
+        @confirm="confirmForce"
+        danger
+    />
 </template>
 
 <style scoped>
@@ -298,12 +245,6 @@ function confirmForce() {
 .page__search {
     flex: 0 1 320px;
     min-width: 220px;
-}
-.page__back {
-    color: var(--text-2);
-    font-weight: 600;
-    font-size: 13.5px;
-    text-decoration: none;
 }
 .muted {
     color: var(--text-3);

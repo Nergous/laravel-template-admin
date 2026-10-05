@@ -54,13 +54,50 @@ and the project adheres to [semantic versioning](https://semver.org/).
   verification of every dump, and `app:db-restore` with a safety dump taken first.
 - Permissions `users.export`, `users.impersonate` and `backups.download`; a migration
   grants them to the roles that already had those abilities.
+- Multi-value list filters for users and the activity log: values inside one filter
+  combine with OR, different filters combine with AND (`?status[]=active&status[]=blocked`).
+- Users and activity log export to Excel (XLSX) besides CSV, with a column choice
+  (`App\Support\TableExport`, `App\Support\XlsxWriter`).
+- `App\Support\MediaReferenceRegistry`: one place that lists the settings keys, foreign
+  keys and text fields that point at media. `MediaUsageIndex` caches the lookup, and
+  `MediaReferenceUpdater` rewrites the references when a file is replaced or cropped.
+- Media folders are stored in `media_folders`, so an empty folder survives; folders
+  are created with `POST /admin/media/folders` and report file counts and sizes.
+- Dashboard: a link to images without alt text.
+- Backups page warns when the nightly dump failed or is missing.
+- `/up?full=1` additionally fails when the database queue is stalled.
+- `MediaFactory`, `docs/deploy.md`, `docker/nginx.conf.example` and `npm run test:js`
+  (Node test runner for `resources/js/lib`).
+- CI checks migrations on MariaDB (rollback, re-run, restoring a dump over the new
+  schema) and runs the JS tests.
+- Browser tests on Playwright with axe (WCAG 2.1 A/AA in both themes):
+  `npm run test:e2e` runs them against a separate SQLite file and refuses to start
+  on any other database.
+- List filters take several values: values of one filter combine with OR, filters
+  combine with AND; each value shows as its own removable chip.
+- Dashboard quick actions ("Создать пользователя", "Загрузить файлы"); statistic
+  cards link to their lists, and the media card opens images without alt text.
+- Breadcrumbs on record pages, a sticky save bar with the unsaved-changes state,
+  tooltips for icon-only buttons and an XLSX/CSV export menu.
+- `docs/frontend.md` describes the admin frontend.
 
 ### Changed
 
+- The frontend moved to nergous-ui-vue 1.1.0: the toolbar, filters, chips, column
+  picker, confirmation dialog, save bar, breadcrumbs, popovers, tooltips, hotkeys
+  and Enter-to-submit come from the library, and its Russian locale replaces the
+  labels each page used to pass.
+- `AdminLayout` is a persistent Inertia layout: the sidebar, toasts, session timer
+  and notification polling survive page changes. Pages set their header and
+  breadcrumbs with `usePageHeader()`; sidebar items live in `layouts/partials/nav.ts`.
+- Lists turn into labelled cards on phones (`NDataTable stacked`); "select all
+  matching" is offered by the table itself.
+- Date and number formatting is built on the library's `createFormat`.
+- Contrast fixes found by axe on the permissions and backups pages and in warning
+  alerts.
 - Changing the email in the profile asks for the current password.
 - `app:db-backup` names dumps in UTC and dumps SQLite with `VACUUM INTO`.
 - Tests never write to `storage/logs` and ignore `MEDIA_DISK`/`BACKUP_DISK` from `.env`.
-- `symfony/html-sanitizer` removed (unused).
 - Dates are stored in UTC; the timezone setting now only affects display.
 - Search covers roles, finds media by display name and links users to their page.
 - The dashboard shows only the statistics the user may view.
@@ -72,6 +109,29 @@ and the project adheres to [semantic versioning](https://semver.org/).
   Docker image includes the MariaDB and PostgreSQL clients.
 - The dashboard counts sign-ins with one aggregate query instead of loading every row.
 - The static `public/robots.txt` was removed in favor of the generated one.
+- Manual backups run as a queued `CreateBackup` job limited by `BACKUP_TIMEOUT`;
+  queue `retry_after` accounts for it.
+- `app:db-restore` puts the application into maintenance mode itself and clears the
+  cache and permission cache afterwards.
+- `HandleInertiaRequests` runs only on the `/admin` group; a signed-in user opening a
+  guest page is sent to the dashboard.
+- Bulk actions take a flat `{ all, ...filters }` payload; moving files takes `target`.
+- Replacing a media file accepts only a file of the same type; replacing and cropping
+  rewrite references in one transaction and delete old files after it commits.
+- Uploads accept AVIF; upload progress is polled by batch id and reports processed
+  files, errors and skipped duplicates.
+- Notification endpoints moved to `NotificationController`.
+- The container listens on `127.0.0.1:APP_PORT` only, behind a host nginx; the
+  entrypoint creates the `storage` directories and sets their owner. `compose.dev.yaml`
+  uses MariaDB.
+- Missing foreign key indexes are added by a migration.
+
+### Removed
+
+- Creating, renaming and deleting permissions from the panel: the routes, the
+  `PermissionRequest` and the `permissions.create`/`permissions.delete` permissions
+  are gone; permissions are defined in code and seeders.
+- The local `ConfirmModal`, `useConfirm` and `useHotkeys`, replaced by nergous-ui-vue.
 
 ### Fixed
 
@@ -100,6 +160,24 @@ and the project adheres to [semantic versioning](https://semver.org/).
 - An expired CSRF token or session made JSON actions fail silently.
 - Deleting a user or role lost the list's filters, and deleting the last rows of the last
   page left an empty page.
+- `media:prune-orphans` deleted temp files of upload jobs still waiting in the queue.
+- An expired CSRF token on an Inertia request returns to the page with a warning;
+  `apiFetch` refreshes the token and retries once.
+
+### Security
+
+- The superadmin passes every ability check through `Gate::before` and cannot be
+  locked out by missing permission rows; the superadmin role's permissions cannot be
+  changed from the role form.
+- A role, including through the permissions matrix, can be changed only by someone who
+  holds every permission it has. Saving a user or role without the roles or permissions
+  field no longer clears them.
+- Sign-in is limited per email + IP and separately per IP; profile actions that check
+  the password are limited to 6 requests per minute.
+- An empty `TRUSTED_PROXIES` trusts only `127.0.0.1` and `::1`; `X-Forwarded-For` is
+  honored only behind a configured proxy.
+- Ending a session in the profile also revokes "remember me"; ending other sessions
+  keeps the current device signed in.
 
 ## [2.1.2] — 2026-09-24
 

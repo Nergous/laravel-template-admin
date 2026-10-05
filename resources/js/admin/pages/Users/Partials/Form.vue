@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import type { PropType } from "vue";
-import type { AdminRole } from "@/admin/types";
+import type { AdminRole, AdminUser } from "@/admin/types";
 import {
     NInput,
     NAvatar,
@@ -9,26 +9,40 @@ import {
     NFormField,
     NButton,
     NSwitch,
-    NCheckbox,
 } from "nergous-ui-vue";
 
+// Presentational form of the create/edit user pages. The values are v-models
+// of the page's Inertia form; validation errors come in as a plain map.
+const name = defineModel<string>("name", { required: true });
+const email = defineModel<string>("email", { required: true });
+const password = defineModel<string>("password", { required: true });
+const roles = defineModel<string[]>("roles", { required: true });
+const isActive = defineModel<boolean>("isActive", { required: true });
+const blockedReason = defineModel<string>("blockedReason", { required: true });
+const mustChangePassword = defineModel<boolean>("mustChangePassword", {
+    required: true,
+});
+
 const props = defineProps({
-    form: { type: Object, required: true },
+    errors: {
+        type: Object as PropType<Partial<Record<string, string>>>,
+        default: () => ({}),
+    },
     allRoles: { type: Array as PropType<AdminRole[]>, required: true },
     isEdit: { type: Boolean, default: false },
-    user: { type: Object, default: null },
+    user: { type: Object as PropType<AdminUser | null>, default: null },
     // The own account cannot be blocked (the server rejects it too).
     isSelf: { type: Boolean, default: false },
 });
 const emit = defineEmits(["submit"]);
 
-function toggleRole(name: string) {
-    const set = new Set(props.form.roles);
-    set.has(name) ? set.delete(name) : set.add(name);
-    props.form.roles = Array.from(set);
+function toggleRole(roleName: string) {
+    const set = new Set(roles.value);
+    set.has(roleName) ? set.delete(roleName) : set.add(roleName);
+    roles.value = Array.from(set);
 }
-function isSelected(name: string) {
-    return props.form.roles.includes(name);
+function isSelected(roleName: string) {
+    return roles.value.includes(roleName);
 }
 
 // Match the server password policy and exclude characters that are easy to confuse.
@@ -43,7 +57,7 @@ const generated = ref(false);
 // The value last written to the clipboard; editing the field invalidates it.
 const copiedValue = ref("");
 const copied = computed(
-    () => copiedValue.value !== "" && copiedValue.value === props.form.password,
+    () => copiedValue.value !== "" && copiedValue.value === password.value,
 );
 
 // Uniform random integer in [0, max): rejection sampling avoids the modulo bias.
@@ -78,18 +92,17 @@ function generatePassword() {
 }
 
 async function onGenerate() {
-    const password = generatePassword();
-    props.form.password = password;
+    password.value = generatePassword();
     generated.value = true;
     await copyPassword();
 }
 
 async function copyPassword() {
-    const password = props.form.password;
-    if (!password) return;
+    const value = password.value;
+    if (!value) return;
     try {
-        await navigator.clipboard.writeText(password);
-        copiedValue.value = password;
+        await navigator.clipboard.writeText(value);
+        copiedValue.value = value;
     } catch {
         // Clipboard is unavailable (permissions / non-secure context) — the
         // password is still visible in the opened field.
@@ -97,12 +110,9 @@ async function copyPassword() {
     }
 }
 
-watch(
-    () => props.form.password,
-    (value) => {
-        if (!value) generated.value = false;
-    },
-);
+watch(password, (value) => {
+    if (!value) generated.value = false;
+});
 
 const POLICY_HINT =
     "Минимум 15 символов: заглавные и строчные буквы, цифры и спецсимволы.";
@@ -126,34 +136,34 @@ const passwordHint = computed(() => {
             </div>
         </div>
 
-        <NFormField label="Имя" :error="form.errors.name" required>
+        <NFormField label="Имя" :error="errors.name" required>
             <NInput
-                v-model="form.name"
+                v-model="name"
                 placeholder="Иван Петров"
-                :error="!!form.errors.name"
+                :error="!!errors.name"
             />
         </NFormField>
 
-        <NFormField label="Email" :error="form.errors.email" required>
+        <NFormField label="Email" :error="errors.email" required>
             <NInput
-                v-model="form.email"
+                v-model="email"
                 type="email"
                 icon="mail"
                 autocomplete="email"
                 placeholder="name@example.com"
-                :error="!!form.errors.email"
+                :error="!!errors.email"
             />
         </NFormField>
 
         <NFormField
             label="Пароль"
-            :error="form.errors.password"
+            :error="errors.password"
             :hint="passwordHint"
             :required="!isEdit"
         >
             <div class="uform__password">
                 <NInput
-                    v-model="form.password"
+                    v-model="password"
                     :type="generated ? 'text' : 'password'"
                     icon="lock"
                     autocomplete="new-password"
@@ -164,7 +174,7 @@ const passwordHint = computed(() => {
                             ? 'Оставьте пустым, чтобы не менять'
                             : 'Минимум 15 символов'
                     "
-                    :error="!!form.errors.password"
+                    :error="!!errors.password"
                     class="uform__password-input"
                 />
                 <NButton
@@ -197,46 +207,61 @@ const passwordHint = computed(() => {
                 role="group"
                 aria-labelledby="uform-state-label"
             >
-                <label class="uform__toggle">
-                    <span class="uform__toggle-text">
-                        <b>Учётная запись активна</b>
-                        <span>{{
-                            isSelf
-                                ? "Свою учётную запись заблокировать нельзя"
-                                : "Заблокированный пользователь не сможет войти"
-                        }}</span>
-                    </span>
-                    <NSwitch
-                        v-model="form.is_active"
-                        :disabled="isSelf"
-                        aria-label="Учётная запись активна"
-                    />
-                </label>
-                <NFormField
-                    v-if="!form.is_active"
-                    label="Причина блокировки"
-                    :error="form.errors.blocked_reason"
-                    hint="Пользователь увидит её при попытке входа."
-                >
-                    <NInput
-                        v-model="form.blocked_reason"
-                        placeholder="Например: увольнение, подозрительная активность"
-                        maxlength="255"
-                        :error="!!form.errors.blocked_reason"
-                    />
-                </NFormField>
-                <NCheckbox v-model="form.must_change_password">
-                    Потребовать смену пароля при следующем входе
-                </NCheckbox>
-                <span v-if="form.errors.is_active" class="uform__error">{{
-                    form.errors.is_active
-                }}</span>
+                <div class="uform__option">
+                    <label class="uform__toggle">
+                        <span class="uform__toggle-text">
+                            <b>Учётная запись активна</b>
+                            <span>{{
+                                isSelf
+                                    ? "Свою учётную запись заблокировать нельзя"
+                                    : "Заблокированный пользователь не сможет войти"
+                            }}</span>
+                        </span>
+                        <NSwitch
+                            v-model="isActive"
+                            :disabled="isSelf"
+                            aria-label="Учётная запись активна"
+                        />
+                    </label>
+                    <NFormField
+                        v-if="!isActive"
+                        label="Причина блокировки"
+                        :error="errors.blocked_reason"
+                        hint="Пользователь увидит её при попытке входа."
+                        class="uform__reason"
+                    >
+                        <NInput
+                            v-model="blockedReason"
+                            placeholder="Например: увольнение, подозрительная активность"
+                            maxlength="255"
+                            :error="!!errors.blocked_reason"
+                        />
+                    </NFormField>
+                    <span v-if="errors.is_active" class="uform__error">{{
+                        errors.is_active
+                    }}</span>
+                </div>
+                <div class="uform__option">
+                    <label class="uform__toggle">
+                        <span class="uform__toggle-text">
+                            <b>Потребовать смену пароля</b>
+                            <span
+                                >При следующем входе пользователь задаст новый
+                                пароль</span
+                            >
+                        </span>
+                        <NSwitch
+                            v-model="mustChangePassword"
+                            aria-label="Потребовать смену пароля при следующем входе"
+                        />
+                    </label>
+                </div>
             </div>
         </NFormField>
 
         <NFormField
             label="Роли"
-            :error="form.errors.roles"
+            :error="errors.roles"
             tag="div"
             label-id="uform-roles-label"
         >
@@ -315,20 +340,36 @@ const passwordHint = computed(() => {
 .uform__state {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+}
+.uform__option {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px 16px;
+}
+.uform__option + .uform__option {
+    border-top: 1px solid var(--border);
+}
+.uform__reason {
+    padding-top: 14px;
+    border-top: 1px dashed var(--border);
 }
 .uform__toggle {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 16px;
     cursor: pointer;
 }
 .uform__toggle-text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     font-size: 13.5px;
+    line-height: 1.35;
 }
 .uform__toggle-text span {
     font-size: 12px;

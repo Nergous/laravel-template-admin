@@ -9,12 +9,20 @@ export function useIndexFilters(
 ) {
     let timer: ReturnType<typeof setTimeout> | null = null;
 
+    function cancelPendingSearch() {
+        if (timer) clearTimeout(timer);
+        timer = null;
+    }
+
+    // Every reload supersedes a search still waiting for its debounce: it would
+    // otherwise fire later and reset the page, sort or filter just chosen.
     function reload(
         extra: Record<
             string,
             string | number | boolean | null | undefined
         > = {},
     ) {
+        cancelPendingSearch();
         router.get(
             url,
             { ...params(), ...extra },
@@ -23,7 +31,7 @@ export function useIndexFilters(
     }
 
     function onSearch() {
-        if (timer) clearTimeout(timer);
+        cancelPendingSearch();
         timer = setTimeout(() => reload({ page: 1 }), debounce);
     }
 
@@ -32,9 +40,7 @@ export function useIndexFilters(
     }
 
     // Prevent a pending search from reloading after navigation.
-    onBeforeUnmount(() => {
-        if (timer) clearTimeout(timer);
-    });
+    onBeforeUnmount(cancelPendingSearch);
 
     return { reload, onSearch, onSort };
 }

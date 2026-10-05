@@ -26,6 +26,7 @@ defineEmits(["cancel", "save"]);
         :variant="saveVariant"
         class="drawer-foot__save"
         :loading="loading"
+        data-enter-submit
         @click="$emit('save')"
     >
         {{ saveLabel }}

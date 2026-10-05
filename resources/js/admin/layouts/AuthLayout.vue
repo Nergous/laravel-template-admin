@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head } from "@inertiajs/vue3";
-import { useTheme } from "nergous-ui-vue";
+import { NToaster, useTheme } from "nergous-ui-vue";
+import { useFlashToasts } from "@/admin/composables/useFlashToasts";
 
 defineProps({
     title: { type: String, default: "" },
@@ -8,11 +9,15 @@ defineProps({
 
 // Apply the persisted theme on auth pages, which do not render AdminLayout.
 useTheme();
+// Toasts raised before the trip here ("Сессия истекла") and flash messages
+// of the auth pages need a toaster of their own.
+useFlashToasts();
 </script>
 
 <template>
     <div class="auth">
         <Head :title="title" />
+        <NToaster />
         <div class="auth__form">
             <div class="auth__inner">
                 <slot />

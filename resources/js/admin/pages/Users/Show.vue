@@ -9,9 +9,9 @@ import {
     NButton,
     NCard,
     NEmptyState,
+    NConfirmDialog,
 } from "nergous-ui-vue";
-import AdminLayout from "@/admin/layouts/AdminLayout.vue";
-import ConfirmModal from "@/admin/components/ConfirmModal.vue";
+import { usePageHeader } from "@/admin/composables/usePageHeader";
 import type { SharedProps } from "@/admin/types";
 import { can } from "@/lib/can";
 import { listUrl } from "@/lib/listUrl";
@@ -97,214 +97,201 @@ function confirmImpersonate() {
 function metaFor(log: UserActivity) {
     return log.changesCount > 0 ? `${log.changesCount} изм.` : "";
 }
+
+usePageHeader(() => ({
+    title: props.user.name,
+    subtitle: "Карточка пользователя",
+    crumbs: [{ label: "Пользователи", href: listUrl("/admin/users") }],
+}));
 </script>
 
 <template>
-    <AdminLayout :title="user.name" subtitle="Карточка пользователя">
-        <div class="page entity-page entity-page--wide">
-            <div class="entity-page__bar">
-                <Link :href="listUrl('/admin/users')" class="entity-page__back"
-                    >← К списку пользователей</Link
+    <div class="page entity-page entity-page--wide">
+        <div class="entity-page__bar">
+            <div class="entity-page__actions">
+                <NButton variant="secondary" icon="copy" @click="copyLink">{{
+                    copyState || "Скопировать ссылку"
+                }}</NButton>
+                <NButton
+                    v-if="canImpersonate"
+                    variant="secondary"
+                    icon="eye"
+                    @click="impersonateOpen = true"
+                    >Войти как пользователь</NButton
                 >
-                <div class="entity-page__actions">
-                    <NButton
-                        variant="secondary"
-                        icon="copy"
-                        @click="copyLink"
-                        >{{ copyState || "Скопировать ссылку" }}</NButton
-                    >
-                    <NButton
-                        v-if="canImpersonate"
-                        variant="secondary"
-                        icon="eye"
-                        @click="impersonateOpen = true"
-                        >Войти как пользователь</NButton
-                    >
-                    <NButton
-                        v-if="canDelete"
-                        variant="danger"
-                        icon="trash"
-                        @click="deleteOpen = true"
-                        >Удалить</NButton
-                    >
-                    <NButton
-                        v-if="can('users.edit') && canManage"
-                        :as="Link"
-                        :href="`/admin/users/${user.id}/edit`"
-                        variant="primary"
-                        icon="edit"
-                        >Редактировать</NButton
-                    >
-                </div>
+                <NButton
+                    v-if="canDelete"
+                    variant="danger"
+                    icon="trash"
+                    @click="deleteOpen = true"
+                    >Удалить</NButton
+                >
+                <NButton
+                    v-if="can('users.edit') && canManage"
+                    :as="Link"
+                    :href="`/admin/users/${user.id}/edit`"
+                    variant="primary"
+                    icon="edit"
+                    >Редактировать</NButton
+                >
             </div>
+        </div>
 
-            <div class="entity-page__layout">
-                <div class="entity-page__main">
-                    <NCard padding="var(--kpi-pad)" class="entity-page__card">
-                        <div class="entity-page__profile">
-                            <NAvatar :name="user.name" :size="52" />
-                            <div>
-                                <h2>{{ user.name }}</h2>
-                                <p>{{ user.email }}</p>
-                            </div>
-                            <NBadge
-                                v-if="user.is_active === false"
-                                tone="danger"
-                                pill
-                                >Заблокирован</NBadge
-                            >
-                            <NBadge
-                                v-if="user.must_change_password"
-                                tone="warn"
-                                pill
-                                >Должен сменить пароль</NBadge
-                            >
+        <div class="entity-page__layout">
+            <div class="entity-page__main">
+                <NCard padding="var(--kpi-pad)" class="entity-page__card">
+                    <div class="entity-page__profile">
+                        <NAvatar :name="user.name" :size="52" />
+                        <div>
+                            <h2>{{ user.name }}</h2>
+                            <p>{{ user.email }}</p>
                         </div>
-                        <p
+                        <NBadge
                             v-if="user.is_active === false"
-                            class="blocked-reason"
+                            tone="danger"
+                            pill
+                            >Заблокирован</NBadge
                         >
-                            <b>Причина блокировки:</b>
-                            {{ user.blocked_reason || "не указана" }}
-                        </p>
-                    </NCard>
+                        <NBadge
+                            v-if="user.must_change_password"
+                            tone="warn"
+                            pill
+                            >Должен сменить пароль</NBadge
+                        >
+                    </div>
+                    <p v-if="user.is_active === false" class="blocked-reason">
+                        <b>Причина блокировки:</b>
+                        {{ user.blocked_reason || "не указана" }}
+                    </p>
+                </NCard>
 
-                    <NCard padding="var(--kpi-pad)" class="entity-page__card">
-                        <h2 class="entity-page__section-title">Доступ</h2>
-                        <div class="entity-page__badges">
-                            <template v-if="user.roles?.length">
-                                <template
-                                    v-for="role in user.roles"
-                                    :key="role.id"
+                <NCard padding="var(--kpi-pad)" class="entity-page__card">
+                    <h2 class="entity-page__section-title">Доступ</h2>
+                    <div class="entity-page__badges">
+                        <template v-if="user.roles?.length">
+                            <template v-for="role in user.roles" :key="role.id">
+                                <Link
+                                    v-if="can('roles.view')"
+                                    :href="'/admin/roles/' + role.id"
+                                    class="entity-page__badge-link"
                                 >
-                                    <Link
-                                        v-if="can('roles.view')"
-                                        :href="'/admin/roles/' + role.id"
-                                        class="entity-page__badge-link"
-                                    >
-                                        <NBadge
-                                            tone="neutral"
-                                            pill
-                                            :swatch="swatchColor(role.name)"
-                                            >{{ role.name }}</NBadge
-                                        >
-                                    </Link>
                                     <NBadge
-                                        v-else
                                         tone="neutral"
                                         pill
                                         :swatch="swatchColor(role.name)"
                                         >{{ role.name }}</NBadge
                                     >
-                                </template>
+                                </Link>
+                                <NBadge
+                                    v-else
+                                    tone="neutral"
+                                    pill
+                                    :swatch="swatchColor(role.name)"
+                                    >{{ role.name }}</NBadge
+                                >
                             </template>
-                            <span v-else>Роли не назначены</span>
-                        </div>
-                    </NCard>
+                        </template>
+                        <span v-else>Роли не назначены</span>
+                    </div>
+                </NCard>
 
-                    <NCard
-                        v-if="activityLinks"
-                        padding="var(--kpi-pad)"
-                        class="entity-page__card"
-                    >
-                        <div class="activity__head">
-                            <h2 class="entity-page__section-title">
-                                Активность
-                            </h2>
-                            <div class="activity__links">
-                                <Link :href="activityLinks.byUser"
-                                    >Действия пользователя</Link
-                                >
-                                <Link :href="activityLinks.aboutUser"
-                                    >Изменения учётной записи</Link
-                                >
-                            </div>
+                <NCard
+                    v-if="activityLinks"
+                    padding="var(--kpi-pad)"
+                    class="entity-page__card"
+                >
+                    <div class="activity__head">
+                        <h2 class="entity-page__section-title">Активность</h2>
+                        <div class="activity__links">
+                            <Link :href="activityLinks.byUser"
+                                >Действия пользователя</Link
+                            >
+                            <Link :href="activityLinks.aboutUser"
+                                >Изменения учётной записи</Link
+                            >
                         </div>
-                        <ul v-if="activity.length" class="activity__feed">
-                            <li v-for="log in activity" :key="log.id">
-                                <NActivityRow
-                                    :tone="visual(log.action).tone"
-                                    :icon="visual(log.action).icon"
-                                    :actor="log.actor"
-                                    :verb="log.actionLabel"
-                                    :object="log.subject"
-                                    :tag="log.subjectType"
-                                    :time="formatRelative(log.createdAt)"
-                                    :meta="metaFor(log)"
-                                />
-                            </li>
-                        </ul>
-                        <NEmptyState
-                            v-else
-                            icon="activity"
-                            title="Событий нет"
-                            description="Здесь появятся действия пользователя и изменения его учётной записи."
-                        />
-                    </NCard>
-                </div>
-
-                <aside class="entity-page__aside">
-                    <NCard padding="var(--kpi-pad)" class="entity-page__card">
-                        <h2 class="entity-page__section-title">Сведения</h2>
-                        <dl class="entity-page__details">
-                            <div>
-                                <dt>ID</dt>
-                                <dd>#{{ user.id }}</dd>
-                            </div>
-                            <div>
-                                <dt>Email</dt>
-                                <dd>{{ user.email }}</dd>
-                            </div>
-                            <div>
-                                <dt>Последний вход</dt>
-                                <dd>
-                                    {{ formatDateTime(user.last_login_at) }}
-                                </dd>
-                            </div>
-                            <div>
-                                <dt>Добавлен</dt>
-                                <dd>{{ formatDateTime(user.created_at) }}</dd>
-                            </div>
-                            <div>
-                                <dt>Обновлён</dt>
-                                <dd>{{ formatDateTime(user.updated_at) }}</dd>
-                            </div>
-                            <div>
-                                <dt>Создал</dt>
-                                <dd>{{ user.creator?.name ?? "—" }}</dd>
-                            </div>
-                            <div>
-                                <dt>Изменил</dt>
-                                <dd>{{ user.editor?.name ?? "—" }}</dd>
-                            </div>
-                        </dl>
-                    </NCard>
-                </aside>
+                    </div>
+                    <ul v-if="activity.length" class="activity__feed">
+                        <li v-for="log in activity" :key="log.id">
+                            <NActivityRow
+                                :tone="visual(log.action).tone"
+                                :icon="visual(log.action).icon"
+                                :actor="log.actor"
+                                :verb="log.actionLabel"
+                                :object="log.subject"
+                                :tag="log.subjectType"
+                                :time="formatRelative(log.createdAt)"
+                                :meta="metaFor(log)"
+                            />
+                        </li>
+                    </ul>
+                    <NEmptyState
+                        v-else
+                        icon="activity"
+                        title="Событий нет"
+                        description="Здесь появятся действия пользователя и изменения его учётной записи."
+                    />
+                </NCard>
             </div>
+
+            <aside class="entity-page__aside">
+                <NCard padding="var(--kpi-pad)" class="entity-page__card">
+                    <h2 class="entity-page__section-title">Сведения</h2>
+                    <dl class="entity-page__details">
+                        <div>
+                            <dt>ID</dt>
+                            <dd>#{{ user.id }}</dd>
+                        </div>
+                        <div>
+                            <dt>Email</dt>
+                            <dd>{{ user.email }}</dd>
+                        </div>
+                        <div>
+                            <dt>Последний вход</dt>
+                            <dd>
+                                {{ formatDateTime(user.last_login_at) }}
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>Добавлен</dt>
+                            <dd>{{ formatDateTime(user.created_at) }}</dd>
+                        </div>
+                        <div>
+                            <dt>Обновлён</dt>
+                            <dd>{{ formatDateTime(user.updated_at) }}</dd>
+                        </div>
+                        <div>
+                            <dt>Создал</dt>
+                            <dd>{{ user.creator?.name ?? "—" }}</dd>
+                        </div>
+                        <div>
+                            <dt>Изменил</dt>
+                            <dd>{{ user.editor?.name ?? "—" }}</dd>
+                        </div>
+                    </dl>
+                </NCard>
+            </aside>
         </div>
+    </div>
 
-        <ConfirmModal
-            :open="deleteOpen"
-            :loading="deleting"
-            :message="`Отправить пользователя «${user.name}» в корзину?`"
-            confirm-label="В корзину"
-            @confirm="confirmDelete"
-            @cancel="deleteOpen = false"
-            @update:open="deleteOpen = $event"
-        />
+    <NConfirmDialog
+        v-model="deleteOpen"
+        :loading="deleting"
+        :message="`Отправить пользователя «${user.name}» в корзину?`"
+        confirm-label="В корзину"
+        @confirm="confirmDelete"
+        danger
+    />
 
-        <ConfirmModal
-            :open="impersonateOpen"
-            :loading="impersonating"
-            title="Войти как пользователь"
-            :message="`Вы начнёте работать от имени «${user.name}» и увидите панель с его правами. Ваши действия будут записаны в журнал с пометкой о вас. Вернуться к своему аккаунту можно в любой момент.`"
-            confirm-label="Войти"
-            :danger="false"
-            @confirm="confirmImpersonate"
-            @cancel="impersonateOpen = false"
-            @update:open="impersonateOpen = $event"
-        />
-    </AdminLayout>
+    <NConfirmDialog
+        v-model="impersonateOpen"
+        :loading="impersonating"
+        title="Войти как пользователь"
+        :message="`Вы начнёте работать от имени «${user.name}» и увидите панель с его правами. Ваши действия будут записаны в журнал с пометкой о вас. Вернуться к своему аккаунту можно в любой момент.`"
+        confirm-label="Войти"
+        :danger="false"
+        @confirm="confirmImpersonate"
+    />
 </template>
 
 <style scoped>

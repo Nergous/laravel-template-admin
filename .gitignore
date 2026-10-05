@@ -3,6 +3,7 @@
 .env
 .env.backup
 .env.production
+.env.e2e
 .phpactor.json
 .phpunit.result.cache
 /.fleet
@@ -31,6 +32,17 @@ Thumbs.db
 design-system
 claude.md
 /AGENTS.md
+
+# Database dumps and transfer archives: they hold real user data.
+*.sql
+*.sql.gz
+*.sql.enc
+*.sqlite.enc
+/transfer/
+
+# Local Composer executable and installer.
+/composer.phar
+/composer-setup.php
 
 # Runtime output (keep directory placeholders versioned).
 /storage/framework/cache/*

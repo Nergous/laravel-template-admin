@@ -10,10 +10,10 @@ import {
     NEmptyState,
     NIcon,
     NSpinner,
+    NConfirmDialog,
+    useConfirm,
 } from "nergous-ui-vue";
-import AdminLayout from "@/admin/layouts/AdminLayout.vue";
-import ConfirmModal from "@/admin/components/ConfirmModal.vue";
-import { useConfirm } from "@/admin/composables/useConfirm";
+import { usePageHeader } from "@/admin/composables/usePageHeader";
 import { can } from "@/lib/can";
 import { formatBytes, formatDateTime, formatRelative } from "@/lib/format";
 
@@ -38,6 +38,20 @@ const props = defineProps({
     pending: { type: Boolean, default: false },
     lastFailure: {
         type: Object as PropType<{ message: string; at: string } | null>,
+        default: null,
+    },
+    // Problem with the scheduled dumps: a failed run or a stale/missing dump.
+    scheduleWarning: {
+        type: Object as PropType<{ message: string; at: string | null } | null>,
+        default: null,
+    },
+    media: {
+        type: Object as PropType<{
+            count: number;
+            bytes: number;
+            disk: string;
+            path: string;
+        } | null>,
         default: null,
     },
 });
@@ -102,146 +116,172 @@ function confirmDelete() {
         onFinish: () => del.close(),
     });
 }
+
+usePageHeader(() => ({
+    title: "Резервные копии",
+    subtitle: "Дампы базы данных",
+}));
 </script>
 
 <template>
-    <AdminLayout title="Резервные копии" subtitle="Дампы базы данных">
-        <div class="page">
-            <div class="intro">
-                <span class="intro__ico"
-                    ><NIcon name="shield" :size="18"
-                /></span>
-                <p class="intro__text">
-                    Плановые копии создаёт команда <code>app:db-backup</code> по
-                    расписанию, ручные — кнопка справа. {{ retention }}
-                    <template v-if="encrypted">
-                        Копии зашифрованы ключом
-                        <code>BACKUP_ENCRYPTION_KEY</code>, расшифровка —
-                        <code>app:db-backup-decrypt</code>.
-                    </template>
-                    <template v-else>
-                        Файл содержит все учётные записи и настройки —
-                        скачивайте его только на доверенные устройства.
-                    </template>
-                    <template v-if="offsite">
-                        Копии дублируются на диск <code>{{ offsite }}</code
-                        >.
-                    </template>
-                    Все действия записываются в журнал. Восстановление из копии
-                    —
-                    <code>php artisan app:db-restore имя-файла</code>.
-                    <template v-if="driver">
-                        Драйвер БД: <code>{{ driver }}</code
-                        >.
-                    </template>
-                </p>
-                <NButton
-                    v-if="can('backups.create')"
-                    variant="primary"
-                    icon="plus"
-                    class="intro__action"
-                    :loading="creating || pending"
-                    :disabled="pending"
-                    @click="createBackup"
-                    >{{ pending ? "Создаётся…" : "Создать копию" }}</NButton
-                >
-            </div>
-
-            <div v-if="pending" class="pending" role="status">
-                <NSpinner :size="16" :width="2" />
-                Копия создаётся в фоне. Список обновится автоматически.
-            </div>
-            <NAlert
-                v-else-if="lastFailure"
-                tone="danger"
-                title="Последняя ручная копия не создана"
+    <div class="page">
+        <div class="intro">
+            <span class="intro__ico"><NIcon name="shield" :size="18" /></span>
+            <p class="intro__text">
+                Плановые копии создаёт команда <code>app:db-backup</code> по
+                расписанию, ручные — кнопка справа. {{ retention }}
+                <template v-if="encrypted">
+                    Копии зашифрованы ключом
+                    <code>BACKUP_ENCRYPTION_KEY</code>, расшифровка —
+                    <code>app:db-backup-decrypt</code>.
+                </template>
+                <template v-else>
+                    Файл содержит все учётные записи и настройки — скачивайте
+                    его только на доверенные устройства.
+                </template>
+                <template v-if="offsite">
+                    Копии дублируются на диск <code>{{ offsite }}</code
+                    >.
+                </template>
+                Все действия записываются в журнал. Восстановление из копии —
+                <code>php artisan app:db-restore имя-файла</code>.
+                <template v-if="driver">
+                    Драйвер БД: <code>{{ driver }}</code
+                    >.
+                </template>
+            </p>
+            <NButton
+                v-if="can('backups.create')"
+                variant="primary"
+                icon="plus"
+                class="intro__action"
+                :loading="creating || pending"
+                :disabled="pending"
+                @click="createBackup"
+                >{{ pending ? "Создаётся…" : "Создать копию" }}</NButton
             >
-                {{ lastFailure.message }} ({{ formatDateTime(lastFailure.at) }})
-            </NAlert>
-
-            <NCard padding="0">
-                <ul v-if="backups.length" class="list">
-                    <li v-for="file in backups" :key="file.name" class="row">
-                        <span class="row__ico"
-                            ><NIcon
-                                :name="file.encrypted ? 'lock' : 'layers'"
-                                :size="18"
-                        /></span>
-                        <div class="row__main">
-                            <span class="row__head">
-                                <span class="row__name">{{ file.name }}</span>
-                                <NBadge
-                                    size="sm"
-                                    pill
-                                    :tone="
-                                        file.kind === 'manual'
-                                            ? 'accent'
-                                            : 'neutral'
-                                    "
-                                    >{{
-                                        kindLabels[file.kind] ?? file.kind
-                                    }}</NBadge
-                                >
-                                <NBadge
-                                    v-if="file.encrypted"
-                                    size="sm"
-                                    pill
-                                    tone="ok"
-                                    >зашифрована</NBadge
-                                >
-                            </span>
-                            <span class="row__meta">
-                                {{ formatDateTime(file.created_at) }} ·
-                                {{ formatRelative(file.created_at) }} ·
-                                {{ formatBytes(file.size) }}
-                            </span>
-                        </div>
-                        <div class="row__actions">
-                            <NButton
-                                v-if="can('backups.download')"
-                                variant="secondary"
-                                size="sm"
-                                icon="download"
-                                :as="'a'"
-                                :href="`/admin/backups/${encodeURIComponent(file.name)}`"
-                                :aria-label="`Скачать ${file.name}`"
-                                >Скачать</NButton
-                            >
-                            <NButton
-                                v-if="can('backups.delete')"
-                                variant="ghost"
-                                tone="danger"
-                                size="sm"
-                                icon="trash"
-                                :aria-label="`Удалить ${file.name}`"
-                                @click="del.ask(file)"
-                            />
-                        </div>
-                    </li>
-                </ul>
-                <NEmptyState
-                    v-else
-                    icon="shield"
-                    title="Копий пока нет"
-                    :description="
-                        can('backups.create')
-                            ? 'Создайте первую копию кнопкой выше или настройте запуск app:db-backup по расписанию.'
-                            : 'Резервные копии появятся здесь после запуска app:db-backup.'
-                    "
-                />
-            </NCard>
         </div>
 
-        <ConfirmModal
-            :open="del.open"
-            :loading="del.loading"
-            title="Удалить резервную копию?"
-            :message="`Файл «${del.payload?.name}» будет удалён с сервера без возможности восстановления.${offsite ? ' Копия на внешнем диске останется.' : ''}`"
-            @confirm="confirmDelete"
-            @cancel="del.close"
-            @update:open="del.open = $event"
-        />
-    </AdminLayout>
+        <div v-if="pending" class="pending" role="status">
+            <NSpinner :size="16" :width="2" />
+            Копия создаётся в фоне. Список обновится автоматически.
+        </div>
+        <NAlert
+            v-else-if="lastFailure"
+            tone="danger"
+            title="Последняя ручная копия не создана"
+        >
+            {{ lastFailure.message }} ({{ formatDateTime(lastFailure.at) }})
+        </NAlert>
+
+        <NAlert
+            v-if="scheduleWarning"
+            tone="warn"
+            title="Плановое резервное копирование"
+        >
+            {{ scheduleWarning.message }}
+            <template v-if="scheduleWarning.at">
+                ({{ formatDateTime(scheduleWarning.at) }})
+            </template>
+        </NAlert>
+
+        <NAlert
+            v-if="media && media.count > 0"
+            tone="warn"
+            title="Файлы медиатеки в копию не входят"
+        >
+            Дамп содержит только базу данных. Файлы медиатеки ({{
+                media.count
+            }}
+            шт., {{ formatBytes(media.bytes) }}) лежат на диске
+            <code>{{ media.disk }}</code> в <code>{{ media.path }}</code> —
+            копируйте их отдельно (rsync, снимок тома или объектное хранилище).
+            Без них восстановленная база будет ссылаться на отсутствующие
+            изображения и PDF.
+        </NAlert>
+
+        <NCard padding="0">
+            <ul v-if="backups.length" class="list">
+                <li v-for="file in backups" :key="file.name" class="row">
+                    <span class="row__ico"
+                        ><NIcon
+                            :name="file.encrypted ? 'lock' : 'layers'"
+                            :size="18"
+                    /></span>
+                    <div class="row__main">
+                        <span class="row__head">
+                            <span class="row__name">{{ file.name }}</span>
+                            <NBadge
+                                size="sm"
+                                pill
+                                :tone="
+                                    file.kind === 'manual'
+                                        ? 'accent'
+                                        : 'neutral'
+                                "
+                                >{{
+                                    kindLabels[file.kind] ?? file.kind
+                                }}</NBadge
+                            >
+                            <NBadge
+                                v-if="file.encrypted"
+                                size="sm"
+                                pill
+                                tone="ok"
+                                >зашифрована</NBadge
+                            >
+                        </span>
+                        <span class="row__meta">
+                            {{ formatDateTime(file.created_at) }} ·
+                            {{ formatRelative(file.created_at) }} ·
+                            {{ formatBytes(file.size) }}
+                        </span>
+                    </div>
+                    <div class="row__actions">
+                        <NButton
+                            v-if="can('backups.download')"
+                            variant="secondary"
+                            size="sm"
+                            icon="download"
+                            :as="'a'"
+                            :href="`/admin/backups/${encodeURIComponent(file.name)}`"
+                            :aria-label="`Скачать ${file.name}`"
+                            >Скачать</NButton
+                        >
+                        <NButton
+                            v-if="can('backups.delete')"
+                            variant="ghost"
+                            tone="danger"
+                            size="sm"
+                            icon="trash"
+                            :aria-label="`Удалить ${file.name}`"
+                            @click="del.ask(file)"
+                        />
+                    </div>
+                </li>
+            </ul>
+            <NEmptyState
+                v-else
+                icon="shield"
+                title="Копий пока нет"
+                :description="
+                    can('backups.create')
+                        ? 'Создайте первую копию кнопкой выше или настройте запуск app:db-backup по расписанию.'
+                        : 'Резервные копии появятся здесь после запуска app:db-backup.'
+                "
+            />
+        </NCard>
+    </div>
+
+    <NConfirmDialog
+        v-model="del.open"
+        :loading="del.loading"
+        title="Удалить резервную копию?"
+        :message="`Файл «${del.payload?.name}» будет удалён с сервера без возможности восстановления.${offsite ? ' Копия на внешнем диске останется.' : ''}`"
+        @confirm="confirmDelete"
+        danger
+        confirm-label="Удалить"
+    />
 </template>
 
 <style scoped>
@@ -276,7 +316,7 @@ function confirmDelete() {
 .intro__text code {
     font-family: var(--font-mono);
     font-size: 12.5px;
-    color: var(--accent);
+    color: var(--accent-ink);
 }
 .intro__action {
     flex: none;

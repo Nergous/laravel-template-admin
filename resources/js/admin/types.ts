@@ -1,7 +1,10 @@
 import type { PageProps } from "@inertiajs/core";
 
-export interface AdminUser {
-    [key: string]: unknown;
+// Row shapes of list pages are type aliases (not interfaces): an alias is
+// implicitly assignable to the table's Record<string, unknown> row, so no
+// index signature that would also hide misspelled field names is needed.
+
+export type AdminUser = {
     id: number;
     name: string;
     email: string;
@@ -18,9 +21,9 @@ export interface AdminUser {
     deleted_at?: string | null;
     creator?: { name: string } | null;
     editor?: { name: string } | null;
-}
+};
 
-export interface AdminRole {
+export type AdminRole = {
     id: number;
     name: string;
     description?: string | null;
@@ -33,7 +36,10 @@ export interface AdminRole {
     editor_name?: string | null;
     created_at?: string | null;
     updated_at?: string | null;
-}
+};
+
+/** Permission groups of the role form: { users: [{ id, name }], media: [...], … }. */
+export type PermissionGroups = Record<string, { id?: number; name: string }[]>;
 
 export interface MediaItem {
     id: number;
@@ -65,7 +71,45 @@ export interface MediaDetails extends MediaItem {
     uploaded_by: string | null;
     updated_by: string | null;
     updated_at: string | null;
+    /** Where the file is referenced, with a link to edit each place. */
+    places: MediaPlace[];
 }
+
+export interface MediaPlace {
+    label: string;
+    title: string | null;
+    url: string | null;
+}
+
+export interface SelectOption {
+    value: string;
+    label: string;
+}
+
+/** Picked library file as the admin forms keep it (see MediaField). */
+export interface MediaRef {
+    id: number;
+    type?: string;
+    url: string;
+    thumb_url?: string | null;
+    original_name?: string | null;
+    size?: number | null;
+    alt?: string | null;
+}
+
+/** Settings of the /admin/settings page by group (Setting::SETTINGS_PAGE_GROUPS). */
+export type AdminSettings = {
+    general: { app_name: string; timezone: string; favicon: string };
+    seo: {
+        meta_title_template: string;
+        meta_description: string;
+        canonical_domain: string;
+        og_image: string;
+        indexable: boolean;
+        sitemap: boolean;
+    };
+    security: { session_lifetime: number; login_throttle: number };
+};
 
 export interface Pagination<T> {
     data: T[];

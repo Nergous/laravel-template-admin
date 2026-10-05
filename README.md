@@ -57,7 +57,7 @@ enabled and protected from editing.
 
 - **PHP** ^8.4 · **Laravel** ^12
 - **Inertia** ^3 (`inertiajs/inertia-laravel`) · **Vue** ^3.5 + **TypeScript** — SPA (a single Blade template, everything else in Vue)
-- **Vite** 8 · **nergous-ui-vue** 1.0.4 from npm, a Vue component library with no runtime dependencies beyond Vue
+- **Vite** 8 · **nergous-ui-vue** 1.1.0 from npm, a Vue component library with no runtime dependencies beyond Vue
 - **spatie/laravel-permission** ^8 (RBAC)
 - **SQLite** by default (compatible with MySQL/MariaDB/PostgreSQL)
 - Queues: the `database` driver — for asynchronous media processing
@@ -110,9 +110,9 @@ After `--seed`, the following will be available:
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `composer setup` | Turnkey setup for SQLite: composer/npm + SQLite file + migrations + seeds (roles/permissions + demo users in `local`) + `storage:link` + build. Afterwards you can log in immediately as `admin@example.com` / `password123` |
 | `composer dev`   | In parallel: artisan serve, queue listen, pail (logs), vite                                                                                                                     |
-| `composer test`  | Clears the config cache and runs PHPUnit (`tests/Feature` and `tests/Unit`)                                                                                                     |
+| `composer test`  | Runs PHPUnit (`tests/Feature` and `tests/Unit`) on SQLite in memory; the tests use their own config cache file, so the working one is left alone                              |
 
-The frontend is built with Vite: `npm run dev` — a dev server with HMR, `npm run typecheck` — strict TypeScript/Vue check, `npm run build` — a production build.
+The frontend is built with Vite: `npm run dev` — a dev server with HMR, `npm run typecheck` — strict TypeScript/Vue check, `npm run build` — a production build. `npm run test:js` runs the frontend logic tests (`node --test`), `npm run test:e2e` runs the Playwright and axe browser tests against a fresh SQLite file of their own (build first; `npx playwright install chromium` once). See [docs/frontend.md](docs/frontend.md).
 
 ### Creating an administrator
 
@@ -292,7 +292,7 @@ through `App\Support\Sitemap` (see the example in its docblock). Admin responses
 - **Dark theme** and **interface density** (S/M/L) via the `useTheme` composable;
   the choice is stored in `localStorage`, and an anti-flash script in `admin.blade.php` applies it
   before the CSS loads. The toggles are in the sidebar and topbar.
-- **Command palette and global search** via `Ctrl/Cmd+K` (the `useHotkeys` composable,
+- **Command palette and global search** via `Ctrl/Cmd+K` (`useHotkeys` from nergous-ui-vue,
   layout-independent; new hotkeys are added through the same composable).
 - **Toasts** for flash messages (`success`/`error`/`warning`/`info`) via `useToast`/`NToaster`.
 - **Notifications** — other users' actions from the past week in the bell; the badge counts
@@ -420,12 +420,15 @@ A quick recipe for the current stack (Inertia + Vue):
    `lang/ru/permissions.php` (`resources`: prefix → label), otherwise the group shows up as an
    unlocalized key.
 6. **Inertia page** — Vue component(s) under `resources/js/admin/pages/Xxx/` (e.g. `Index.vue`);
-   import design-system elements from `nergous-ui-vue` and wrap the content in `AdminLayout`.
-   Users and roles provide a shareable `Show.vue` URL and separate create/edit routes using
-   `FormPage.vue` + `Partials/Form.vue`. The list pages use local helpers
-   `ConfirmModal`/`useConfirm`/`can`/`format` from `resources/js/admin/`; URLs are
-   written as strings because the project does not use Ziggy.
-7. **Sidebar item** — add an entry to the `sections` array in `resources/js/admin/layouts/AdminLayout.vue`
+   import design-system elements from `nergous-ui-vue`. `AdminLayout` is persistent and assigned
+   in `app.ts`, so the page does not wrap itself in it: it sets the title, subtitle and breadcrumbs
+   with `usePageHeader()`. Users and roles provide a shareable `Show.vue` URL and separate
+   create/edit routes using `FormPage.vue` + `Partials/Form.vue`. List pages combine library
+   pieces (`NToolbar`, `NMultiSelect`, `NFilterChips`, `NDataTable stacked`, `NConfirmDialog` +
+   `useConfirm`, `NActionBar` for forms) with local helpers (`useIndexFilters`, `useBulkSelection`,
+   `AdminPagination`, `can`, `format`); URLs are written as strings because the project does not
+   use Ziggy. Details in [docs/frontend.md](docs/frontend.md).
+7. **Sidebar item** — add an entry to `buildNavSections()` in `resources/js/admin/layouts/partials/nav.ts`
    (the `perm` field gates visibility via `can()`); if needed, a counter for the badge in
    `App\Http\Middleware\HandleInertiaRequests::share()` (`counts`, gated by `*.view`).
 8. **Tests** — modeled on `tests/Feature/UserManagementTest.php` (HTTP + permissions) and
@@ -529,8 +532,10 @@ laravel-template-admin/
 
 ## Documentation
 
-- **The API surface** (5 JSON endpoints and their contracts, the per-route permission matrix and
+- **The API surface** (the JSON endpoints and their contracts, the per-route permission matrix and
   error catalog, response conventions, a `route:list` snapshot) — in **[docs/](docs/README.md)**.
+- **The frontend** (persistent layout, what comes from nergous-ui-vue, filters, selection,
+  session handling, tests) — in **[docs/frontend.md](docs/frontend.md)**.
 
 **Health check.** The application serves `GET /up` (Laravel's standard health route,
 `bootstrap/app.php`) — it returns 200 once it's up. Used in the services' Docker

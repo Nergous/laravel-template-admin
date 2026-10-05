@@ -1,34 +1,92 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import type { PropType } from "vue";
 import { Link, router } from "@inertiajs/vue3";
-import AdminLayout from "@/admin/layouts/AdminLayout.vue";
+import { usePageHeader } from "@/admin/composables/usePageHeader";
 import {
-    NCard,
     NBadge,
     NButton,
-    NInput,
-    NPagination,
+    NDataTable,
     NEmptyState,
+    NInput,
+    NToolbar,
+    NConfirmDialog,
+    NColumnPicker,
+    useConfirm,
+    useColumnVisibility,
 } from "nergous-ui-vue";
-import ConfirmModal from "@/admin/components/ConfirmModal.vue";
-import { useConfirm } from "@/admin/composables/useConfirm";
+import type { Column } from "nergous-ui-vue";
+import type { AdminRole, Pagination } from "@/admin/types";
+import AdminPagination from "@/admin/components/AdminPagination.vue";
 import { useIndexFilters } from "@/admin/composables/useIndexFilters";
+import { tableRow } from "@/admin/composables/useTableRow";
 import { can } from "@/lib/can";
-import { formatNumber } from "@/lib/format";
+import { formatDateShort, formatNumber } from "@/lib/format";
 import { swatchColor } from "@/lib/swatch";
 
 const props = defineProps({
-    roles: { type: Object, required: true },
+    roles: { type: Object as PropType<Pagination<AdminRole>>, required: true },
     permissionsTotal: { type: Number, default: 0 },
-    filters: { type: Object, default: () => ({}) },
+    filters: {
+        type: Object as PropType<{ search?: string }>,
+        default: () => ({}),
+    },
+    currentSort: { type: String, default: "name" },
+    currentDirection: {
+        type: String as PropType<"asc" | "desc">,
+        default: "asc",
+    },
+    perPage: { type: Number, default: 10 },
+    perPageOptions: {
+        type: Array as PropType<number[]>,
+        default: () => [10, 25, 50, 100],
+    },
 });
 
 const search = ref(props.filters.search ?? "");
-const { reload, onSearch } = useIndexFilters("/admin/roles", () => ({
+const { reload, onSearch, onSort } = useIndexFilters("/admin/roles", () => ({
     search: search.value,
+    sort: props.currentSort,
+    direction: props.currentDirection,
+    per_page: props.perPage,
 }));
 
-const del = useConfirm();
+const allColumns: Column[] = [
+    { key: "name", label: "Роль", sortable: true },
+    { key: "description", label: "Описание" },
+    { key: "is_system", label: "Тип", sortable: true, width: "140px" },
+    {
+        key: "users_count",
+        label: "Пользователи",
+        sortable: true,
+        width: "140px",
+        align: "center",
+    },
+    {
+        key: "permissions_count",
+        label: "Разрешения",
+        sortable: true,
+        width: "130px",
+        align: "center",
+    },
+    { key: "created_at", label: "Добавлена", sortable: true, width: "140px" },
+    { key: "actions", label: "Действия", width: "120px", align: "center" },
+];
+
+const { columns, columnChoices, hiddenColumns } = useColumnVisibility(
+    allColumns,
+    [
+        "description",
+        "is_system",
+        "users_count",
+        "permissions_count",
+        "created_at",
+    ],
+    "admin-roles-hidden-columns",
+);
+
+const roleRow = tableRow<AdminRole>();
+const del = useConfirm<AdminRole>();
 
 function confirmDelete() {
     if (!del.payload) return;
@@ -38,285 +96,201 @@ function confirmDelete() {
         onFinish: () => del.close(),
     });
 }
+
+usePageHeader(() => ({
+    title: "Роли",
+    subtitle: `${props.roles.total} ролей`,
+}));
 </script>
 
 <template>
-    <AdminLayout title="Роли" subtitle="Наборы прав доступа">
-        <div class="page">
-            <div class="page__toolbar">
-                <div class="page__search">
-                    <NInput
-                        v-model="search"
-                        icon="search"
-                        placeholder="Поиск по названию"
-                        @update:model-value="onSearch"
+    <div class="page">
+        <NToolbar>
+            <template #search>
+                <NInput
+                    v-model="search"
+                    icon="search"
+                    placeholder="Поиск по названию или описанию…"
+                    aria-label="Поиск ролей"
+                    @update:model-value="onSearch"
+                />
+            </template>
+            <NColumnPicker
+                v-model:hidden="hiddenColumns"
+                :columns="columnChoices"
+            />
+            <template #actions>
+                <NButton
+                    v-if="can('roles.create')"
+                    :as="Link"
+                    href="/admin/roles/create"
+                    variant="primary"
+                    icon="plus"
+                    >Добавить</NButton
+                >
+            </template>
+        </NToolbar>
+
+        <NDataTable
+            :columns="columns"
+            :rows="roles.data"
+            :page-size="0"
+            manual-sort
+            :sort-key="currentSort"
+            :sort-dir="currentDirection"
+            @sort-change="onSort"
+            stacked
+        >
+            <template #cell-name="{ row }">
+                <div class="rcell">
+                    <span
+                        class="rcell__swatch"
+                        :style="{
+                            background: swatchColor(roleRow(row).name),
+                        }"
                     />
-                </div>
-                <NButton
-                    v-if="can('roles.create')"
-                    :as="Link"
-                    href="/admin/roles/create"
-                    variant="primary"
-                    icon="plus"
-                    >Создать</NButton
-                >
-            </div>
-
-            <NEmptyState
-                v-if="!roles.data.length"
-                icon="shield"
-                title="Роли не найдены"
-                :description="
-                    search
-                        ? 'Попробуйте изменить запрос поиска.'
-                        : 'Создайте первую роль, чтобы управлять доступом.'
-                "
-            >
-                <NButton
-                    v-if="can('roles.create')"
-                    :as="Link"
-                    href="/admin/roles/create"
-                    variant="primary"
-                    icon="plus"
-                    >Создать роль</NButton
-                >
-            </NEmptyState>
-
-            <template v-else>
-                <div class="roles">
-                    <NCard
-                        v-for="role in roles.data"
-                        :key="role.id"
-                        hover
-                        padding="var(--kpi-pad)"
-                        class="roles__card"
+                    <Link
+                        :href="`/admin/roles/${roleRow(row).id}`"
+                        class="role-name"
+                        >{{ roleRow(row).name }}</Link
                     >
-                        <div class="role">
-                            <div class="role__head">
-                                <span
-                                    class="role__swatch"
-                                    :style="{
-                                        background: swatchColor(role.name),
-                                    }"
-                                />
-                                <h2 class="role__name">
-                                    <Link
-                                        :href="`/admin/roles/${role.id}`"
-                                        class="role__name-link"
-                                    >
-                                        {{ role.name }}
-                                    </Link>
-                                </h2>
-                                <NBadge size="sm">{{
-                                    role.is_system ? "системная" : "кастомная"
-                                }}</NBadge>
-                                <div class="role__actions">
-                                    <NButton
-                                        v-if="role.can_edit"
-                                        :as="Link"
-                                        :href="`/admin/roles/${role.id}/edit`"
-                                        variant="ghost"
-                                        tone="accent"
-                                        icon="edit"
-                                        size="sm"
-                                        :aria-label="`Редактировать роль ${role.name}`"
-                                    />
-                                    <NButton
-                                        v-if="
-                                            can('roles.delete') &&
-                                            !role.is_system
-                                        "
-                                        variant="ghost"
-                                        tone="danger"
-                                        icon="trash"
-                                        size="sm"
-                                        aria-label="Удалить роль"
-                                        @click="del.ask(role)"
-                                    />
-                                </div>
-                            </div>
-
-                            <div class="role__desc">
-                                {{ role.description || "Описание не задано" }}
-                            </div>
-
-                            <div class="role__footer">
-                                <div class="role__stat">
-                                    <b class="role__num">{{
-                                        formatNumber(role.users_count)
-                                    }}</b>
-                                    <span class="role__label"
-                                        >пользователей</span
-                                    >
-                                </div>
-                                <div class="role__stat">
-                                    <b class="role__num"
-                                        >{{ role.permissions_count }} /
-                                        {{ permissionsTotal }}</b
-                                    >
-                                    <span class="role__label">разрешений</span>
-                                </div>
-                            </div>
-                        </div>
-                    </NCard>
                 </div>
+            </template>
 
-                <p class="roles__hint">
-                    Откройте роль, чтобы посмотреть её разрешения и ссылку на
-                    редактирование.
-                </p>
+            <template #cell-description="{ row }">
+                <span v-if="roleRow(row).description" class="desc-cell">{{
+                    roleRow(row).description
+                }}</span>
+                <span v-else class="muted">—</span>
+            </template>
 
-                <div v-if="roles.last_page > 1" class="page__pager">
-                    <NPagination
-                        :page="roles.current_page"
-                        :pages="roles.last_page"
-                        jumpable
-                        prev-label="Назад"
-                        next-label="Вперёд"
-                        jump-label="Страница"
-                        jump-button-label="Перейти"
-                        total-label="из"
-                        jump-error-label="Введите корректный номер страницы"
-                        aria-label="Навигация по страницам"
-                        @update:page="(p) => reload({ page: p })"
+            <template #cell-is_system="{ row }">
+                <NBadge
+                    :tone="roleRow(row).is_system ? 'accent' : 'neutral'"
+                    pill
+                    >{{
+                        roleRow(row).is_system ? "системная" : "кастомная"
+                    }}</NBadge
+                >
+            </template>
+
+            <template #cell-users_count="{ row }">
+                {{ formatNumber(roleRow(row).users_count ?? 0) }}
+            </template>
+
+            <template #cell-permissions_count="{ row }">
+                {{ formatNumber(roleRow(row).permissions_count ?? 0) }}
+                <span class="muted">/ {{ permissionsTotal }}</span>
+            </template>
+
+            <template #cell-created_at="{ row }">
+                <span class="created">{{
+                    roleRow(row).created_at
+                        ? formatDateShort(roleRow(row).created_at)
+                        : "—"
+                }}</span>
+            </template>
+
+            <template #cell-actions="{ row }">
+                <div class="row-actions row-actions--center">
+                    <NButton
+                        :as="Link"
+                        :href="`/admin/roles/${roleRow(row).id}`"
+                        variant="ghost"
+                        icon="eye"
+                        size="sm"
+                        class="row-actions__btn"
+                        :aria-label="`Открыть роль ${roleRow(row).name}`"
+                    />
+                    <NButton
+                        v-if="roleRow(row).can_edit"
+                        :as="Link"
+                        :href="`/admin/roles/${roleRow(row).id}/edit`"
+                        variant="ghost"
+                        tone="accent"
+                        icon="edit"
+                        size="sm"
+                        class="row-actions__btn"
+                        :aria-label="`Редактировать роль ${roleRow(row).name}`"
+                    />
+                    <NButton
+                        v-if="can('roles.delete') && !roleRow(row).is_system"
+                        variant="ghost"
+                        tone="danger"
+                        icon="trash"
+                        size="sm"
+                        class="row-actions__btn"
+                        aria-label="Удалить роль"
+                        @click="del.ask(roleRow(row))"
                     />
                 </div>
             </template>
-        </div>
 
-        <ConfirmModal
-            :open="del.open"
-            :loading="del.loading"
-            :message="`Удалить роль «${del.payload?.name}»? Пользователи потеряют связанные права.`"
-            @confirm="confirmDelete"
-            @cancel="del.close"
-            @update:open="del.open = $event"
+            <template #empty>
+                <NEmptyState
+                    icon="shield"
+                    title="Роли не найдены"
+                    description="Измените условия поиска или добавьте новую роль."
+                />
+            </template>
+        </NDataTable>
+
+        <AdminPagination
+            :paginator="roles"
+            :per-page="perPage"
+            :per-page-options="perPageOptions"
+            @update:page="(p) => reload({ page: p })"
+            @update:page-size="(size) => reload({ per_page: size, page: 1 })"
         />
-    </AdminLayout>
+    </div>
+
+    <NConfirmDialog
+        v-model="del.open"
+        :loading="del.loading"
+        :message="`Удалить роль «${del.payload?.name}»? Пользователи потеряют связанные права.`"
+        @confirm="confirmDelete"
+        danger
+        confirm-label="Удалить"
+    />
 </template>
 
 <style scoped>
-.page__toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-.page__search {
-    flex: 1;
-    max-width: 360px;
-}
-
-.roles {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: var(--kpi-gap);
-}
-.roles__card {
-    position: relative;
-}
-.roles__hint {
-    margin: 0;
-    font-size: 13px;
-    color: var(--text-3);
-}
-
-.role {
-    display: flex;
-    flex-direction: column;
-}
-.role__head {
+.rcell {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 12px;
 }
-.role__swatch {
+.rcell__swatch {
     width: 11px;
     height: 11px;
     border-radius: 4px;
     flex: none;
 }
-.role__name {
-    flex: 1;
-    min-width: 0;
-    margin: 0;
-    font-size: calc(var(--fs) + 1.5px);
-    font-weight: 800;
-    letter-spacing: -0.01em;
+.role-name {
+    font-weight: 700;
+    font-size: 13.5px;
     color: var(--text);
-}
-.role__name-link {
-    display: block;
-    width: 100%;
-    color: inherit;
     text-decoration: none;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
-/* Stretched link makes the entire card open its shareable detail URL. */
-.role__name-link::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: var(--radius-lg);
+.role-name:hover {
+    color: var(--accent);
 }
-.role__name-link:focus-visible {
-    outline: none;
-}
-.role__name-link:focus-visible::after {
+.role-name:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
 }
-.role__actions {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex: none;
-    /* Above the stretched link, otherwise the overlay would intercept the "Delete" click. */
-    position: relative;
-    z-index: 1;
-    opacity: 0;
-    transition: opacity 0.14s ease;
-}
-.roles__card:hover .role__actions,
-.roles__card:focus-within .role__actions {
-    opacity: 1;
-}
-.role__desc {
-    font-size: calc(var(--fs) - 1px);
-    line-height: 1.45;
-    color: var(--text-3);
-    min-height: 38px;
-}
-.role__footer {
-    display: flex;
-    gap: 20px;
-    margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid var(--border);
-}
-.role__stat {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.role__num {
-    font-size: calc(var(--fs) + 4px);
-    font-weight: 800;
-    letter-spacing: -0.02em;
+.role-name--plain:hover {
     color: var(--text);
 }
-.role__label {
-    font-size: 11.5px;
-    font-weight: 700;
-    color: var(--text-3);
+.desc-cell {
+    color: var(--text-2);
+    font-size: 13px;
 }
-
-/* Touch screens have no hover — show the actions permanently. */
-@media (hover: none) {
-    .role__actions {
-        opacity: 1;
-    }
+.created {
+    color: var(--text-2);
+    font-size: 13px;
+}
+.muted {
+    color: var(--text-3);
 }
 </style>

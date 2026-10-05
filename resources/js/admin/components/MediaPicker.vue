@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onBeforeUnmount } from "vue";
 import type { PropType } from "vue";
 import type { MediaItem } from "@/admin/types";
 import {
@@ -14,6 +14,7 @@ import {
 } from "nergous-ui-vue";
 import { formatBytes } from "@/lib/format";
 import { apiFetch, SessionExpiredError } from "@/lib/api";
+import { focalStyle, typeBadge, typeIcon, useThumbFallback } from "@/lib/media";
 
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
@@ -28,29 +29,15 @@ const emit = defineEmits(["update:modelValue", "select"]);
 
 const toast = useToast();
 
-// Show a type icon when a file has no usable thumbnail.
-const TYPE_ICON: Record<string, string> = {
-    image: "asset",
-    video: "layers",
-    audio: "activity",
-    document: "copy",
-    other: "asset",
-};
-function typeIcon(m: MediaItem) {
-    return TYPE_ICON[m.type] || TYPE_ICON.other;
-}
-function typeBadge(m: MediaItem) {
-    const name = m.original_name || "";
-    const ext = name.includes(".") ? name.split(".").pop() : "";
-    return (ext || m.type || "").toUpperCase().slice(0, 5);
-}
-
 const items = ref<MediaItem[]>([]);
 const page = ref(1);
 const lastPage = ref(1);
 const loading = ref(false);
 const search = ref("");
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
+// Only the latest request may fill the grid: a slower answer for an older
+// search or page is aborted instead of overwriting newer results.
+let loadAbort: AbortController | null = null;
 
 // Keep selected media across browse pages.
 const selected = ref(new Map<number, MediaItem>());
@@ -83,29 +70,29 @@ function toggle(m: MediaItem) {
     selected.value = next;
 }
 
-const broken = ref(new Set<number>());
-function onImgError(id: number) {
-    const next = new Set(broken.value);
-    next.add(id);
-    broken.value = next;
-}
-function showThumb(m: MediaItem) {
-    return m.type === "image" && !!m.thumb_url && !broken.value.has(m.id);
-}
+const { showThumb, onImgError, reset: resetThumbs } = useThumbFallback();
 
 async function load(p = 1) {
+    loadAbort?.abort();
+    const controller = new AbortController();
+    loadAbort = controller;
     loading.value = true;
     try {
         const params = new URLSearchParams({ page: String(p) });
         if (search.value.trim()) params.set("search", search.value.trim());
         if (props.type) params.set("type", props.type);
-        const res = await apiFetch(`/admin/media/browse?${params.toString()}`);
+        const res = await apiFetch(`/admin/media/browse?${params.toString()}`, {
+            signal: controller.signal,
+        });
         if (!res.ok) throw new Error(String(res.status));
         const json = await res.json();
+        if (controller.signal.aborted) return;
         items.value = Array.isArray(json.data) ? json.data : [];
         page.value = json.current_page || 1;
         lastPage.value = json.last_page || 1;
     } catch (err) {
+        // Superseded by a newer request or the picker closed: not an error.
+        if (controller.signal.aborted) return;
         items.value = [];
         if (err instanceof SessionExpiredError) return;
         toast.error(
@@ -113,7 +100,10 @@ async function load(p = 1) {
             "Проверьте соединение и попробуйте снова.",
         );
     } finally {
-        loading.value = false;
+        if (loadAbort === controller) {
+            loadAbort = null;
+            loading.value = false;
+        }
     }
 }
 
@@ -122,19 +112,32 @@ function onSearchInput() {
     searchTimer = setTimeout(() => load(1), 300);
 }
 
+/** Drops a pending debounced search and the request in flight. */
+function cancelPending() {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = null;
+    loadAbort?.abort();
+    loadAbort = null;
+    loading.value = false;
+}
+
 // Seed selection from the parent's current attachments each time the modal opens.
 watch(
     () => props.modelValue,
     (open) => {
-        if (!open) return;
+        if (!open) {
+            cancelPending();
+            return;
+        }
         const seed = new Map<number, MediaItem>();
         for (const m of props.preselected) seed.set(m.id, m);
         selected.value = seed;
-        broken.value = new Set();
+        resetThumbs();
         search.value = "";
         load(1);
     },
 );
+onBeforeUnmount(cancelPending);
 
 function close() {
     emit("update:modelValue", false);
@@ -150,7 +153,6 @@ function confirm() {
         :model-value="modelValue"
         :title="title"
         width="760px"
-        close-label="Закрыть"
         @update:model-value="!$event && close()"
     >
         <div class="mp">
@@ -188,13 +190,7 @@ function confirm() {
                                 v-if="showThumb(m)"
                                 class="mp__img"
                                 :src="m.thumb_url || undefined"
-                                :style="
-                                    m.focal_x != null && m.focal_y != null
-                                        ? {
-                                              objectPosition: `${m.focal_x * 100}% ${m.focal_y * 100}%`,
-                                          }
-                                        : undefined
-                                "
+                                :style="focalStyle(m)"
                                 :alt="m.original_name"
                                 loading="lazy"
                                 @error="onImgError(m.id)"
@@ -233,12 +229,6 @@ function confirm() {
                     :page="page"
                     :pages="lastPage"
                     jumpable
-                    prev-label="Назад"
-                    next-label="Вперёд"
-                    jump-label="Страница"
-                    jump-button-label="Перейти"
-                    total-label="из"
-                    jump-error-label="Введите корректный номер страницы"
                     aria-label="Навигация по медиатеке"
                     @update:page="load"
                 />
@@ -251,6 +241,7 @@ function confirm() {
                 <NButton
                     variant="primary"
                     :disabled="max === 1 && selectedCount === 0"
+                    data-enter-submit
                     @click="confirm"
                 >
                     {{ confirmLabel

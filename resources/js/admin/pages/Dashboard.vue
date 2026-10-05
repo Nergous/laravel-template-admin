@@ -2,8 +2,9 @@
 import { computed } from "vue";
 import type { PropType } from "vue";
 import { Link } from "@inertiajs/vue3";
-import AdminLayout from "@/admin/layouts/AdminLayout.vue";
+import { usePageHeader } from "@/admin/composables/usePageHeader";
 import {
+    NButton,
     NCard,
     NStatCard,
     NActivityRow,
@@ -25,6 +26,8 @@ type StatCard = {
     sub: string;
     bytes?: number;
     spark?: number[];
+    /** Media card: images without alternative text. */
+    no_alt?: number;
 };
 
 type SystemHealth = {
@@ -70,16 +73,57 @@ const props = defineProps({
 });
 
 const cards = [
-    { key: "users", label: "Пользователи", icon: "users" },
-    { key: "roles", label: "Роли", icon: "shield" },
-    { key: "permissions", label: "Разрешения", icon: "lock" },
-    { key: "media", label: "Медиафайлы", icon: "asset" },
-    { key: "logins", label: "Входы за 24 ч", icon: "activity" },
+    {
+        key: "users",
+        label: "Пользователи",
+        icon: "users",
+        href: "/admin/users",
+    },
+    { key: "roles", label: "Роли", icon: "shield", href: "/admin/roles" },
+    {
+        key: "permissions",
+        label: "Разрешения",
+        icon: "lock",
+        href: "/admin/permissions",
+    },
+    { key: "media", label: "Медиафайлы", icon: "asset", href: "/admin/media" },
+    {
+        key: "logins",
+        label: "Входы за 24 ч",
+        icon: "activity",
+        href: "/admin/activity-log",
+    },
 ];
 
 // Render only the cards for which the server sent a metric — so the
 // template doesn't break if the stats set is trimmed (e.g. the media library is removed).
 const visibleCards = computed(() => cards.filter((c) => props.stats[c.key]));
+
+// The media card opens the images to fix while some lack alternative text.
+const cardHref = (c: (typeof cards)[number]) =>
+    c.key === "media" && (props.stats.media?.no_alt ?? 0) > 0
+        ? "/admin/media?usage=no_alt"
+        : c.href;
+
+// Frequent actions above the cards, each shown with its permission.
+const quickActions = computed(() =>
+    [
+        {
+            perm: "users.create",
+            label: "Создать пользователя",
+            icon: "plus",
+            href: "/admin/users/create",
+            primary: true,
+        },
+        {
+            perm: "media.upload",
+            label: "Загрузить файлы",
+            icon: "upload",
+            href: "/admin/media",
+            primary: false,
+        },
+    ].filter((action) => can(action.perm)),
+);
 
 const cardSub = (s: StatCard) =>
     s.bytes !== undefined ? `${formatBytes(s.bytes)} · ${s.sub}` : s.sub;
@@ -109,162 +153,191 @@ const bars = computed(() => {
         color: swatchColor(r.name),
     }));
 });
+
+usePageHeader(() => ({
+    title: "Главная",
+    subtitle: "Обзор рабочего пространства",
+}));
 </script>
 
 <template>
-    <AdminLayout title="Главная" subtitle="Обзор рабочего пространства">
-        <div class="kpi-grid">
+    <div v-if="quickActions.length" class="dash-actions">
+        <NButton
+            v-for="action in quickActions"
+            :key="action.href"
+            :as="Link"
+            :href="action.href"
+            :variant="action.primary ? 'primary' : 'secondary'"
+            :icon="action.icon"
+            >{{ action.label }}</NButton
+        >
+    </div>
+
+    <div class="kpi-grid">
+        <Link
+            v-for="c in visibleCards"
+            :key="c.key"
+            :href="cardHref(c)"
+            class="kpi-link"
+        >
             <NStatCard
-                v-for="c in visibleCards"
-                :key="c.key"
                 :label="c.label"
                 :icon="c.icon"
                 :value="formatNumber(stats[c.key].value)"
                 :sub="cardSub(stats[c.key])"
                 :spark="stats[c.key].spark"
             />
-        </div>
+        </Link>
+    </div>
 
-        <NCard v-if="showSystem" padding="20px" class="system-card">
-            <div class="card-head">
-                <h2 class="card-title">Состояние системы</h2>
-            </div>
-            <div class="system-grid">
-                <Link
-                    v-if="system.queue"
-                    href="/admin/queue"
-                    class="system-item"
-                >
-                    <span class="system-label">Очередь задач</span>
-                    <span class="system-value">
-                        <template v-if="system.queue.pending === null"
-                            >не database-драйвер</template
-                        >
-                        <template v-else
-                            >{{ formatNumber(system.queue.pending) }} в
-                            ожидании</template
-                        >
-                        <NBadge v-if="queueStuck" tone="warn" size="sm"
-                            >воркер не отвечает</NBadge
-                        >
-                    </span>
-                    <span
-                        v-if="system.queue.oldest_pending_at"
-                        class="system-sub"
-                        >Самая старая:
-                        {{
-                            formatRelative(system.queue.oldest_pending_at)
-                        }}</span
+    <NCard v-if="showSystem" padding="20px" class="system-card">
+        <div class="card-head">
+            <h2 class="card-title">Состояние системы</h2>
+        </div>
+        <div class="system-grid">
+            <Link v-if="system.queue" href="/admin/queue" class="system-item">
+                <span class="system-label">Очередь задач</span>
+                <span class="system-value">
+                    <template v-if="system.queue.pending === null"
+                        >не database-драйвер</template
                     >
-                </Link>
-                <Link
-                    v-if="system.queue"
-                    href="/admin/queue"
-                    class="system-item"
+                    <template v-else
+                        >{{ formatNumber(system.queue.pending) }} в
+                        ожидании</template
+                    >
+                    <NBadge v-if="queueStuck" tone="warn" size="sm"
+                        >воркер не отвечает</NBadge
+                    >
+                </span>
+                <span v-if="system.queue.oldest_pending_at" class="system-sub"
+                    >Самая старая:
+                    {{ formatRelative(system.queue.oldest_pending_at) }}</span
                 >
-                    <span class="system-label">Упавшие задачи</span>
-                    <span class="system-value">
-                        {{ formatNumber(system.queue.failed) }}
-                        <NBadge
-                            v-if="system.queue.failed > 0"
-                            tone="danger"
-                            size="sm"
-                            >требуют внимания</NBadge
-                        >
-                    </span>
-                </Link>
-                <Link
-                    v-if="system.backup"
-                    href="/admin/backups"
-                    class="system-item"
+            </Link>
+            <Link v-if="system.queue" href="/admin/queue" class="system-item">
+                <span class="system-label">Упавшие задачи</span>
+                <span class="system-value">
+                    {{ formatNumber(system.queue.failed) }}
+                    <NBadge
+                        v-if="system.queue.failed > 0"
+                        tone="danger"
+                        size="sm"
+                        >требуют внимания</NBadge
+                    >
+                </span>
+            </Link>
+            <Link
+                v-if="system.backup"
+                href="/admin/backups"
+                class="system-item"
+            >
+                <span class="system-label">Последний бэкап</span>
+                <span class="system-value">
+                    <template v-if="system.backup.latest">{{
+                        formatRelative(system.backup.latest.created_at)
+                    }}</template>
+                    <template v-else>ещё не создавался</template>
+                    <NBadge v-if="system.backup.stale" tone="warn" size="sm"
+                        >устарел</NBadge
+                    >
+                </span>
+                <span v-if="system.backup.latest" class="system-sub">{{
+                    formatDateTime(system.backup.latest.created_at)
+                }}</span>
+            </Link>
+        </div>
+    </NCard>
+
+    <div
+        v-if="can('activity-log.view') || can('roles.view')"
+        class="grid-2"
+        :class="{
+            'grid-2--single': !can('activity-log.view') || !can('roles.view'),
+        }"
+    >
+        <NCard
+            v-if="can('activity-log.view')"
+            padding="0"
+            class="activity-card"
+        >
+            <div class="card-head card-head--inset">
+                <h2 class="card-title">Последние действия</h2>
+                <Link href="/admin/activity-log" class="dash-link"
+                    >Весь журнал →</Link
                 >
-                    <span class="system-label">Последний бэкап</span>
-                    <span class="system-value">
-                        <template v-if="system.backup.latest">{{
-                            formatRelative(system.backup.latest.created_at)
-                        }}</template>
-                        <template v-else>ещё не создавался</template>
-                        <NBadge v-if="system.backup.stale" tone="warn" size="sm"
-                            >устарел</NBadge
-                        >
-                    </span>
-                    <span v-if="system.backup.latest" class="system-sub">{{
-                        formatDateTime(system.backup.latest.created_at)
-                    }}</span>
-                </Link>
             </div>
+            <template v-if="recentActivity.length">
+                <NActivityRow
+                    v-for="a in recentActivity"
+                    :key="a.id"
+                    :tone="actOf(a).tone || 'info'"
+                    :icon="actOf(a).icon || 'edit'"
+                    :actor="a.user || 'Система'"
+                    :verb="(a.action_label || a.action).toLowerCase()"
+                    :object="a.subject_label || ''"
+                    :tag="a.subject_type || ''"
+                    :time="a.created_human || ''"
+                    :meta="actMeta(a)"
+                />
+            </template>
+            <NEmptyState
+                v-else
+                icon="activity"
+                title="Активности пока нет"
+                description="Действия пользователей появятся здесь."
+            />
         </NCard>
 
-        <div
-            v-if="can('activity-log.view') || can('roles.view')"
-            class="grid-2"
-            :class="{
-                'grid-2--single':
-                    !can('activity-log.view') || !can('roles.view'),
-            }"
-        >
-            <NCard
-                v-if="can('activity-log.view')"
-                padding="0"
-                class="activity-card"
-            >
-                <div class="card-head card-head--inset">
-                    <h2 class="card-title">Последние действия</h2>
-                    <Link href="/admin/activity-log" class="dash-link"
-                        >Весь журнал →</Link
+        <NCard v-if="can('roles.view')" padding="20px">
+            <div class="card-head">
+                <h2 class="card-title">Распределение ролей</h2>
+            </div>
+            <div v-for="b in bars" :key="b.name" class="bar-row">
+                <div class="bar-top">
+                    <span
+                        ><i :style="{ background: b.color }" />{{
+                            b.name
+                        }}</span
                     >
+                    <span class="bar-count">{{ b.count }}</span>
                 </div>
-                <template v-if="recentActivity.length">
-                    <NActivityRow
-                        v-for="a in recentActivity"
-                        :key="a.id"
-                        :tone="actOf(a).tone || 'info'"
-                        :icon="actOf(a).icon || 'edit'"
-                        :actor="a.user || 'Система'"
-                        :verb="(a.action_label || a.action).toLowerCase()"
-                        :object="a.subject_label || ''"
-                        :tag="a.subject_type || ''"
-                        :time="a.created_human || ''"
-                        :meta="actMeta(a)"
-                    />
-                </template>
-                <NEmptyState
-                    v-else
-                    icon="activity"
-                    title="Активности пока нет"
-                    description="Действия пользователей появятся здесь."
-                />
-            </NCard>
-
-            <NCard v-if="can('roles.view')" padding="20px">
-                <div class="card-head">
-                    <h2 class="card-title">Распределение ролей</h2>
+                <div class="bar">
+                    <div :style="{ width: b.pct + '%', background: b.color }" />
                 </div>
-                <div v-for="b in bars" :key="b.name" class="bar-row">
-                    <div class="bar-top">
-                        <span
-                            ><i :style="{ background: b.color }" />{{
-                                b.name
-                            }}</span
-                        >
-                        <span class="bar-count">{{ b.count }}</span>
-                    </div>
-                    <div class="bar">
-                        <div
-                            :style="{ width: b.pct + '%', background: b.color }"
-                        />
-                    </div>
-                </div>
-            </NCard>
-        </div>
-    </AdminLayout>
+            </div>
+        </NCard>
+    </div>
 </template>
 
 <style scoped>
+.dash-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     gap: var(--kpi-gap, 16px);
+}
+.kpi-link {
+    display: flex;
+    color: inherit;
+    text-decoration: none;
+    border-radius: var(--radius-lg, 12px);
+}
+/* Cards in a row share one height (the logins card is taller due to its sparkline). */
+.kpi-link :deep(.n-stat) {
+    flex: 1;
+    min-width: 0;
+}
+.kpi-link:hover :deep(.n-stat) {
+    border-color: var(--accent);
+}
+.kpi-link:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 .grid-2 {
     display: grid;

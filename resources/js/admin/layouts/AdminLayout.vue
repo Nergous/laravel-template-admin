@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PropType } from "vue";
 import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
 import { Head, Link, usePage, router } from "@inertiajs/vue3";
 import {
@@ -7,43 +8,39 @@ import {
     NSidebar,
     NButton,
     NTopbar,
-    NSegmented,
     NIcon,
     NAvatar,
-    NCommandPalette,
-    NDrawer,
     NModal,
-    NSpinner,
-    NCheckbox,
+    NSkeleton,
+    NBreadcrumbs,
+    NIconTooltip,
 } from "nergous-ui-vue";
 import { useFlashToasts } from "@/admin/composables/useFlashToasts";
-import { useHotkeys } from "@/admin/composables/useHotkeys";
+import type { Crumb } from "@/admin/composables/usePageHeader";
 import { useServerErrors } from "@/admin/composables/useServerErrors";
 import { useSessionTimeout } from "@/admin/composables/useSessionTimeout";
+import { useVisitState } from "@/admin/composables/useVisitState";
 import { can } from "@/lib/can";
-import { apiFetch } from "@/lib/api";
-import type { Command, Density } from "nergous-ui-vue";
-import type { NotificationCategory, SharedProps } from "@/admin/types";
+import type { SharedProps } from "@/admin/types";
+import AdminCommandPalette from "./partials/AdminCommandPalette.vue";
+import NotificationBell from "./partials/NotificationBell.vue";
+import { buildNavSections, type NavItem } from "./partials/nav";
 
-interface NavItem {
-    id: string;
-    label: string;
-    icon: string;
-    href: string;
-    perm: string | null;
-    exact?: boolean;
-    badge?: number;
-}
-
+// Persistent layout (see app.ts): mounted once for all admin pages. The page
+// header arrives as Inertia layout props set by usePageHeader().
 defineProps({
     title: { type: String, default: "" },
     subtitle: { type: String, default: "" },
+    /** Parent pages of the breadcrumb trail; the title closes it. */
+    crumbs: { type: Array as PropType<Crumb[]>, default: () => [] },
 });
 
 const page = usePage<SharedProps>();
-const { theme, density, toggle, setDensity } = useTheme();
+const { theme, toggle } = useTheme();
 useFlashToasts();
 useServerErrors();
+
+const { navigating, refreshing } = useVisitState();
 
 const session = useSessionTimeout(() => page.props.sessionLifetime ?? null);
 const sessionWarning = session.warning;
@@ -101,11 +98,9 @@ function syncViewport() {
 onMounted(() => {
     syncViewport();
     window.addEventListener("resize", syncViewport);
-    startNotifRefresh();
 });
 onBeforeUnmount(() => {
     window.removeEventListener("resize", syncViewport);
-    stopNotifRefresh();
 });
 
 const sidebarCollapsed = computed(() =>
@@ -120,163 +115,16 @@ function closeDrawer() {
     drawerOpen.value = false;
 }
 
-const densityOpts = [
-    { value: "compact", label: "S" },
-    { value: "comfortable", label: "M" },
-    { value: "spacious", label: "L" },
-];
-
-// Record counts for the sidebar badges (shared prop from HandleInertiaRequests).
-const counts = computed(() => page.props.counts ?? {});
-
-// Unread bell entries. The shared prop arrives with every page; between page
-// visits the count is refreshed in the background (see startNotifRefresh).
-const notifSeen = ref(false);
-const liveNotifCount = ref<number | null>(null);
-watch(
-    () => counts.value.recentActivity,
-    () => {
-        notifSeen.value = false;
-        liveNotifCount.value = null;
-    },
-);
-const notifCount = computed(() =>
-    notifSeen.value
-        ? 0
-        : (liveNotifCount.value ?? counts.value.recentActivity ?? 0),
-);
-
-const NOTIF_REFRESH_MS = 60_000;
-let notifTimer: ReturnType<typeof setInterval> | null = null;
-
-async function refreshNotifCount() {
-    // An idle tab stops polling, otherwise the poll would keep the session alive forever.
-    if (!can("activity-log.view") || document.hidden || !session.isActive())
-        return;
-    try {
-        const res = await apiFetch("/admin/notifications/count");
-        if (!res.ok) return;
-        const json = (await res.json()) as { count?: number };
-        if (typeof json.count !== "number") return;
-        if (json.count > 0) notifSeen.value = false;
-        liveNotifCount.value = json.count;
-    } catch {
-        // Offline or signed out: keep the last known value.
-    }
-}
-
-function onVisibility() {
-    if (!document.hidden) refreshNotifCount();
-}
-
-function startNotifRefresh() {
-    if (!can("activity-log.view")) return;
-    notifTimer = setInterval(refreshNotifCount, NOTIF_REFRESH_MS);
-    document.addEventListener("visibilitychange", onVisibility);
-}
-
-function stopNotifRefresh() {
-    if (notifTimer) clearInterval(notifTimer);
-    notifTimer = null;
-    document.removeEventListener("visibilitychange", onVisibility);
-}
-
 function stopImpersonation() {
     router.post("/admin/impersonation/stop");
 }
 
-const sections = computed<{ label: string; items: NavItem[] }[]>(() => [
-    {
-        label: "Обзор",
-        items: [
-            {
-                id: "dashboard",
-                label: "Главная",
-                icon: "home",
-                href: "/admin",
-                perm: null,
-                exact: true,
-            },
-        ],
-    },
-    {
-        label: "Доступ",
-        items: [
-            {
-                id: "users",
-                label: "Пользователи",
-                icon: "users",
-                href: "/admin/users",
-                perm: "users.view",
-                badge: counts.value.users ?? undefined,
-            },
-            {
-                id: "roles",
-                label: "Роли",
-                icon: "shield",
-                href: "/admin/roles",
-                perm: "roles.view",
-                badge: counts.value.roles ?? undefined,
-            },
-            {
-                id: "permissions",
-                label: "Разрешения",
-                icon: "lock",
-                href: "/admin/permissions",
-                perm: "permissions.view",
-                badge: counts.value.permissions ?? undefined,
-            },
-        ],
-    },
-    {
-        label: "Контент",
-        items: [
-            {
-                id: "media",
-                label: "Медиатека",
-                icon: "asset",
-                href: "/admin/media",
-                perm: "media.view",
-                badge: counts.value.media ?? undefined,
-            },
-        ],
-    },
-    {
-        label: "Система",
-        items: [
-            {
-                id: "activityLog",
-                label: "Журнал действий",
-                icon: "activity",
-                href: "/admin/activity-log",
-                perm: "activity-log.view",
-            },
-            {
-                id: "settings",
-                label: "Настройки",
-                icon: "settings",
-                href: "/admin/settings",
-                perm: "settings.view",
-            },
-            {
-                id: "backups",
-                label: "Резервные копии",
-                icon: "download",
-                href: "/admin/backups",
-                perm: "backups.view",
-            },
-            {
-                id: "queue",
-                label: "Очередь задач",
-                icon: "layers",
-                href: "/admin/queue",
-                perm: "queue.view",
-            },
-        ],
-    },
-]);
-
+// Record counts for the sidebar badges (shared prop from HandleInertiaRequests).
+const sections = computed(() => buildNavSections(page.props.counts ?? {}));
 const allItems = computed(() => sections.value.flatMap((s) => s.items));
+const allowedItems = computed(() =>
+    allItems.value.filter((it) => can(it.perm)),
+);
 
 const groups = computed(() =>
     sections.value
@@ -302,243 +150,13 @@ function logout() {
 }
 
 const paletteOpen = ref(false);
-const commands = ref<Command[]>([]);
-
-const baseCommands = computed(() => {
-    const nav = allItems.value
-        .filter((it) => can(it.perm))
-        .map((it) => ({
-            label: it.label,
-            hint: "Переход",
-            icon: it.icon,
-            action: () => router.visit(it.href),
-        }));
-    const quick = [
-        {
-            perm: "users.create",
-            label: "Создать пользователя",
-            icon: "plus",
-            href: "/admin/users/create",
-        },
-        {
-            perm: "roles.create",
-            label: "Создать роль",
-            icon: "plus",
-            href: "/admin/roles/create",
-        },
-        {
-            perm: "media.upload",
-            label: "Загрузить файлы",
-            icon: "upload",
-            href: "/admin/media",
-        },
-        {
-            perm: null,
-            label: "Мой профиль",
-            icon: "user",
-            href: "/admin/profile",
-        },
-    ]
-        .filter((it) => can(it.perm))
-        .map((it) => ({
-            label: it.label,
-            hint: "Действие",
-            icon: it.icon,
-            action: () => router.visit(it.href),
-        }));
-    const actions = [
-        {
-            label: theme.value === "dark" ? "Светлая тема" : "Тёмная тема",
-            hint: "Действие",
-            icon: theme.value === "dark" ? "sun" : "moon",
-            action: toggle,
-        },
-    ];
-    return [...nav, ...quick, ...actions];
-});
-
-// Search is debounced: the request fires after a typing pause, not on every keystroke.
-const SEARCH_DEBOUNCE = 200; // ms
-const SEARCH_MIN_LEN = 2;
-let searchTimer: ReturnType<typeof setTimeout> | null = null;
-// Only the latest request may update the results: older ones are aborted.
-let searchAbort: AbortController | null = null;
-
-function search(q: string) {
-    if (searchTimer) clearTimeout(searchTimer);
-    searchAbort?.abort();
-    const term = q.trim();
-    if (term.length < SEARCH_MIN_LEN) {
-        const t = term.toLowerCase();
-        commands.value = t
-            ? baseCommands.value.filter((c) =>
-                  c.label.toLowerCase().includes(t),
-              )
-            : baseCommands.value;
-        return;
-    }
-    searchTimer = setTimeout(() => runSearch(term), SEARCH_DEBOUNCE);
-}
-
-async function runSearch(q: string) {
-    searchAbort?.abort();
-    const controller = new AbortController();
-    searchAbort = controller;
-    const t = q.toLowerCase();
-    const local = baseCommands.value.filter((c) =>
-        c.label.toLowerCase().includes(t),
-    );
-    try {
-        const res = await apiFetch(`/admin/search?q=${encodeURIComponent(q)}`, {
-            signal: controller.signal,
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        if (controller.signal.aborted || !paletteOpen.value) return;
-        const found = (json.results ?? json).map(
-            (r: {
-                label: string;
-                meta: string;
-                icon?: string;
-                url: string;
-            }) => ({
-                label: r.label,
-                hint: r.meta,
-                icon: r.icon ?? "search",
-                action: () => router.visit(r.url),
-            }),
-        );
-        commands.value = [...local, ...found];
-    } catch {
-        if (!controller.signal.aborted) commands.value = local;
-    }
-}
-
-// When the palette opens, show the base commands right away.
-watch(paletteOpen, (open) => {
-    if (open) commands.value = baseCommands.value;
-    else {
-        if (searchTimer) clearTimeout(searchTimer);
-        searchAbort?.abort();
-    }
-});
-
-useHotkeys({ "mod+k": () => (paletteOpen.value = true) });
-
-const notifOpen = ref(false);
-interface NotifItem {
-    id: number;
-    url: string;
-    user: string;
-    time: string;
-    action: string;
-    subject: string;
-    category: NotificationCategory;
-    repeat: number;
-    unread?: boolean;
-}
-const notif = ref<{
-    count: number;
-    mutes: NotificationCategory[];
-    items: NotifItem[];
-}>({ count: 0, mutes: [], items: [] });
-
-const NOTIF_CATEGORIES: { value: NotificationCategory; label: string }[] = [
-    { value: "auth", label: "Вход и сеансы" },
-    { value: "users", label: "Пользователи" },
-    { value: "roles", label: "Роли и права" },
-    { value: "media", label: "Медиатека" },
-    { value: "settings", label: "Настройки" },
-    { value: "system", label: "Система" },
-];
-const notifFilter = ref<NotificationCategory | "">("");
-const notifSettingsOpen = ref(false);
-const notifSaving = ref(false);
-const visibleNotifs = computed(() =>
-    notifFilter.value
-        ? notif.value.items.filter((it) => it.category === notifFilter.value)
-        : notif.value.items,
-);
-const notifFilterOptions = computed(() =>
-    NOTIF_CATEGORIES.filter(
-        (c) =>
-            !notif.value.mutes.includes(c.value) &&
-            notif.value.items.some((it) => it.category === c.value),
-    ),
-);
-
-async function toggleMute(category: NotificationCategory, shown: boolean) {
-    const mutes = shown
-        ? notif.value.mutes.filter((c) => c !== category)
-        : [...notif.value.mutes, category];
-    notifSaving.value = true;
-    try {
-        const res = await apiFetch("/admin/notifications/preferences", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mutes }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as {
-            mutes: NotificationCategory[];
-            count: number;
-        };
-        notif.value.mutes = json.mutes;
-        if (json.mutes.includes(notifFilter.value as NotificationCategory))
-            notifFilter.value = "";
-        liveNotifCount.value = json.count;
-        await loadNotifications();
-    } catch {
-        // The checkbox stays as it was; nothing was saved.
-    } finally {
-        notifSaving.value = false;
-    }
-}
-
-function changeDensity(value: string | number) {
-    setDensity(value as Density);
-}
-const notifLoading = ref(false);
-
-async function loadNotifications() {
-    notifLoading.value = true;
-    try {
-        const res = await apiFetch("/admin/notifications/recent");
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        notif.value = await res.json();
-    } catch {
-        notif.value = { count: 0, mutes: notif.value.mutes, items: [] };
-    } finally {
-        notifLoading.value = false;
-    }
-}
-
-function openNotifications() {
-    notifOpen.value = true;
-    loadNotifications().then(markNotificationsSeen);
-}
-
-async function markNotificationsSeen() {
-    if (!notif.value.count) return;
-    try {
-        const res = await apiFetch("/admin/notifications/seen", {
-            method: "POST",
-        });
-        if (res.ok) {
-            notifSeen.value = true;
-            liveNotifCount.value = 0;
-        }
-    } catch {
-        // The badge stays; the next open retries.
-    }
-}
 </script>
 
 <template>
     <div class="admin">
         <Head :title="title" />
         <a href="#admin-main" class="skip-link">Перейти к содержимому</a>
-        <NToaster region-label="Уведомления" dismiss-label="Закрыть" />
+        <NToaster />
         <NModal
             :model-value="sessionWarning"
             title="Сессия скоро завершится"
@@ -553,107 +171,16 @@ async function markNotificationsSeen() {
             </p>
             <template #footer>
                 <NButton variant="secondary" @click="logout">Выйти</NButton>
-                <NButton :loading="staying" @click="stayInSession"
+                <NButton
+                    :loading="staying"
+                    data-enter-submit
+                    @click="stayInSession"
                     >Продолжить работу</NButton
                 >
             </template>
         </NModal>
-        <NDrawer v-model="notifOpen" title="Уведомления" close-label="Закрыть">
-            <div class="notif-tools">
-                <div
-                    v-if="notifFilterOptions.length > 1"
-                    class="notif-chips"
-                    role="group"
-                    aria-label="Тип событий"
-                >
-                    <button
-                        type="button"
-                        class="notif-chip"
-                        :class="{ 'notif-chip--on': notifFilter === '' }"
-                        :aria-pressed="notifFilter === ''"
-                        @click="notifFilter = ''"
-                    >
-                        Все
-                    </button>
-                    <button
-                        v-for="c in notifFilterOptions"
-                        :key="c.value"
-                        type="button"
-                        class="notif-chip"
-                        :class="{ 'notif-chip--on': notifFilter === c.value }"
-                        :aria-pressed="notifFilter === c.value"
-                        @click="notifFilter = c.value"
-                    >
-                        {{ c.label }}
-                    </button>
-                </div>
-                <NButton
-                    size="sm"
-                    variant="ghost"
-                    icon="settings"
-                    class="notif-tools__gear"
-                    :aria-expanded="notifSettingsOpen"
-                    @click="notifSettingsOpen = !notifSettingsOpen"
-                    >Настроить</NButton
-                >
-            </div>
-            <div v-if="notifSettingsOpen" class="notif-settings">
-                <div class="notif-settings__title">Показывать события</div>
-                <NCheckbox
-                    v-for="c in NOTIF_CATEGORIES"
-                    :key="c.value"
-                    :model-value="!notif.mutes.includes(c.value)"
-                    :disabled="notifSaving"
-                    @update:model-value="(v: boolean) => toggleMute(c.value, v)"
-                    >{{ c.label }}</NCheckbox
-                >
-            </div>
-            <div v-if="notifLoading" style="text-align: center">
-                <NSpinner
-                    :size="18"
-                    :width="2"
-                    class="notif-spinner"
-                    label="Загрузка уведомлений..."
-                />
-            </div>
-
-            <div
-                v-if="!visibleNotifs.length && !notifLoading"
-                class="notif-empty"
-            >
-                Свежих событий нет
-            </div>
-            <Link
-                v-for="it in visibleNotifs"
-                :key="it.id"
-                :href="it.url"
-                class="notif-item"
-                :class="{ 'notif-item--unread': it.unread }"
-                @click="notifOpen = false"
-            >
-                <div class="notif-item__top">
-                    <b>{{ it.user }}</b>
-                    <span class="notif-item__time">{{ it.time }}</span>
-                </div>
-                <div class="notif-item__body">
-                    {{ it.action }} · {{ it.subject }}
-                    <span v-if="it.repeat > 1" class="notif-item__repeat"
-                        >×{{ it.repeat }}</span
-                    >
-                </div>
-            </Link>
-        </NDrawer>
-        <NCommandPalette
-            v-model="paletteOpen"
-            :commands="commands"
-            :filter="false"
-            :shortcut="false"
-            placeholder="Поиск, переходы, команды…"
-            empty-text="Ничего не найдено"
-            nav-hint="навигация"
-            select-hint="выбрать"
-            @update:query="search"
-        />
+        <AdminCommandPalette v-model="paletteOpen" :items="allowedItems" />
+        <NIconTooltip />
         <Transition name="admin-backdrop">
             <div
                 v-if="isMobile && drawerOpen"
@@ -667,7 +194,6 @@ async function markNotificationsSeen() {
             :collapsed="sidebarCollapsed"
             :mobile="isMobile"
             :link-as="Link"
-            nav-label="Основная навигация"
             :brand="{
                 name: page.props.appName,
                 sub: 'Панель администрирования',
@@ -742,7 +268,6 @@ async function markNotificationsSeen() {
             <NTopbar
                 :title="title"
                 :subtitle="subtitle"
-                toggle-label="Свернуть меню"
                 @toggle="onTopbarToggle"
             >
                 <button
@@ -759,40 +284,47 @@ async function markNotificationsSeen() {
                     >
                 </button>
                 <template #right>
-                    <NSegmented
-                        :model-value="density"
-                        :options="densityOpts"
-                        aria-label="Плотность интерфейса"
-                        @update:model-value="changeDensity"
-                    />
-                    <NButton
-                        variant="secondary"
-                        aria-label="Светлая / Тёмная тема"
-                        :icon="theme === 'dark' ? 'sun' : 'moon'"
-                        @click="toggle"
-                    />
-                    <span v-if="can('activity-log.view')" class="tb-bell">
-                        <NButton
-                            variant="secondary"
-                            :aria-label="
-                                notifCount
-                                    ? `Уведомления, новых: ${notifCount}`
-                                    : 'Уведомления'
-                            "
-                            icon="bell"
-                            @click="openNotifications"
-                        />
-                        <span
-                            v-if="notifCount"
-                            class="tb-bell__badge"
-                            aria-hidden="true"
-                            >{{ notifCount > 9 ? "9+" : notifCount }}</span
-                        >
-                    </span>
+                    <NotificationBell v-if="can('activity-log.view')" />
                 </template>
             </NTopbar>
 
-            <main id="admin-main" tabindex="-1" class="admin__body">
+            <!-- scroll-region: Inertia resets (or preserves) this scroll on visits. -->
+            <main
+                id="admin-main"
+                tabindex="-1"
+                class="admin__body"
+                :class="{
+                    'is-navigating': navigating,
+                    'is-refreshing': refreshing,
+                }"
+                :aria-busy="navigating || refreshing || undefined"
+                scroll-region
+            >
+                <div
+                    v-if="navigating"
+                    class="admin__skeleton"
+                    aria-hidden="true"
+                >
+                    <NSkeleton width="38%" height="22px" />
+                    <div class="admin__skeleton-bar">
+                        <NSkeleton width="60%" height="38px" radius="10px" />
+                        <NSkeleton width="20%" height="38px" radius="10px" />
+                    </div>
+                    <div class="admin__skeleton-card">
+                        <NSkeleton
+                            v-for="n in 6"
+                            :key="n"
+                            :width="n % 2 ? '92%' : '78%'"
+                            height="16px"
+                        />
+                    </div>
+                </div>
+                <NBreadcrumbs
+                    v-if="crumbs.length"
+                    class="crumbs"
+                    :items="[...crumbs, { label: title }]"
+                    :link-as="Link"
+                />
                 <slot />
             </main>
         </div>
@@ -871,6 +403,42 @@ async function markNotificationsSeen() {
     overflow-y: auto;
     padding: 24px;
 }
+/* A slow visit to another page: the skeleton stands in for the old page. */
+.admin__body.is-navigating > :deep(:not(.admin__skeleton)) {
+    display: none;
+}
+.admin__skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.admin__skeleton-bar {
+    display: flex;
+    gap: 10px;
+}
+.admin__skeleton-card {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 22px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface);
+}
+/* The same list reloads with new filters: dim what is about to change. */
+.admin__body.is-refreshing :deep(.n-table-wrap),
+.admin__body.is-refreshing :deep(.n-card) {
+    opacity: 0.55;
+    transition: opacity 0.15s ease;
+}
+.crumbs {
+    margin: -6px 0 14px;
+}
+@media (max-width: 640px) {
+    .admin__body {
+        padding: 16px 12px;
+    }
+}
 .admin__cmd {
     display: flex;
     align-items: center;
@@ -913,30 +481,29 @@ async function markNotificationsSeen() {
     padding: 1px 5px;
     color: var(--text-2);
 }
-
-.tb-bell {
-    position: relative;
-    display: inline-flex;
-    flex: none;
-}
-.tb-bell__badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    box-sizing: border-box;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 4px;
-    border-radius: 9px;
-    background: var(--danger);
-    color: #fff;
-    font-size: 10px;
-    font-weight: 700;
-    pointer-events: none;
-    border: 2px solid var(--surface);
+/* On a phone the search button shrinks to its icon so the topbar fits; the
+   label stays for screen readers. After the base rules: same specificity. */
+@media (max-width: 640px) {
+    .n-tb {
+        padding: 0 12px;
+        gap: 10px;
+    }
+    .admin__cmd {
+        width: 38px;
+        padding: 0;
+        justify-content: center;
+    }
+    .admin__cmd__text {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+    }
+    .admin__kbd {
+        display: none;
+    }
 }
 
 .sbf__theme {
@@ -1035,96 +602,9 @@ async function markNotificationsSeen() {
     color: var(--danger);
 }
 
-.notif-empty {
-    padding: 24px 4px;
-    color: var(--text-3);
-    text-align: center;
-    font-size: 13.5px;
-}
-.notif-tools {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--sp-2, 8px);
-    margin-bottom: 10px;
-}
-.notif-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    flex: 1;
-}
-.notif-tools__gear {
-    margin-left: auto;
-}
-.notif-chip {
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text-2);
-    border-radius: 999px;
-    padding: 3px 10px;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-}
-.notif-chip--on {
-    background: var(--accent-soft);
-    border-color: var(--accent);
-    color: var(--text);
-}
-.notif-settings {
-    display: grid;
-    gap: 8px;
-    padding: 12px;
-    margin-bottom: 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface-2);
-}
-.notif-settings__title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-3);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-.notif-item__repeat {
-    margin-left: 6px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--danger-bg);
-    color: var(--danger);
-    font-weight: 600;
-    font-size: 11.5px;
-}
 .session-warn {
     margin: 0;
     line-height: 1.5;
     color: var(--text-2);
-}
-.notif-item {
-    display: block;
-    padding: 12px;
-    border-radius: var(--radius-md);
-    text-decoration: none;
-    color: var(--text);
-}
-.notif-item:hover {
-    background: var(--surface-2);
-}
-.notif-item--unread {
-    background: var(--accent-soft);
-}
-.notif-item__top {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-}
-.notif-item__time {
-    color: var(--text-3);
-}
-.notif-item__body {
-    font-size: 12.5px;
-    color: var(--text-2);
-    margin-top: 2px;
 }
 </style>

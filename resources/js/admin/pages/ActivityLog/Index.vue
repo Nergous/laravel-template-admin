@@ -3,7 +3,7 @@ import { ref, computed } from "vue";
 import type { PropType } from "vue";
 import type { AuditLog, Pagination } from "@/admin/types";
 import { Link, useForm } from "@inertiajs/vue3";
-import AdminLayout from "@/admin/layouts/AdminLayout.vue";
+import { usePageHeader } from "@/admin/composables/usePageHeader";
 import {
     NCard,
     NActivityRow,
@@ -15,10 +15,20 @@ import {
     NInput,
     NButton,
     NSelect,
-    NSelectWithSearch,
+    NMultiSelect,
+    NFilterChips,
 } from "nergous-ui-vue";
 import { useIndexFilters } from "@/admin/composables/useIndexFilters";
+import ExportMenu from "@/admin/components/ExportMenu.vue";
 import { can } from "@/lib/can";
+import {
+    chipTarget,
+    joinList,
+    listChips,
+    parseList,
+    without,
+    type FilterChip,
+} from "@/lib/filterList";
 import { formatRelative, formatDateTime, todayIso } from "@/lib/format";
 import { activityVisual as visual } from "@/admin/activityVisuals";
 
@@ -47,25 +57,31 @@ const props = defineProps({
         type: Object as PropType<Record<string, string>>,
         default: () => ({}),
     },
+    exportColumns: {
+        type: Array as PropType<{ key: string; label: string }[]>,
+        default: () => [],
+    },
 });
 
 // Dates in the filters and the clear form are days in the display time zone.
 const today = todayIso();
 
-const action = ref(props.filters.action ?? "");
-const subjectType = ref(props.filters.subject_type ?? "");
+// Action, object type and user take several values: comma-separated in the
+// address, OR within a filter, AND between filters.
+const action = ref(parseList(props.filters.action));
+const subjectType = ref(parseList(props.filters.subject_type));
 const subjectId = ref(props.filters.subject_id ?? "");
-const userId = ref(props.filters.user_id ?? "");
+const userId = ref(parseList(props.filters.user_id));
 const impersonatorId = ref(props.filters.impersonator_id ?? "");
 const dateFrom = ref(props.filters.date_from ?? "");
 const dateTo = ref(props.filters.date_to ?? "");
 
 function currentParams() {
     return {
-        action: action.value || undefined,
-        subject_type: subjectType.value || undefined,
+        action: joinList(action.value),
+        subject_type: joinList(subjectType.value),
         subject_id: subjectId.value || undefined,
-        user_id: userId.value || undefined,
+        user_id: joinList(userId.value),
         impersonator_id: impersonatorId.value || undefined,
         date_from: dateFrom.value || undefined,
         date_to: dateTo.value || undefined,
@@ -73,18 +89,6 @@ function currentParams() {
 }
 const { reload } = useIndexFilters("/admin/activity-log", currentParams);
 
-const actionOptions = computed(() => [
-    { value: "", label: "Все действия" },
-    ...props.actions,
-]);
-const typeOptions = computed(() => [
-    { value: "", label: "Все объекты" },
-    ...props.subjectTypes,
-]);
-const actorOptions = computed(() => [
-    { value: "", label: "Все пользователи" },
-    ...props.actors,
-]);
 const impersonatorOptions = computed(() => [
     { value: "", label: "Любой режим входа" },
     ...props.impersonators.map((o) => ({
@@ -98,10 +102,10 @@ const hasFilters = computed(() =>
 );
 
 function resetFilters() {
-    action.value = "";
-    subjectType.value = "";
+    action.value = [];
+    subjectType.value = [];
     subjectId.value = "";
-    userId.value = "";
+    userId.value = [];
     impersonatorId.value = "";
     dateFrom.value = "";
     dateTo.value = "";
@@ -116,6 +120,62 @@ function onTypeChange() {
 
 function clearSubject() {
     subjectId.value = "";
+    reload({ page: 1 });
+}
+
+const labelIn = (options: Option[], value: string) =>
+    options.find((option) => option.value === value)?.label ?? value;
+const dayLabel = (iso: string) => iso.split("-").reverse().join(".");
+const activeFilters = computed(() => {
+    const list: FilterChip[] = [
+        ...listChips("action", "Действие", action.value, props.actions),
+        ...listChips(
+            "subjectType",
+            "Тип объекта",
+            subjectType.value,
+            props.subjectTypes,
+        ),
+    ];
+    if (subjectId.value)
+        list.push({
+            key: "subject",
+            label: "Объект",
+            value: props.subjectLabel ?? `#${subjectId.value}`,
+        });
+    list.push(...listChips("user", "Пользователь", userId.value, props.actors));
+    if (impersonatorId.value)
+        list.push({
+            key: "impersonator",
+            label: "Вход от имени",
+            value: labelIn(props.impersonators, impersonatorId.value),
+        });
+    if (dateFrom.value || dateTo.value)
+        list.push({
+            key: "period",
+            label: "Период",
+            value:
+                (dateFrom.value ? dayLabel(dateFrom.value) : "…") +
+                " — " +
+                (dateTo.value ? dayLabel(dateTo.value) : "…"),
+        });
+    return list;
+});
+function removeFilter(key: string) {
+    const { name, value } = chipTarget(key);
+    if (name === "subject") return clearSubject();
+    if (name === "action" && value !== null)
+        action.value = without(action.value, value);
+    if (name === "subjectType" && value !== null) {
+        subjectType.value = without(subjectType.value, value);
+        subjectId.value = "";
+    }
+    if (name === "user" && value !== null)
+        userId.value = without(userId.value, value);
+    if (name === "impersonator") impersonatorId.value = "";
+    if (name === "period") {
+        dateFrom.value = "";
+        dateTo.value = "";
+    }
     reload({ page: 1 });
 }
 
@@ -252,337 +312,305 @@ function submitClear() {
         },
     });
 }
+
+usePageHeader(() => ({
+    title: "Журнал действий",
+    subtitle: "Хронология событий",
+}));
 </script>
 
 <template>
-    <AdminLayout title="Журнал действий" subtitle="Хронология событий">
-        <div class="page">
-            <div class="toolbar">
-                <div class="filters" role="group" aria-label="Фильтры журнала">
-                    <NSelect
-                        v-model="action"
-                        :options="actionOptions"
-                        aria-label="Действие"
-                        class="filters__select"
+    <div class="page">
+        <div class="toolbar">
+            <div class="filters" role="group" aria-label="Фильтры журнала">
+                <NMultiSelect
+                    v-model="action"
+                    :options="actions"
+                    label="Действие"
+                    placeholder="Все действия"
+                    class="filters__select"
+                    @update:model-value="reload({ page: 1 })"
+                />
+                <NMultiSelect
+                    v-model="subjectType"
+                    :options="subjectTypes"
+                    label="Тип объекта"
+                    placeholder="Все объекты"
+                    class="filters__select"
+                    @update:model-value="onTypeChange"
+                />
+                <NMultiSelect
+                    v-model="userId"
+                    :options="actors"
+                    label="Пользователь"
+                    placeholder="Все пользователи"
+                    search
+                    search-placeholder="Найти пользователя…"
+                    class="filters__select"
+                    @update:model-value="reload({ page: 1 })"
+                />
+                <NSelect
+                    v-if="impersonators.length || impersonatorId"
+                    v-model="impersonatorId"
+                    :options="impersonatorOptions"
+                    aria-label="Вход от имени"
+                    class="filters__select"
+                    @update:model-value="reload({ page: 1 })"
+                />
+                <div class="filters__dates">
+                    <NInput
+                        v-model="dateFrom"
+                        type="date"
+                        :max="dateTo || today"
+                        aria-label="С даты"
                         @update:model-value="reload({ page: 1 })"
                     />
-                    <NSelect
-                        v-model="subjectType"
-                        :options="typeOptions"
-                        aria-label="Тип объекта"
-                        class="filters__select"
-                        @update:model-value="onTypeChange"
-                    />
-                    <NSelectWithSearch
-                        v-model="userId"
-                        :options="actorOptions"
-                        search-placeholder="Найти пользователя…"
-                        no-results-text="Никого не найдено"
-                        aria-label="Пользователь"
-                        class="filters__select"
+                    <span class="filters__dash">—</span>
+                    <NInput
+                        v-model="dateTo"
+                        type="date"
+                        :min="dateFrom || undefined"
+                        :max="today"
+                        aria-label="По дату"
                         @update:model-value="reload({ page: 1 })"
                     />
-                    <NSelect
-                        v-if="impersonators.length || impersonatorId"
-                        v-model="impersonatorId"
-                        :options="impersonatorOptions"
-                        aria-label="Вход от имени"
-                        class="filters__select"
-                        @update:model-value="reload({ page: 1 })"
-                    />
-                    <div class="filters__dates">
-                        <NInput
-                            v-model="dateFrom"
-                            type="date"
-                            :max="dateTo || today"
-                            aria-label="С даты"
-                            @update:model-value="reload({ page: 1 })"
-                        />
-                        <span class="filters__dash">—</span>
-                        <NInput
-                            v-model="dateTo"
-                            type="date"
-                            :min="dateFrom || undefined"
-                            :max="today"
-                            aria-label="По дату"
-                            @update:model-value="reload({ page: 1 })"
-                        />
-                    </div>
-                    <div
-                        class="filters__presets"
-                        role="group"
-                        aria-label="Период"
-                    >
-                        <NButton
-                            v-for="preset in presets"
-                            :key="preset.days"
-                            size="sm"
-                            :variant="
-                                isPreset(preset.days) ? 'primary' : 'ghost'
-                            "
-                            :aria-pressed="isPreset(preset.days)"
-                            @click="applyPreset(preset.days)"
-                            >{{ preset.label }}</NButton
-                        >
-                    </div>
-                    <span v-if="subjectId" class="filters__chip">
-                        Объект: {{ subjectLabel ?? `#${subjectId}` }}
-                        <button
-                            type="button"
-                            class="filters__chip-x"
-                            aria-label="Убрать фильтр по объекту"
-                            @click="clearSubject"
-                        >
-                            ×
-                        </button>
-                    </span>
-                    <NButton
-                        v-if="hasFilters"
-                        variant="ghost"
-                        icon="x"
-                        @click="resetFilters"
-                        >Сбросить</NButton
-                    >
                 </div>
-                <div class="toolbar__actions">
+                <div class="filters__presets" role="group" aria-label="Период">
                     <NButton
-                        variant="secondary"
-                        icon="download"
-                        :as="'a'"
-                        :href="exportUrl"
-                        :disabled="logs.total === 0"
-                        >Экспорт CSV</NButton
-                    >
-                    <NButton
-                        v-if="can('activity-log.delete')"
-                        variant="secondary"
-                        icon="trash"
-                        @click="openClear"
-                        >Очистить журнал</NButton
+                        v-for="preset in presets"
+                        :key="preset.days"
+                        size="sm"
+                        :variant="isPreset(preset.days) ? 'primary' : 'ghost'"
+                        :aria-pressed="isPreset(preset.days)"
+                        @click="applyPreset(preset.days)"
+                        >{{ preset.label }}</NButton
                     >
                 </div>
             </div>
-
-            <NCard padding="0">
-                <ul v-if="logs.data.length" class="feed">
-                    <li v-for="log in logs.data" :key="log.id">
-                        <div
-                            class="feed-row"
-                            role="button"
-                            tabindex="0"
-                            :aria-label="`Открыть событие: ${log.actor} ${log.actionLabel} ${log.subject}`"
-                            @click="openDetail(log)"
-                            @keydown.enter.prevent="openDetail(log)"
-                            @keydown.space.prevent="openDetail(log)"
-                        >
-                            <NActivityRow
-                                :tone="visual(log.action).tone"
-                                :icon="visual(log.action).icon"
-                                :actor="log.actor"
-                                :verb="log.actionLabel"
-                                :object="log.subject"
-                                :tag="log.subjectType"
-                                :time="formatRelative(log.createdAt)"
-                                :meta="metaFor(log)"
-                            />
-                        </div>
-                    </li>
-                </ul>
-                <NEmptyState
-                    v-else-if="hasFilters"
-                    icon="filter"
-                    title="Ничего не найдено"
-                    description="Нет событий по выбранным фильтрам."
+            <div class="toolbar__actions">
+                <ExportMenu
+                    :url="exportUrl"
+                    :columns="exportColumns"
+                    storage-key="admin-activity-log-export"
+                    :disabled="logs.total === 0"
                 />
-                <NEmptyState
-                    v-else
-                    icon="activity"
-                    title="Событий пока нет"
-                    description="Действия пользователей будут появляться здесь по мере их выполнения."
-                />
-            </NCard>
-
-            <div v-if="logs.last_page > 1" class="page__pager">
-                <NPagination
-                    :page="logs.current_page"
-                    :pages="logs.last_page"
-                    jumpable
-                    prev-label="Назад"
-                    next-label="Вперёд"
-                    jump-label="Страница"
-                    jump-button-label="Перейти"
-                    total-label="из"
-                    jump-error-label="Введите корректный номер страницы"
-                    aria-label="Навигация по страницам"
-                    @update:page="(p) => reload({ page: p })"
-                />
+                <NButton
+                    v-if="can('activity-log.delete')"
+                    variant="secondary"
+                    icon="trash"
+                    @click="openClear"
+                    >Очистить журнал</NButton
+                >
             </div>
         </div>
 
-        <NDrawer
-            v-model="detailOpen"
-            title="Событие журнала"
-            :subtitle="selected ? formatDateTime(selected.createdAt) : ''"
-            close-label="Закрыть"
-        >
-            <template v-if="selected">
-                <dl class="detail">
-                    <div class="detail__row">
-                        <dt class="detail__key">Кто</dt>
-                        <dd class="detail__val">{{ selected.actor || "—" }}</dd>
-                    </div>
-                    <div class="detail__row">
-                        <dt class="detail__key">Действие</dt>
-                        <dd class="detail__val">
-                            {{ selected.actionLabel || "—" }}
-                        </dd>
-                    </div>
-                    <div class="detail__row">
-                        <dt class="detail__key">Объект</dt>
-                        <dd class="detail__val detail__val--object">
-                            <Link
-                                v-if="selected.subjectUrl"
-                                :href="selected.subjectUrl"
-                                class="detail__link"
-                                >{{ selected.subject || "—" }}</Link
-                            >
-                            <span v-else>{{ selected.subject || "—" }}</span>
-                            <span
-                                v-if="selected.subjectType"
-                                class="detail__tag"
-                                >{{ selected.subjectType }}</span
-                            >
-                        </dd>
-                    </div>
-                    <div class="detail__row">
-                        <dt class="detail__key">Когда</dt>
-                        <dd class="detail__val detail__val--mono">
-                            {{ formatDateTime(selected.createdAt) }}
-                        </dd>
-                    </div>
-                </dl>
+        <NFilterChips
+            :filters="activeFilters"
+            @remove="removeFilter"
+            @reset="resetFilters"
+        />
 
-                <section class="diff">
-                    <h4 id="diff-title" class="diff__title">Изменения</h4>
-                    <table
-                        v-if="hasChanges"
-                        class="diff__table"
-                        aria-labelledby="diff-title"
+        <NCard padding="0">
+            <ul v-if="logs.data.length" class="feed">
+                <li v-for="log in logs.data" :key="log.id">
+                    <div
+                        class="feed-row"
+                        role="button"
+                        tabindex="0"
+                        :aria-label="`Открыть событие: ${log.actor} ${log.actionLabel} ${log.subject}`"
+                        @click="openDetail(log)"
+                        @keydown.enter.prevent="openDetail(log)"
+                        @keydown.space.prevent="openDetail(log)"
                     >
-                        <thead>
-                            <tr>
-                                <th scope="col">Поле</th>
-                                <th scope="col">Было</th>
-                                <th scope="col">Стало</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr v-for="row in changeRows" :key="row.field">
-                                <th scope="row" class="diff__field">
-                                    <span :title="row.field">{{
-                                        row.label
-                                    }}</span>
-                                </th>
-                                <td
-                                    class="diff__cell diff__cell--mono diff__cell--old"
-                                >
-                                    <template v-if="row.parts">
-                                        <span
-                                            v-for="(seg, i) in row.parts.old"
-                                            :key="i"
-                                            :class="{
-                                                'diff__mark diff__mark--old':
-                                                    !seg.same,
-                                                diff__item: Array.isArray(
-                                                    row.oldValue,
-                                                ),
-                                            }"
-                                            >{{ seg.text }}</span
-                                        >
-                                        <span v-if="!row.parts.old.length"
-                                            >—</span
-                                        >
-                                    </template>
-                                    <template v-else>{{
-                                        displayValue(row.oldValue)
-                                    }}</template>
-                                </td>
-                                <td
-                                    class="diff__cell diff__cell--mono diff__cell--new"
-                                >
-                                    <template v-if="row.parts">
-                                        <span
-                                            v-for="(seg, i) in row.parts.new"
-                                            :key="i"
-                                            :class="{
-                                                'diff__mark diff__mark--new':
-                                                    !seg.same,
-                                                diff__item: Array.isArray(
-                                                    row.newValue,
-                                                ),
-                                            }"
-                                            >{{ seg.text }}</span
-                                        >
-                                        <span v-if="!row.parts.new.length"
-                                            >—</span
-                                        >
-                                    </template>
-                                    <template v-else>{{
-                                        displayValue(row.newValue)
-                                    }}</template>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    <p v-else class="diff__empty">Изменения не зафиксированы</p>
-                </section>
-            </template>
+                        <NActivityRow
+                            :tone="visual(log.action).tone"
+                            :icon="visual(log.action).icon"
+                            :actor="log.actor"
+                            :verb="log.actionLabel"
+                            :object="log.subject"
+                            :tag="log.subjectType"
+                            :time="formatRelative(log.createdAt)"
+                            :meta="metaFor(log)"
+                        />
+                    </div>
+                </li>
+            </ul>
+            <NEmptyState
+                v-else-if="hasFilters"
+                icon="filter"
+                title="Ничего не найдено"
+                description="Нет событий по выбранным фильтрам."
+            />
+            <NEmptyState
+                v-else
+                icon="activity"
+                title="Событий пока нет"
+                description="Действия пользователей будут появляться здесь по мере их выполнения."
+            />
+        </NCard>
 
-            <template #footer="{ close }">
-                <NButton variant="primary" class="detail-foot" @click="close"
-                    >Закрыть</NButton
+        <div v-if="logs.last_page > 1" class="page__pager">
+            <NPagination
+                :page="logs.current_page"
+                :pages="logs.last_page"
+                jumpable
+                @update:page="(p) => reload({ page: p })"
+            />
+        </div>
+    </div>
+
+    <NDrawer
+        v-model="detailOpen"
+        title="Событие журнала"
+        :subtitle="selected ? formatDateTime(selected.createdAt) : ''"
+    >
+        <template v-if="selected">
+            <dl class="detail">
+                <div class="detail__row">
+                    <dt class="detail__key">Кто</dt>
+                    <dd class="detail__val">{{ selected.actor || "—" }}</dd>
+                </div>
+                <div class="detail__row">
+                    <dt class="detail__key">Действие</dt>
+                    <dd class="detail__val">
+                        {{ selected.actionLabel || "—" }}
+                    </dd>
+                </div>
+                <div class="detail__row">
+                    <dt class="detail__key">Объект</dt>
+                    <dd class="detail__val detail__val--object">
+                        <Link
+                            v-if="selected.subjectUrl"
+                            :href="selected.subjectUrl"
+                            class="detail__link"
+                            >{{ selected.subject || "—" }}</Link
+                        >
+                        <span v-else>{{ selected.subject || "—" }}</span>
+                        <span v-if="selected.subjectType" class="detail__tag">{{
+                            selected.subjectType
+                        }}</span>
+                    </dd>
+                </div>
+                <div class="detail__row">
+                    <dt class="detail__key">Когда</dt>
+                    <dd class="detail__val detail__val--mono">
+                        {{ formatDateTime(selected.createdAt) }}
+                    </dd>
+                </div>
+            </dl>
+
+            <section class="diff">
+                <h4 id="diff-title" class="diff__title">Изменения</h4>
+                <table
+                    v-if="hasChanges"
+                    class="diff__table"
+                    aria-labelledby="diff-title"
                 >
-            </template>
-        </NDrawer>
+                    <thead>
+                        <tr>
+                            <th scope="col">Поле</th>
+                            <th scope="col">Было</th>
+                            <th scope="col">Стало</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr v-for="row in changeRows" :key="row.field">
+                            <th scope="row" class="diff__field">
+                                <span :title="row.field">{{ row.label }}</span>
+                            </th>
+                            <td
+                                class="diff__cell diff__cell--mono diff__cell--old"
+                            >
+                                <template v-if="row.parts">
+                                    <span
+                                        v-for="(seg, i) in row.parts.old"
+                                        :key="i"
+                                        :class="{
+                                            'diff__mark diff__mark--old':
+                                                !seg.same,
+                                            diff__item: Array.isArray(
+                                                row.oldValue,
+                                            ),
+                                        }"
+                                        >{{ seg.text }}</span
+                                    >
+                                    <span v-if="!row.parts.old.length">—</span>
+                                </template>
+                                <template v-else>{{
+                                    displayValue(row.oldValue)
+                                }}</template>
+                            </td>
+                            <td
+                                class="diff__cell diff__cell--mono diff__cell--new"
+                            >
+                                <template v-if="row.parts">
+                                    <span
+                                        v-for="(seg, i) in row.parts.new"
+                                        :key="i"
+                                        :class="{
+                                            'diff__mark diff__mark--new':
+                                                !seg.same,
+                                            diff__item: Array.isArray(
+                                                row.newValue,
+                                            ),
+                                        }"
+                                        >{{ seg.text }}</span
+                                    >
+                                    <span v-if="!row.parts.new.length">—</span>
+                                </template>
+                                <template v-else>{{
+                                    displayValue(row.newValue)
+                                }}</template>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p v-else class="diff__empty">Изменения не зафиксированы</p>
+            </section>
+        </template>
 
-        <NModal
-            :model-value="clearOpen"
-            title="Очистить журнал"
-            width="440px"
-            close-label="Закрыть"
-            @update:model-value="clearOpen = $event"
-        >
-            <p class="clear__msg">
-                Удалит все события раньше выбранной даты. События за выбранный
-                день и позже останутся. Действие необратимо.
-            </p>
-            <NFormField
-                label="Удалить события до даты"
-                :error="clearForm.errors.before"
-                required
+        <template #footer="{ close }">
+            <NButton variant="primary" class="detail-foot" @click="close"
+                >Закрыть</NButton
             >
-                <NInput
-                    v-model="clearForm.before"
-                    type="date"
-                    :max="today"
-                    :error="!!clearForm.errors.before"
-                />
-            </NFormField>
+        </template>
+    </NDrawer>
 
-            <template #footer="{ close }">
-                <NButton variant="secondary" block @click="close"
-                    >Отмена</NButton
-                >
-                <NButton
-                    variant="danger"
-                    block
-                    :loading="clearForm.processing"
-                    @click="submitClear"
-                    >Очистить</NButton
-                >
-            </template>
-        </NModal>
-    </AdminLayout>
+    <NModal
+        :model-value="clearOpen"
+        title="Очистить журнал"
+        width="440px"
+        @update:model-value="clearOpen = $event"
+    >
+        <p class="clear__msg">
+            Удалит все события раньше выбранной даты. События за выбранный день
+            и позже останутся. Действие необратимо.
+        </p>
+        <NFormField
+            label="Удалить события до даты"
+            :error="clearForm.errors.before"
+            required
+        >
+            <NInput
+                v-model="clearForm.before"
+                type="date"
+                :max="today"
+                :error="!!clearForm.errors.before"
+            />
+        </NFormField>
+
+        <template #footer="{ close }">
+            <NButton variant="secondary" block @click="close">Отмена</NButton>
+            <NButton
+                variant="danger"
+                block
+                :loading="clearForm.processing"
+                data-enter-submit
+                @click="submitClear"
+                >Очистить</NButton
+            >
+        </template>
+    </NModal>
 </template>
 
 <style scoped>
@@ -601,7 +629,7 @@ function submitClear() {
 }
 /* NSelectWithSearch is a full-width block (width: 100%) by design, unlike the
    inline NSelect; in this wrapping toolbar size all selects to their content. */
-.filters .filters__select {
+.filters :deep(.filters__select) {
     flex: none;
     width: auto;
     min-width: 180px;
@@ -617,27 +645,6 @@ function submitClear() {
 .filters__presets {
     display: flex;
     gap: 4px;
-}
-.filters__chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 30px;
-    padding: 0 6px 0 10px;
-    border-radius: 999px;
-    background: var(--accent-soft);
-    color: var(--accent-ink);
-    font-size: 12.5px;
-    font-weight: 600;
-}
-.filters__chip-x {
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 4px;
 }
 .toolbar__actions {
     display: flex;

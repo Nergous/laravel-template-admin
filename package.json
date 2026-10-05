@@ -5,11 +5,15 @@
     "scripts": {
         "build": "vite build",
         "typecheck": "vue-tsc --noEmit",
+        "test:js": "node --test \"tests/js/*.test.ts\"",
+        "test:e2e": "playwright test",
         "dev": "vite",
-        "format": "prettier --write \"resources/js/**/*.{ts,vue}\" vite.config.ts tsconfig.json",
-        "format:check": "prettier --check \"resources/js/**/*.{ts,vue}\" vite.config.ts tsconfig.json"
+        "format": "prettier --write \"resources/js/**/*.{ts,vue}\" \"tests/e2e/*.ts\" vite.config.ts playwright.config.ts tsconfig.json",
+        "format:check": "prettier --check \"resources/js/**/*.{ts,vue}\" \"tests/e2e/*.ts\" vite.config.ts playwright.config.ts tsconfig.json"
     },
     "devDependencies": {
+        "@axe-core/playwright": "^4.13.0",
+        "@playwright/test": "^1.62.1",
         "@types/node": "^26.5.1",
         "concurrently": "^10.0.5",
         "laravel-vite-plugin": "^3.2.0",
@@ -21,7 +25,7 @@
     "dependencies": {
         "@inertiajs/vue3": "^3.7.1",
         "@vitejs/plugin-vue": "^6.0.8",
-        "nergous-ui-vue": "1.0.6",
+        "nergous-ui-vue": "1.1.0",
         "vue": "^3.5.42"
     }
 }

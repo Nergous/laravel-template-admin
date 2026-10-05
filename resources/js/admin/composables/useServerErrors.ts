@@ -1,4 +1,4 @@
-import { onBeforeUnmount } from "vue";
+import { onBeforeUnmount, onMounted } from "vue";
 import { router } from "@inertiajs/vue3";
 import { useToast } from "nergous-ui-vue";
 
@@ -14,39 +14,40 @@ const NON_FIELD_KEYS = [
     "backup",
 ];
 
-/** Toast server errors a page cannot show inline: business rules, expired sessions, network failures. */
+/**
+ * Toast server errors a page cannot show inline: business rules, missing rights,
+ * network failures. An expired CSRF token needs nothing here: the server answers
+ * Inertia visits with a redirect back and a warning flash (bootstrap/app.php).
+ */
 export function useServerErrors() {
     const toast = useToast();
+    const off: (() => void)[] = [];
 
-    const offError = router.on("error", (event) => {
-        const errors = event.detail.errors as Record<string, string>;
-        for (const key of NON_FIELD_KEYS) {
-            if (errors[key]) toast.error("Действие не выполнено", errors[key]);
-        }
-    });
-
-    const offHttp = router.on("httpException", (event) => {
-        const status = event.detail.response.status;
-        if (status === 419) {
-            toast.error(
-                "Сессия истекла",
-                "Обновите страницу и повторите действие.",
-            );
-            return false;
-        }
-        if (status === 403) {
-            toast.error("Недостаточно прав", "Это действие вам недоступно.");
-            return false;
-        }
-    });
-
-    const offNetwork = router.on("networkError", () => {
-        toast.error("Нет связи с сервером", "Проверьте соединение.");
+    onMounted(() => {
+        off.push(
+            router.on("error", (event) => {
+                const errors = event.detail.errors as Record<string, string>;
+                for (const key of NON_FIELD_KEYS) {
+                    if (errors[key])
+                        toast.error("Действие не выполнено", errors[key]);
+                }
+            }),
+            router.on("httpException", (event) => {
+                if (event.detail.response.status === 403) {
+                    toast.error(
+                        "Недостаточно прав",
+                        "Это действие вам недоступно.",
+                    );
+                    return false;
+                }
+            }),
+            router.on("networkError", () => {
+                toast.error("Нет связи с сервером", "Проверьте соединение.");
+            }),
+        );
     });
 
     onBeforeUnmount(() => {
-        offError();
-        offHttp();
-        offNetwork();
+        for (const unsubscribe of off.splice(0)) unsubscribe();
     });
 }

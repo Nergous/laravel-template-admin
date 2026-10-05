@@ -40,7 +40,12 @@ final class FilterList implements ValidationRule
             return;
         }
 
-        $items = is_array($value) ? $value : (is_string($value) ? explode(',', $value) : null);
+        // A JSON body or a test sends a single id as a number.
+        $items = match (true) {
+            is_array($value) => $value,
+            is_string($value), is_int($value) => explode(',', (string) $value),
+            default => null,
+        };
 
         if ($items === null || count($items) > FilterValues::MAX) {
             $fail('Некорректный фильтр');

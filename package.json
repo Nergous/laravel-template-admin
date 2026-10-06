@@ -13,19 +13,19 @@
     },
     "devDependencies": {
         "@axe-core/playwright": "^4.13.0",
-        "@playwright/test": "^1.62.1",
-        "@types/node": "^26.5.1",
+        "@playwright/test": "^1.63.0",
+        "@types/node": "^26.6.4",
         "concurrently": "^10.0.5",
         "laravel-vite-plugin": "^3.2.0",
-        "prettier": "^3.9.6",
+        "prettier": "^3.9.9",
         "typescript": "^6.0.2",
-        "vite": "^8.3.0",
-        "vue-tsc": "^3.3.11"
+        "vite": "^8.3.2",
+        "vue-tsc": "^3.3.12"
     },
     "dependencies": {
-        "@inertiajs/vue3": "^3.7.1",
-        "@vitejs/plugin-vue": "^6.0.8",
+        "@inertiajs/vue3": "^3.8.0",
+        "@vitejs/plugin-vue": "^6.0.9",
         "nergous-ui-vue": "1.1.0",
-        "vue": "^3.5.42"
+        "vue": "^3.5.43"
     }
 }

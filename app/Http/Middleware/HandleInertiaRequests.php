@@ -2,19 +2,16 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\ActivityLog;
-use App\Models\Media;
-use App\Models\Role;
-use App\Models\User;
-use App\Providers\SettingsServiceProvider;
-use App\Support\Impersonation;
-use App\Support\RbacGuard;
+use App\Services\Access\RbacGuard;
+use App\Services\System\AccentColor;
+use App\Services\System\DisplayTime;
+use App\Services\System\Settings;
+use App\Services\System\SidebarCounts;
+use Illuminate\Auth\SessionGuard;
+use Illuminate\Container\Attributes\Auth;
+use Illuminate\Container\Attributes\Config;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 use Inertia\Middleware;
-use Spatie\Permission\Models\Permission;
-use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Inertia handling and shared props of the admin panel. Attached to the /admin
@@ -22,36 +19,33 @@ use Spatie\Permission\PermissionRegistrar;
  */
 class HandleInertiaRequests extends Middleware
 {
+    public function __construct(
+        private readonly AccentColor $accentColor,
+        private readonly RbacGuard $rbac,
+        private readonly SidebarCounts $sidebarCounts,
+        private readonly Settings $settings,
+        private readonly DisplayTime $time,
+        #[Config('app.name')] private readonly string $defaultAppName,
+        #[Auth('web')] private readonly SessionGuard $guard,
+    ) {}
+
     /**
-     * The root Blade template for the current section.
+     * Root Blade template of the Inertia admin panel.
      *
-     * The admin panel and the public part are separate Inertia applications: each has its own
-     * bundle (resources/js/<section>/app.ts) and its own root-view. Currently only
-     * the admin panel is implemented. When the public part appears — create
-     * resources/views/public.blade.php + resources/js/public/app.ts and
-     * uncomment the branch below.
+     * Only the admin panel is an Inertia application. A public site is
+     * rendered on the server with Blade (layout resources/views/public.blade.php)
+     * and never passes through this middleware.
      *
      * @see https://inertiajs.com/server-side-setup#root-template
      */
     public function rootView(Request $request): string
     {
-        // return $request->is('admin', 'admin/*') ? 'admin' : 'public';
         return 'admin';
     }
 
     /**
-     * Asset version — for invalidating the Inertia client cache on deploy.
-     *
-     * @see https://inertiajs.com/asset-versioning
-     */
-    public function version(Request $request): ?string
-    {
-        return parent::version($request);
-    }
-
-    /**
-     * Props passed into all Inertia responses by default: the user
-     * with roles and permissions, counts for the sidebar badges and flash messages.
+     * Props passed into all Inertia responses by default: the user with roles
+     * and permissions, counts for the sidebar badges and flash messages.
      *
      * @see https://inertiajs.com/shared-data
      *
@@ -64,15 +58,24 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
 
-            'appName' => config('app.name'),
+            // Name from the settings (general.app_name); empty falls back to config/app.php.
+            'appName' => fn () => $this->settings->value('general', 'app_name') ?: $this->defaultAppName,
+
+            // Brand icon in the sidebar: the favicon from the settings (media library),
+            // otherwise the static one — the same image as in the browser tab.
+            'brandIcon' => fn () => $this->settings->value('general', 'favicon') ?: '/favicon.svg',
+
+            // Accent color preset (settings → appearance.accent); the client syncs
+            // <html data-accent> after the settings are saved.
+            'accent' => fn () => $this->accentColor->current()->value,
 
             // Display time zone (settings → general.timezone); dates are stored in UTC.
-            'timezone' => fn () => SettingsServiceProvider::displayTimezone(),
+            'timezone' => fn () => $this->time->zone(),
 
             // Idle session lifetime in minutes (security.session_lifetime) — drives
             // the "session is about to expire" warning in the layout. Null with a
             // "remember me" cookie: an expired session then signs back in silently.
-            'sessionLifetime' => fn () => $user && ! $request->hasCookie(Auth::guard('web')->getRecallerName())
+            'sessionLifetime' => fn () => $user && ! $request->hasCookie($this->guard->getRecallerName())
                 ? (int) config('session.lifetime')
                 : null,
 
@@ -82,47 +85,15 @@ class HandleInertiaRequests extends Middleware
                     'name' => $user->name,
                     'email' => $user->email,
                     'roles' => $user->getRoleNames(),
-                    'must_change_password' => (bool) $user->must_change_password,
                 ] : null,
 
-                // Set while an administrator works "as" this user (banner with a way back).
-                'impersonator' => $user ? $this->impersonator() : null,
-
                 // Names of all the user's permissions — for conditional rendering in Vue
-                // (can('users.view')). The server still checks independently. The
-                // superadmin passes every check (RbacGuard::registerSuperadminGate), so
-                // they get every permission name.
-                'can' => match (true) {
-                    $user === null => [],
-                    RbacGuard::isAdmin($user) => app(PermissionRegistrar::class)
-                        ->getPermissions(['guard_name' => 'web'])->pluck('name')->values()->all(),
-                    default => $user->getAllPermissions()->pluck('name')->all(),
-                },
+                // (can('users.view')). The server still checks access independently.
+                'can' => $user ? $this->rbac->effectivePermissions($user) : [],
             ],
 
-            // Record counts for the sidebar badges. The raw aggregates are global
-            // (do not depend on the user) and are cached for 30s; we only return
-            // the sections for which the user has the *.view permission — otherwise
-            // a badge would reveal a number where there is no access. The bell count
-            // is personal: unread actions of other users (see ActivityLog::unreadCountFor).
-            'counts' => $user ? function () use ($user) {
-                $all = Cache::remember('admin.sidebar-counts', 30, fn () => [
-                    'users' => User::count(),
-                    'roles' => Role::count(),
-                    'permissions' => Permission::count(),
-                    'media' => Media::count(),
-                ]);
-
-                return [
-                    'users' => $user->can('users.view') ? $all['users'] : null,
-                    'roles' => $user->can('roles.view') ? $all['roles'] : null,
-                    'permissions' => $user->can('permissions.view') ? $all['permissions'] : null,
-                    'media' => $user->can('media.view') ? $all['media'] : null,
-                    'recentActivity' => $user->can('activity-log.view')
-                        ? ActivityLog::unreadCountFor($user)
-                        : null,
-                ];
-            } : null,
+            // Record counts for the sidebar badges — only for sections the user can access.
+            'counts' => $user ? fn () => $this->sidebarCounts->for($user) : null,
 
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
@@ -131,14 +102,5 @@ class HandleInertiaRequests extends Middleware
                 'info' => fn () => $request->session()->get('info'),
             ],
         ];
-    }
-
-    /** @return array{id: int, name: string}|null */
-    private function impersonator(): ?array
-    {
-        $id = Impersonation::impersonatorId();
-        $impersonator = $id !== null ? User::find($id, ['id', 'name']) : null;
-
-        return $impersonator ? ['id' => $impersonator->id, 'name' => $impersonator->name] : null;
     }
 }

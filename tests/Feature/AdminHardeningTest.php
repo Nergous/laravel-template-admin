@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Events\ActivityOccurred;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Models\ActivityLog;
 use App\Models\Media;
 use App\Models\Role;
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\System\ActivityLogLabels;
+use App\Services\System\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -36,9 +38,15 @@ class AdminHardeningTest extends TestCase
             'roles' => [],
         ])->assertForbidden();
 
-        $this->delete(route('admin.users.destroy', $admin))->assertSessionHasErrors('user');
+        $this->delete(route('admin.users.destroy', $admin))->assertForbidden();
+        $this->delete(route('admin.users.destroy', $admin), ['force' => 1])->assertForbidden();
 
         $this->assertDatabaseHas('users', ['id' => $admin->id, 'email' => $admin->email, 'deleted_at' => null]);
+
+        $admin->delete();
+        $this->patch(route('admin.users.restore', $admin->id))->assertForbidden();
+        $this->delete(route('admin.users.force-delete', $admin->id))->assertForbidden();
+        $this->assertSoftDeleted('users', ['id' => $admin->id]);
     }
 
     public function test_password_and_remember_token_never_reach_the_activity_log(): void
@@ -86,17 +94,35 @@ class AdminHardeningTest extends TestCase
         $this->assertGuest();
     }
 
-    public function test_login_records_time_and_forced_password_change_redirects_to_profile(): void
+    public function test_failed_login_records_client_ip_agent_and_reason(): void
     {
-        $user = User::factory()->create(['must_change_password' => true]);
+        $user = User::factory()->create();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
+            ->withHeader('User-Agent', 'TestBrowser/1.0')
+            ->post(route('login'), ['email' => $user->email, 'password' => 'wrong'])
+            ->assertSessionHasErrors('email');
+        $this->post(route('login'), ['email' => 'nobody@example.test', 'password' => 'wrong']);
+
+        $known = ActivityLog::where('action', 'login_failed')->where('subject_id', $user->id)->firstOrFail();
+        $this->assertSame([null, '203.0.113.7'], $known->changes['ip']);
+        $this->assertSame([null, 'TestBrowser/1.0'], $known->changes['agent']);
+        $this->assertSame([null, 'Неверный пароль'], $known->changes['reason']);
+        $this->assertSame('Гость (203.0.113.7)', app(ActivityLogLabels::class)->actor($known));
+
+        $unknown = ActivityLog::where('action', 'login_failed')->where('subject_label', 'nobody@example.test')->firstOrFail();
+        $this->assertSame([null, 'Неизвестный email'], $unknown->changes['reason']);
+    }
+
+    public function test_login_records_time_and_redirects_to_dashboard(): void
+    {
+        $user = User::factory()->create();
 
         $this->post(route('login'), ['email' => $user->email, 'password' => 'password'])
-            ->assertRedirect(route('admin.profile.show'));
+            ->assertRedirect(route('admin.dashboard'));
 
         $this->assertNotNull($user->fresh()->last_login_at);
         $this->assertDatabaseHas('activity_log', ['action' => 'login', 'subject_id' => $user->id]);
-        $this->get(route('admin.dashboard'))->assertRedirect(route('admin.profile.show'));
-        $this->get(route('admin.profile.show'))->assertOk();
     }
 
     public function test_search_links_users_to_their_page_and_finds_media_by_display_name(): void
@@ -119,7 +145,7 @@ class AdminHardeningTest extends TestCase
         $role = Role::create(['name' => 'editor', 'guard_name' => 'web']);
         $operator = Role::findByName('operator', 'web');
 
-        $this->patch(route('admin.permissions.sync-many'), [
+        $this->patch(route('admin.permissions.toggle-many'), [
             'role_ids' => [$role->id],
             'permissions' => ['users.view', 'roles.view'],
             'granted' => true,
@@ -147,7 +173,7 @@ class AdminHardeningTest extends TestCase
     public function test_activity_log_export_is_csv_and_neutralizes_formulas(): void
     {
         $this->actingAsAdmin();
-        ActivityLog::record(null, 'cleared', null, '=HYPERLINK("x")');
+        ActivityOccurred::dispatch(null, 'cleared', null, '=HYPERLINK("x")');
 
         $response = $this->get(route('admin.activity-log.export'));
 
@@ -200,7 +226,7 @@ class AdminHardeningTest extends TestCase
 
     public function test_public_layout_renders_meta_tags_from_seo_settings(): void
     {
-        Setting::setMany([
+        app(Settings::class)->setMany([
             'general' => ['app_name' => 'Acme'],
             'seo' => [
                 'meta_description' => 'Описание сайта',
@@ -209,7 +235,7 @@ class AdminHardeningTest extends TestCase
                 'indexable' => false,
             ],
         ]);
-        Setting::flushCache();
+        app(Settings::class)->flush();
 
         $html = view('public')->render();
 

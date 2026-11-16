@@ -1,11 +1,9 @@
 <?php
 
 use App\Providers\AppServiceProvider;
-use App\Providers\MediaServiceProvider;
-use App\Providers\SettingsServiceProvider;
+use App\Providers\SiteServiceProvider;
 
 return [
     AppServiceProvider::class,
-    SettingsServiceProvider::class,
-    MediaServiceProvider::class,
+    SiteServiceProvider::class,
 ];

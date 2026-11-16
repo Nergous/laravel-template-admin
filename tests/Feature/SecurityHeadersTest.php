@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Services\System\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -50,5 +51,30 @@ class SecurityHeadersTest extends TestCase
         $this->assertStringContainsString("object-src 'none'", $csp);
         $this->assertStringContainsString("frame-ancestors 'none'", $csp);
         $this->assertStringContainsString("base-uri 'self'", $csp);
+    }
+
+    public function test_csp_allows_an_external_favicon_host_only_when_configured(): void
+    {
+        app()->detectEnvironment(fn () => 'production');
+
+        $csp = $this->get(route('login'))->headers->get('Content-Security-Policy');
+        $this->assertStringNotContainsString('cdn.example.test', $csp);
+        $this->assertStringContainsString("connect-src 'self';", $csp);
+
+        app(Settings::class)->setMany(['general' => ['favicon' => 'https://cdn.example.test/favicon.svg']]);
+
+        $csp = $this->get(route('login'))->headers->get('Content-Security-Policy');
+        $this->assertMatchesRegularExpression('~img-src [^;]*https://cdn\.example\.test~', $csp);
+        $this->assertMatchesRegularExpression("~script-src 'self' 'nonce-[^']+';~", $csp);
+    }
+
+    public function test_csp_allows_external_https_images_of_editorial_html(): void
+    {
+        app()->detectEnvironment(fn () => 'production');
+
+        $csp = $this->get(route('login'))->headers->get('Content-Security-Policy');
+
+        // HtmlSanitizer keeps external http(s) images (upgraded to https), so the policy must allow them.
+        $this->assertMatchesRegularExpression("~img-src 'self' data: https:( |;)~", $csp);
     }
 }

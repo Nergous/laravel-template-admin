@@ -56,8 +56,8 @@ jobs:
 
   # --------------------------------------------------------------------------
   # PHPUnit on SQLite :memory: (phpunit.xml forces the test database, so no
-  # real database is touched). sodium/exif/gd enable the backup encryption and
-  # image tests that local builds without these extensions skip.
+  # real database is touched). exif/gd enable the image tests that local builds
+  # without these extensions skip.
   # --------------------------------------------------------------------------
   test-php:
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_sqlite, gd, exif, sodium, zip, pcntl
+          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_sqlite, gd, exif, zip, pcntl
           coverage: none
           tools: composer:v2
 
@@ -131,7 +131,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: "8.4"
-          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_mysql, pdo_sqlite, gd, exif, sodium, zip
+          extensions: mbstring, dom, fileinfo, intl, bcmath, pdo_mysql, pdo_sqlite, gd, exif, zip
           coverage: none
           tools: composer:v2
 

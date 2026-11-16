@@ -2,8 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Events\ActivityOccurred;
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\System\ActivityRecorder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -51,23 +53,17 @@ class UserListingTest extends TestCase
             );
     }
 
-    public function test_index_filters_by_status_and_pending_password_change(): void
+    public function test_index_filters_by_status(): void
     {
         $this->actingAsAdmin();
         $blocked = User::factory()->create(['name' => 'Blocked', 'is_active' => false]);
-        $pending = User::factory()->create(['name' => 'Pending', 'must_change_password' => true]);
+        User::factory()->create(['name' => 'Active']);
 
         $this->get(route('admin.users.index', ['status' => 'blocked']))
             ->assertInertia(fn (Assert $page) => $page
                 ->has('users.data', 1)
                 ->where('users.data.0.id', $blocked->id)
                 ->where('filters.status', 'blocked')
-            );
-
-        $this->get(route('admin.users.index', ['must_change_password' => 1]))
-            ->assertInertia(fn (Assert $page) => $page
-                ->has('users.data', 1)
-                ->where('users.data.0.id', $pending->id)
             );
 
         $this->get(route('admin.users.index', ['status' => 'active']))
@@ -137,22 +133,6 @@ class UserListingTest extends TestCase
         $this->assertTrue($admin->fresh()->is_active);
     }
 
-    public function test_bulk_delete_of_all_matching_users_respects_the_password_change_filter(): void
-    {
-        $admin = $this->actingAsAdmin();
-        $pending = User::factory()->create(['must_change_password' => true]);
-        $other = User::factory()->create();
-
-        $this->delete(route('admin.users.bulk-destroy'), [
-            'all' => true,
-            'must_change_password' => true,
-        ])->assertSessionHas('success', 'Перемещено в корзину: 1');
-
-        $this->assertSoftDeleted('users', ['id' => $pending->id]);
-        $this->assertNotSoftDeleted('users', ['id' => $other->id]);
-        $this->assertNotSoftDeleted('users', ['id' => $admin->id]);
-    }
-
     public function test_bulk_delete_counts_the_own_account_as_skipped(): void
     {
         $admin = $this->actingAsAdmin();
@@ -196,17 +176,16 @@ class UserListingTest extends TestCase
 
     public function test_show_lists_recent_activity_by_and_about_the_user(): void
     {
-        $admin = $this->actingAsAdmin();
+        $this->actingAsAdmin();
         $target = User::factory()->create();
         $unrelated = User::factory()->create();
 
-        ActivityLog::actingAs($target, fn () => ActivityLog::record($unrelated, 'updated'));
-        ActivityLog::actingAs($unrelated, fn () => ActivityLog::record(null, 'login'));
+        app(ActivityRecorder::class)->actingAs($target, fn () => ActivityOccurred::dispatch($unrelated, 'updated'));
+        app(ActivityRecorder::class)->actingAs($unrelated, fn () => ActivityOccurred::dispatch(null, 'login'));
 
         $this->get(route('admin.users.show', $target))
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Users/Show')
-                ->where('canImpersonate', true)
                 // The factory "created" entry for the target plus its own action.
                 ->has('activity', 2)
                 ->where('activity.0.action', 'updated')
@@ -218,9 +197,6 @@ class UserListingTest extends TestCase
                 ]))
                 ->missing('user.permissions')
             );
-
-        $this->get(route('admin.users.show', $admin))
-            ->assertInertia(fn (Assert $page) => $page->where('canImpersonate', false));
     }
 
     public function test_show_hides_activity_without_the_activity_log_permission(): void
@@ -232,7 +208,6 @@ class UserListingTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->where('activity', [])
                 ->where('activityLinks', null)
-                ->where('canImpersonate', false)
             );
     }
 

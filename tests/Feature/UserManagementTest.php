@@ -73,6 +73,25 @@ class UserManagementTest extends TestCase
         $this->assertDatabaseMissing('users', ['id' => $target->id]);
     }
 
+    public function test_force_flag_deletes_users_permanently_without_the_trash(): void
+    {
+        $admin = $this->actingAsAdmin();
+        $single = User::factory()->create();
+        $bulk = User::factory()->create();
+
+        $this->delete(route('admin.users.destroy', $single), ['force' => true])
+            ->assertRedirect(route('admin.users.index'))
+            ->assertSessionHas('success', 'Пользователь удалён навсегда');
+        $this->assertDatabaseMissing('users', ['id' => $single->id]);
+
+        $this->delete(route('admin.users.bulk-destroy'), [
+            'ids' => [$admin->id, $bulk->id],
+            'force' => true,
+        ])->assertRedirect(route('admin.users.index'));
+        $this->assertDatabaseMissing('users', ['id' => $bulk->id]);
+        $this->assertDatabaseHas('users', ['id' => $admin->id, 'deleted_at' => null]);
+    }
+
     public function test_admin_can_restore_all_trashed_users_across_pages(): void
     {
         $this->actingAsAdmin();

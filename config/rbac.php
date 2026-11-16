@@ -15,4 +15,16 @@ return [
     | by default). The superadmin is always protected; the reverse is not required.
     */
     'superadmin_role' => env('RBAC_SUPERADMIN_ROLE', 'admin'),
+
+    /*
+    | The first administrator UserSeeder creates in production when seeding an empty
+    | database (app:seed-fresh --users or RUN_SEEDS=true). Without a password no account
+    | is created: set ADMIN_PASSWORD or create one with php artisan app:create-admin.
+    */
+
+    'initial_admin' => [
+        'email' => env('ADMIN_EMAIL', 'admin@example.com'),
+        'name' => env('ADMIN_NAME', 'Администратор'),
+        'password' => env('ADMIN_PASSWORD'),
+    ],
 ];

@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Enums\MediaType;
 use App\Jobs\UploadMedia;
 use App\Models\ActivityLog;
 use App\Models\Media;
 use App\Models\User;
-use App\Services\ImageOptimizer;
+use App\Services\Media\ImageOptimizer;
+use App\Support\Media\ImagePaths;
+use App\Support\Media\UploadRules;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -53,6 +56,28 @@ class MediaTest extends TestCase
         $this->actingAsUserWith([]);
 
         $this->getJson(route('admin.media.browse'))->assertForbidden();
+    }
+
+    public function test_browse_offers_upload_rules_for_the_requested_type(): void
+    {
+        $this->actingAsUserWith(['media.view', 'media.upload']);
+
+        $this->getJson(route('admin.media.browse', ['type' => 'image']))
+            ->assertOk()
+            ->assertJsonPath('upload.extensions', MediaType::Image->extensions())
+            ->assertJsonPath('upload.max_files', UploadRules::MAX_FILES);
+
+        $this->getJson(route('admin.media.browse'))
+            ->assertJsonPath('upload.extensions', UploadRules::extensions());
+    }
+
+    public function test_browse_offers_no_upload_without_upload_permission(): void
+    {
+        $this->actingAsUserWith(['media.view']);
+
+        $this->getJson(route('admin.media.browse'))
+            ->assertOk()
+            ->assertJsonPath('upload', null);
     }
 
     public function test_upload_queues_a_job_per_file(): void
@@ -128,12 +153,12 @@ class MediaTest extends TestCase
         Storage::disk('local')->put('temp/note.txt', 'hello world');
 
         $job = new UploadMedia('temp/note.txt', 'note.txt');
-        $job->handle();
+        app()->call([$job, 'handle']);
 
         $this->assertDatabaseCount('media', 1);
         Storage::disk('local')->assertMissing('temp/note.txt');
 
-        $job->handle();
+        app()->call([$job, 'handle']);
         $this->assertDatabaseCount('media', 1);
     }
 
@@ -237,8 +262,6 @@ class MediaTest extends TestCase
 
         $this->assertSame(Storage::url('media/photo.thumb.webp'), $withThumb->thumbUrl());
         $this->assertSame(Storage::url('media/plain.webp'), $withoutThumb->thumbUrl());
-
-        $this->assertSame(Storage::url('media/photo.thumb.webp'), $withThumb->toArray()['thumb_url']);
     }
 
     public function test_non_image_copy_streams_contents_byte_for_byte(): void
@@ -249,7 +272,7 @@ class MediaTest extends TestCase
         $payload = str_repeat('video-bytes-', 4096);
         Storage::disk('local')->put('temp/clip.mp4', $payload);
 
-        (new UploadMedia('temp/clip.mp4', 'clip.mp4'))->handle();
+        app()->call([new UploadMedia('temp/clip.mp4', 'clip.mp4'), 'handle']);
 
         $media = Media::firstWhere('original_name', 'clip.mp4');
         $this->assertNotNull($media);
@@ -263,7 +286,7 @@ class MediaTest extends TestCase
         Storage::fake('public');
         Storage::disk('local')->put('temp/upload.pdf', '%PDF-1.4 fake');
 
-        (new UploadMedia('temp/upload.pdf', 'shell.php'))->handle();
+        app()->call([new UploadMedia('temp/upload.pdf', 'shell.php'), 'handle']);
 
         $media = Media::firstWhere('original_name', 'shell.php');
         $this->assertNotNull($media);
@@ -299,11 +322,11 @@ class MediaTest extends TestCase
         $payload = str_repeat('not-a-real-png-', 4096);
         Storage::disk('local')->put('temp/broken.png', $payload);
 
-        $filename = ImageOptimizer::storeFromDisk(
+        $filename = app(ImageOptimizer::class)->optimizeFromDisk(
             sourcePath: 'temp/broken.png',
             sourceDisk: 'local',
             directory: 'media',
-        );
+        )['filename'];
 
         $this->assertSame('png', pathinfo($filename, PATHINFO_EXTENSION));
         $this->assertSame($payload, Storage::disk('public')->get($filename));
@@ -315,7 +338,7 @@ class MediaTest extends TestCase
         Storage::fake('public');
         Storage::disk('local')->put('temp/note.txt', 'hello world');
 
-        (new UploadMedia('temp/note.txt', 'note.txt'))->handle();
+        app()->call([new UploadMedia('temp/note.txt', 'note.txt'), 'handle']);
 
         $this->assertFalse(Media::firstWhere('original_name', 'note.txt')->has_thumb);
     }
@@ -331,25 +354,12 @@ class MediaTest extends TestCase
 
         $tempPath = UploadedFile::fake()->image('big.jpg', 1200, 900)->store('temp', 'local');
 
-        (new UploadMedia($tempPath, 'big.jpg'))->handle();
+        app()->call([new UploadMedia($tempPath, 'big.jpg'), 'handle']);
 
         $media = Media::firstWhere('original_name', 'big.jpg');
         $this->assertNotNull($media);
         $this->assertTrue($media->has_thumb);
-        Storage::disk('public')->assertExists(ImageOptimizer::thumbPath($media->filename));
-    }
-
-    public function test_backfill_marks_existing_rows_that_already_have_thumbnails(): void
-    {
-        Storage::fake('public');
-
-        Storage::disk('public')->put('media/legacy.webp', 'orig');
-        Storage::disk('public')->put('media/legacy.thumb.webp', 'thumb');
-        $media = Media::create(['filename' => 'media/legacy.webp', 'has_thumb' => false]);
-
-        $this->artisan('media:backfill-thumbs')->assertSuccessful();
-
-        $this->assertTrue($media->fresh()->has_thumb);
+        Storage::disk('public')->assertExists(ImagePaths::thumb($media->filename));
     }
 
     public function test_rename_updates_display_name_but_not_the_file_path(): void

@@ -1,6 +1,7 @@
 {{--
-    Root layout for the public part of the site. Meta tags come from the SEO
-    settings (App\Support\SeoMeta); a page can override them with sections:
+    Root layout for the public part of the site. $seo (meta tags from the SEO
+    settings) comes from App\View\Composers\SeoMetaComposer; a page can
+    override them with sections:
 
         @extends('public')
         @section('title', 'О компании')
@@ -10,18 +11,10 @@
 
     Pages add their own styles/scripts through @push('head') / @push('scripts').
     The layout also works as an Inertia root view: when $page is present it
-    renders @inertiaHead/@inertia instead of the content section (see
-    HandleInertiaRequests::rootView()). Any inline <script> needs
-    nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}" to run in production.
+    renders @inertiaHead/@inertia instead of the content section. Any inline
+    <script> needs nonce="{{ \Illuminate\Support\Facades\Vite::cspNonce() }}"
+    to run in production.
 --}}
-@php
-    $seo = \App\Support\SeoMeta::for(
-        request(),
-        trim($__env->yieldContent('title')),
-        trim($__env->yieldContent('description')),
-        trim($__env->yieldContent('og_image')),
-    );
-@endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 

@@ -32,7 +32,6 @@ class MigrationsTest extends TestCase
     {
         foreach ([
             'media_folders' => ['created_by'],
-            'activity_log' => ['impersonator_id'],
         ] as $table => $columns) {
             $leading = array_map(fn (array $index) => $index['columns'][0], Schema::getIndexes($table));
 

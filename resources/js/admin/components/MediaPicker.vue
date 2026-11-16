@@ -4,9 +4,11 @@ import type { PropType } from "vue";
 import type { MediaItem } from "@/admin/types";
 import {
     NModal,
+    NAlert,
     NInput,
     NButton,
     NIcon,
+    NProgress,
     NSpinner,
     NPagination,
     NEmptyState,
@@ -15,6 +17,12 @@ import {
 import { formatBytes } from "@/lib/format";
 import { apiFetch, SessionExpiredError } from "@/lib/api";
 import { focalStyle, typeBadge, typeIcon, useThumbFallback } from "@/lib/media";
+import {
+    acceptAttr,
+    useMediaUpload,
+    type PollDuplicate,
+    type UploadRules,
+} from "@/admin/composables/useMediaUpload";
 
 const props = defineProps({
     modelValue: { type: Boolean, default: false },
@@ -46,6 +54,12 @@ const selectedCount = computed(() => selected.value.size);
 function isSelected(id: number) {
     return selected.value.has(id);
 }
+function notifyLimit() {
+    toast.info(
+        "Достигнут лимит",
+        `Можно прикрепить не более ${props.max} файлов.`,
+    );
+}
 function toggle(m: MediaItem) {
     // Single-select mode: a click replaces the choice.
     if (props.max === 1) {
@@ -59,10 +73,7 @@ function toggle(m: MediaItem) {
         next.delete(m.id);
     } else {
         if (next.size >= props.max) {
-            toast.info(
-                "Достигнут лимит",
-                `Можно прикрепить не более ${props.max} файлов.`,
-            );
+            notifyLimit();
             return;
         }
         next.set(m.id, m);
@@ -71,6 +82,133 @@ function toggle(m: MediaItem) {
 }
 
 const { showThumb, onImgError, reset: resetThumbs } = useThumbFallback();
+
+// Upload rules arrive with the browse response; null means no uploads
+// (no media.upload permission). Formats are already narrowed to the picker type.
+const uploadRules = ref<UploadRules | null>(null);
+const canUpload = computed(() => !!uploadRules.value?.extensions.length);
+// One upload may not bring more files than the picker can select.
+const pickerRules = computed<UploadRules>(() => ({
+    extensions: uploadRules.value?.extensions ?? [],
+    max_size_kb: uploadRules.value?.max_size_kb ?? 0,
+    max_files: Math.min(uploadRules.value?.max_files ?? 0, props.max),
+}));
+const accept = computed(() => acceptAttr(pickerRules.value));
+const fileInput = ref<HTMLInputElement | null>(null);
+const dragOver = ref(false);
+
+// Files uploaded in this picker (and found duplicates) go first in the grid
+// and get selected automatically, but only once: a choice the user clears
+// does not come back on the next poll.
+const fresh = ref<MediaItem[]>([]);
+let autoPicked = new Set<number>();
+let limitNotified = false;
+const shown = computed(() => {
+    const ids = new Set(fresh.value.map((m) => m.id));
+    return [...fresh.value, ...items.value.filter((m) => !ids.has(m.id))];
+});
+
+const {
+    uploading,
+    phase,
+    pct,
+    processingLabel,
+    precheckErrors,
+    upload,
+    stopPolling,
+} = useMediaUpload({
+    rules: () => pickerRules.value,
+    folder: () => "",
+    onItems: adopt,
+    onDuplicates: adoptDuplicates,
+});
+
+function adopt(list: MediaItem[]) {
+    if (!props.modelValue) return;
+    const incoming = list.filter((m) => !props.type || m.type === props.type);
+    if (!incoming.length) return;
+    const byId = new Map(fresh.value.map((m) => [m.id, m]));
+    for (const m of incoming) byId.set(m.id, m);
+    fresh.value = [...byId.values()].sort((a, b) => b.id - a.id);
+
+    const next = new Map(selected.value);
+    for (const m of incoming) {
+        // Refresh an already selected record (e.g. its thumbnail is ready).
+        if (next.has(m.id)) next.set(m.id, m);
+        if (autoPicked.has(m.id)) continue;
+        autoPicked.add(m.id);
+        if (props.max === 1) {
+            next.clear();
+            next.set(m.id, m);
+        } else if (!next.has(m.id)) {
+            if (next.size >= props.max) {
+                if (!limitNotified) notifyLimit();
+                limitNotified = true;
+                continue;
+            }
+            next.set(m.id, m);
+        }
+    }
+    selected.value = next;
+}
+
+// The file is already in the library: take the existing record so it can
+// be attached right away.
+async function adoptDuplicates(list: PollDuplicate[]) {
+    const ids = list
+        .map((d) => d.existing_id)
+        .filter((id): id is number => id != null);
+    const found = await Promise.all(
+        ids.map(async (id) => {
+            try {
+                const res = await apiFetch(`/admin/media/${id}`);
+                return res.ok ? ((await res.json()) as MediaItem) : null;
+            } catch {
+                return null;
+            }
+        }),
+    );
+    adopt(found.filter((m): m is MediaItem => m !== null));
+}
+
+function startUpload(files: File[]) {
+    if (!files.length || !canUpload.value) return;
+    limitNotified = false;
+    upload(files);
+}
+
+function onPick(e: Event) {
+    const input = e.target as HTMLInputElement;
+    startUpload(Array.from(input.files ?? []));
+    input.value = "";
+}
+
+function hasFiles(e: DragEvent) {
+    return !!e.dataTransfer?.types.includes("Files");
+}
+function onDragOver(e: DragEvent) {
+    if (!canUpload.value || !hasFiles(e)) return;
+    e.preventDefault();
+    dragOver.value = true;
+}
+// dragleave also fires when moving onto a child element: drop the highlight
+// only when the pointer really left the picker.
+function onDragLeave(e: DragEvent) {
+    const current = e.currentTarget;
+    const related = e.relatedTarget;
+    if (
+        current instanceof HTMLElement &&
+        (!(related instanceof Node) || !current.contains(related))
+    ) {
+        dragOver.value = false;
+    }
+}
+function onDrop(e: DragEvent) {
+    if (!canUpload.value || !hasFiles(e)) return;
+    e.preventDefault();
+    dragOver.value = false;
+    startUpload(Array.from(e.dataTransfer?.files ?? []));
+}
 
 async function load(p = 1) {
     loadAbort?.abort();
@@ -90,6 +228,7 @@ async function load(p = 1) {
         items.value = Array.isArray(json.data) ? json.data : [];
         page.value = json.current_page || 1;
         lastPage.value = json.last_page || 1;
+        uploadRules.value = json.upload ?? null;
     } catch (err) {
         // Superseded by a newer request or the picker closed: not an error.
         if (controller.signal.aborted) return;
@@ -127,11 +266,16 @@ watch(
     (open) => {
         if (!open) {
             cancelPending();
+            stopPolling();
+            dragOver.value = false;
             return;
         }
         const seed = new Map<number, MediaItem>();
         for (const m of props.preselected) seed.set(m.id, m);
         selected.value = seed;
+        fresh.value = [];
+        autoPicked = new Set();
+        precheckErrors.value = [];
         resetThumbs();
         search.value = "";
         load(1);
@@ -155,7 +299,13 @@ function confirm() {
         width="760px"
         @update:model-value="!$event && close()"
     >
-        <div class="mp">
+        <div
+            class="mp"
+            :class="{ 'mp--drop': dragOver }"
+            @dragover="onDragOver"
+            @dragleave="onDragLeave"
+            @drop="onDrop"
+        >
             <div class="mp__head">
                 <NInput
                     v-model="search"
@@ -167,16 +317,64 @@ function confirm() {
                 <span v-if="max > 1" class="mp__count">
                     Выбрано: {{ selectedCount }} / {{ max }}
                 </span>
+                <template v-if="canUpload">
+                    <input
+                        ref="fileInput"
+                        class="mp__file"
+                        type="file"
+                        tabindex="-1"
+                        aria-hidden="true"
+                        :accept="accept"
+                        :multiple="max > 1"
+                        @change="onPick"
+                    />
+                    <NButton
+                        variant="secondary"
+                        icon="upload"
+                        :disabled="uploading"
+                        @click="fileInput?.click()"
+                        >Загрузить</NButton
+                    >
+                </template>
             </div>
+
+            <div
+                v-if="uploading"
+                class="mp__upload"
+                role="status"
+                aria-live="polite"
+            >
+                <NProgress
+                    v-if="phase === 'uploading'"
+                    :value="pct"
+                    label="Загрузка"
+                    show-value
+                />
+                <div v-else class="mp__processing">
+                    <NSpinner :size="16" :width="2" />
+                    <span>{{ processingLabel }}</span>
+                </div>
+            </div>
+            <NAlert
+                v-if="precheckErrors.length"
+                tone="danger"
+                title="Файлы не загружены"
+            >
+                <ul class="mp__errors">
+                    <li v-for="(err, i) in precheckErrors" :key="i">
+                        {{ err }}
+                    </li>
+                </ul>
+            </NAlert>
 
             <div class="mp__body">
                 <div v-if="loading" class="mp__loading">
                     <NSpinner :size="22" :width="2" />
                 </div>
 
-                <div v-else-if="items.length" class="mp__grid">
+                <div v-else-if="shown.length" class="mp__grid">
                     <button
-                        v-for="m in items"
+                        v-for="m in shown"
                         :key="m.id"
                         type="button"
                         class="mp__card"
@@ -219,7 +417,9 @@ function confirm() {
                     :description="
                         search
                             ? 'Измените поисковый запрос.'
-                            : 'Медиатека пуста — загрузите файлы в разделе «Медиатека».'
+                            : canUpload
+                              ? 'Медиатека пуста — перетащите файлы сюда или нажмите «Загрузить».'
+                              : 'Медиатека пуста — загрузите файлы в разделе «Медиатека».'
                     "
                 />
             </div>
@@ -278,8 +478,44 @@ function confirm() {
     color: var(--text-2);
     white-space: nowrap;
 }
+/* Hidden file input: opened by the «Загрузить» button. */
+.mp__file {
+    display: none;
+}
+.mp__processing {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-2);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+.mp__errors {
+    margin: 0;
+    padding-left: 18px;
+}
 .mp__body {
+    position: relative;
     min-height: 260px;
+    border-radius: var(--radius-md);
+}
+/* Files are dragged over the picker: highlight the grid area. */
+.mp--drop .mp__body {
+    outline: 2px dashed var(--accent);
+    outline-offset: 2px;
+    background: var(--accent-soft);
+}
+.mp--drop .mp__body::after {
+    content: "Отпустите, чтобы загрузить";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: var(--accent);
+    background: var(--accent-soft);
+    pointer-events: none;
 }
 .mp__loading {
     display: flex;

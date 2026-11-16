@@ -6,9 +6,9 @@ use App\Jobs\UploadMedia;
 use App\Models\ActivityLog;
 use App\Models\Media;
 use App\Models\MediaFolder;
-use App\Models\Setting;
 use App\Models\User;
-use App\Services\ImageOptimizer;
+use App\Services\System\Settings;
+use App\Support\Media\ImagePaths;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -94,7 +94,7 @@ class MediaLibraryTest extends TestCase
         Storage::fake('public');
         Storage::disk('local')->put('temp/rotated.jpg', $this->jpegWithOrientation(40, 20, 6));
 
-        (new UploadMedia('temp/rotated.jpg', 'rotated.jpg'))->handle();
+        app()->call([new UploadMedia('temp/rotated.jpg', 'rotated.jpg'), 'handle']);
 
         $media = Media::firstWhere('original_name', 'rotated.jpg');
         $this->assertNotNull($media);
@@ -119,23 +119,23 @@ class MediaLibraryTest extends TestCase
         $remote = $this->fakeRemoteMediaDisk();
 
         $tempPath = UploadedFile::fake()->image('big.jpg', 1200, 900)->store('temp', 'local');
-        (new UploadMedia($tempPath, 'big.jpg'))->handle();
+        app()->call([new UploadMedia($tempPath, 'big.jpg'), 'handle']);
 
         $media = Media::firstWhere('original_name', 'big.jpg');
         $this->assertNotNull($media);
         $remote->assertExists($media->filename);
-        $remote->assertExists(ImageOptimizer::thumbPath($media->filename));
+        $remote->assertExists(ImagePaths::thumb($media->filename));
         $this->assertTrue($media->has_thumb);
         $this->assertSame([1200, 900], [$media->width, $media->height]);
         $this->assertStringStartsWith('https://cdn.example.com/media/', $media->url());
 
         // Non-images are streamed as-is.
         Storage::disk('local')->put('temp/doc.pdf', '%PDF-1.4 remote');
-        (new UploadMedia('temp/doc.pdf', 'doc.pdf'))->handle();
+        app()->call([new UploadMedia('temp/doc.pdf', 'doc.pdf'), 'handle']);
         $doc = Media::firstWhere('original_name', 'doc.pdf');
         $this->assertSame('%PDF-1.4 remote', $remote->get($doc->filename));
 
-        // Details, thumbnail backfill and deletion also avoid path().
+        // Details and deletion also avoid path().
         $legacy = Media::create(['filename' => $media->filename, 'type' => 'image', 'mime_type' => 'image/webp']);
         $this->actingAsUserWith(['media.view', 'media.delete']);
         $this->getJson(route('admin.media.show', $legacy))
@@ -168,7 +168,7 @@ class MediaLibraryTest extends TestCase
         $this->app['auth']->forgetGuards(); // the queue worker has no session user
 
         Storage::disk('local')->put('temp/note.txt', 'hello');
-        (new UploadMedia('temp/note.txt', 'note.txt', $uploader->id))->handle();
+        app()->call([new UploadMedia('temp/note.txt', 'note.txt', $uploader->id), 'handle']);
 
         $media = Media::firstWhere('original_name', 'note.txt');
         $this->assertSame($uploader->id, $media->created_by);
@@ -359,8 +359,8 @@ class MediaLibraryTest extends TestCase
                 ->where('folders.1.count', 0)
                 // Counts ignore the type filter but respect the folder.
                 ->where('typeCounts', ['document' => 1, 'image' => 2])
-                ->where('uploadRules.maxFiles', 10)
-                ->where('uploadRules.maxSizeKb', 51200)
+                ->where('uploadRules.max_files', 10)
+                ->where('uploadRules.max_size_kb', 51200)
                 ->has('uploadRules.extensions')
             );
 
@@ -453,12 +453,12 @@ class MediaLibraryTest extends TestCase
         MediaFolder::create(['name' => 'Документы']);
 
         Storage::disk('local')->put('temp/a.txt', 'a');
-        (new UploadMedia('temp/a.txt', 'a.txt', null, null, null, 'Документы'))->handle();
+        app()->call([new UploadMedia('temp/a.txt', 'a.txt', null, null, null, 'Документы'), 'handle']);
         $this->assertSame('Документы', Media::firstWhere('original_name', 'a.txt')->folder);
 
         // A folder deleted while the job waited leaves the file at the root.
         Storage::disk('local')->put('temp/b.txt', 'b');
-        (new UploadMedia('temp/b.txt', 'b.txt', null, null, null, 'Удалённая'))->handle();
+        app()->call([new UploadMedia('temp/b.txt', 'b.txt', null, null, null, 'Удалённая'), 'handle']);
         $this->assertNull(Media::firstWhere('original_name', 'b.txt')->folder);
 
         Queue::fake();
@@ -479,8 +479,8 @@ class MediaLibraryTest extends TestCase
         $og = Media::create(['filename' => 'media/og.webp', 'type' => 'image', 'has_thumb' => true]);
         $free = Media::create(['filename' => 'media/free.webp', 'type' => 'image']);
 
-        Setting::set('general', 'favicon', $icon->url());
-        Setting::set('seo', 'og_image', $og->url());
+        app(Settings::class)->set('general', 'favicon', $icon->url());
+        app(Settings::class)->set('seo', 'og_image', $og->url());
 
         $this->get(route('admin.media.index'))
             ->assertInertia(fn (Assert $page) => $page
@@ -499,7 +499,7 @@ class MediaLibraryTest extends TestCase
         $this->actingAsUserWith(['media.view']);
         $icon = Media::create(['filename' => 'media/icon.webp', 'type' => 'image']);
         $free = Media::create(['filename' => 'media/free.webp', 'type' => 'image']);
-        Setting::set('general', 'favicon', $icon->url());
+        app(Settings::class)->set('general', 'favicon', $icon->url());
 
         $this->get(route('admin.media.index', ['usage' => 'used']))
             ->assertInertia(fn (Assert $page) => $page
@@ -519,13 +519,13 @@ class MediaLibraryTest extends TestCase
         $uploader = $this->actingAsUserWith(['media.view']);
 
         Storage::disk('local')->put('temp/one.txt', 'same bytes');
-        (new UploadMedia('temp/one.txt', 'one.txt', $uploader->id, null, (string) Str::uuid()))->handle();
+        app()->call([new UploadMedia('temp/one.txt', 'one.txt', $uploader->id, null, (string) Str::uuid()), 'handle']);
         $existing = Media::sole();
         $this->assertSame(hash('sha256', 'same bytes'), $existing->content_hash);
 
         $batch = (string) Str::uuid();
         Storage::disk('local')->put('temp/two.txt', 'same bytes');
-        (new UploadMedia('temp/two.txt', 'two.txt', $uploader->id, null, $batch))->handle();
+        app()->call([new UploadMedia('temp/two.txt', 'two.txt', $uploader->id, null, $batch), 'handle']);
 
         $this->assertSame(1, Media::count());
         Storage::disk('local')->assertMissing('temp/two.txt');
@@ -628,13 +628,17 @@ class MediaLibraryTest extends TestCase
         $disk->assertMissing(['media/orphan.webp', 'media/orphan.w960.webp']);
     }
 
-    public function test_backfill_skips_responsive_copies(): void
+    public function test_list_filters_are_validated_and_normalized(): void
     {
-        $disk = Storage::fake('public');
-        $disk->put('media/abc.w960.webp', 'not an image');
+        $this->actingAsAdmin();
 
-        $this->artisan('media:backfill-thumbs')->assertSuccessful();
+        $this->get(route('admin.media.index', ['type' => 'bogus']))->assertSessionHasErrors('type');
+        $this->get(route('admin.media.index', ['usage' => 'bogus']))->assertSessionHasErrors('usage');
 
-        $disk->assertMissing('media/abc.w960.thumb.webp');
+        $this->get(route('admin.media.index', ['search' => '  cat  ', 'type' => 'image']))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('filters', ['search' => 'cat', 'type' => 'image', 'folder' => '', 'usage' => ''])
+                ->has('uploadRules.extensions'));
     }
 }

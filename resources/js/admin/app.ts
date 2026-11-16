@@ -4,6 +4,7 @@ import { createInertiaApp, router } from "@inertiajs/vue3";
 import { createLocale, installEnterSubmit, ruMessages } from "nergous-ui-vue";
 import { resolvePageComponent } from "laravel-vite-plugin/inertia-helpers";
 import "nergous-ui-vue/styles";
+import "@/admin/accents.css";
 import "@/admin/styles.css";
 import { setDisplayTimeZone } from "@/lib/format";
 import { rememberListUrl, rememberPreviousPage } from "@/lib/listUrl";
@@ -23,15 +24,13 @@ function applySharedProps(props: Record<string, unknown>) {
     setDisplayTimeZone(
         typeof props.timezone === "string" ? props.timezone : null,
     );
+    // The server sets <html data-accent> on load; after the settings are saved
+    // the next page brings the new preset (and drops an unsaved preview).
+    if (typeof props.accent === "string" && props.accent)
+        document.documentElement.dataset.accent = props.accent;
 }
 
-// Use the active theme's accent for Inertia's progress bar.
-const accent =
-    getComputedStyle(document.documentElement)
-        .getPropertyValue("--accent")
-        .trim() || "#0066ff";
-
-// Pages that render without the admin chrome: sign-in screens use AuthLayout
+// Pages that render without the admin layout (sidebar and header): sign-in screens use AuthLayout
 // inside the page, the error page is a standalone screen.
 function usesAdminLayout(name: string): boolean {
     return !name.startsWith("Auth/") && name !== "Error";
@@ -48,12 +47,12 @@ createInertiaApp({
                 ),
             )
         ).default,
-    // Persistent layout: the sidebar, topbar, toaster, session timer and
-    // notification polling stay mounted across visits; pages set the header
-    // through usePageHeader().
+    // Persistent layout: the sidebar, topbar, toaster and session timer stay
+    // mounted across visits; pages set the header through usePageHeader().
     layout: (name) => (usesAdminLayout(name) ? AdminLayout : null),
     progress: {
-        color: accent,
+        // A CSS variable: the bar follows the theme and the accent preset.
+        color: "var(--accent)",
     },
     setup({ el, App, props, plugin }) {
         applySharedProps(props.initialPage.props);

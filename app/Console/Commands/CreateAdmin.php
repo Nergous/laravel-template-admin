@@ -4,28 +4,26 @@ namespace App\Console\Commands;
 
 use App\Models\Role;
 use App\Models\User;
-use App\Support\RbacGuard;
+use App\Services\Access\RbacGuard;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rules\Password;
 
 /**
  * Creates or updates an administrator.
  *
- * First ensures the base permission catalog (RolePermissionSeeder::ensure()) —
- * otherwise on a fresh DB (after `migrate` without seeds, as in Docker prod with
- * RUN_SEEDS=false or a manual install) the superadmin role would be created
- * without a single permission, and the admin would get 403 in every section.
- * ensure() only adds what is missing: permissions configured in the admin panel
- * for the operator or any other role stay as they are, so the command is safe
- * to repeat on a live database. Then assigns the superadmin role from
- * config('rbac.superadmin_role').
+ * First fills in the base permission catalog (RolePermissionSeeder::ensure()).
+ * Otherwise on a fresh database (after `migrate` without seeders, as in Docker in
+ * production with RUN_SEEDS=false or on a manual install) the superadmin role would
+ * have no permissions at all and the admin would get 403 everywhere. ensure() only
+ * adds what is missing: operator and other role permissions configured in the
+ * admin panel are left alone, so the command can be repeated on a live database.
+ * Then assigns the superadmin role from config('rbac.superadmin_role').
  *
- * Missing arguments (email, name) and the password are requested interactively.
- * Returns SUCCESS on a successful create / update and FAILURE on a password
- * mismatch or a validation error.
+ * Missing arguments (email, name) and the password are asked for in the console.
+ * Returns SUCCESS when the admin was created or updated and FAILURE when the
+ * passwords did not match or the data failed validation.
  *
  * Usage:
  *   php artisan app:create-admin admin@example.com "Name"
@@ -35,15 +33,15 @@ class CreateAdmin extends Command
 {
     protected $signature = 'app:create-admin {email? : Email администратора} {name? : Имя администратора}';
 
-    protected $description = 'Создать или обновить пользователя с ролью администратора';
+    protected $description = 'Создаёт или обновляет пользователя с ролью администратора';
 
     /**
-     * Requests the missing data, validates it and saves the administrator.
+     * Asks for the missing data, validates it and saves the administrator.
      *
-     * @return int self::SUCCESS — success; self::FAILURE — passwords did not match
-     *             or validation failed.
+     * @return int self::SUCCESS — success; self::FAILURE — the passwords did not match
+     *             or the data failed validation.
      */
-    public function handle(): int
+    public function handle(RbacGuard $rbac): int
     {
         $email = $this->argument('email') ?? $this->ask('Введите email администратора');
         $name = $this->argument('name') ?? $this->ask('Введите имя администратора');
@@ -74,18 +72,18 @@ class CreateAdmin extends Command
             return self::FAILURE;
         }
 
-        // Ensure the base RBAC (permission catalog + granting to the superadmin)
-        // exists BEFORE assigning the role. Non-destructive, so safe on every run.
+        // Base permissions (the catalog and the superadmin grant) are created BEFORE the role is assigned.
+        // Nothing is deleted, so it is safe on every run.
         app(RolePermissionSeeder::class)->ensure();
 
-        // An account with this email in the trash is restored instead of
-        // creating a second user with the same email.
+        // An account with this email is restored from the trash so that no second
+        // user with the same email is created.
         $user = User::where('email', $email)->first()
             ?? User::onlyTrashed()->where('email', $email)->latest('deleted_at')->first()
             ?? new User(['email' => $email]);
         $user->forceFill([
             'name' => $name,
-            'password' => Hash::make($password),
+            'password' => $password,
             'is_active' => true,
         ]);
 
@@ -95,14 +93,14 @@ class CreateAdmin extends Command
             $user->save();
         }
 
-        $role = Role::firstOrCreate(['name' => RbacGuard::superadminRole(), 'guard_name' => 'web']);
+        $role = Role::firstOrCreate(['name' => $rbac->superadminRole(), 'guard_name' => 'web']);
         $user->syncRoles([$role]);
 
         $this->info('Администратор успешно создан / обновлён');
         $this->line('ID:    '.$user->id);
         $this->line('Email: '.$user->email);
-        $this->line('Name:  '.$user->name);
-        $this->line('Roles: '.$user->roles->pluck('name')->join(', '));
+        $this->line('Имя:   '.$user->name);
+        $this->line('Роли:  '.$user->roles->pluck('name')->join(', '));
 
         return self::SUCCESS;
     }

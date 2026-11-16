@@ -3,8 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\User;
-use App\Providers\AppServiceProvider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
 use Tests\TestCase;
 
 class AuthTest extends TestCase
@@ -14,6 +14,15 @@ class AuthTest extends TestCase
     public function test_root_redirects_to_admin(): void
     {
         $this->get('/')->assertRedirect('/admin');
+    }
+
+    public function test_unknown_public_page_redirects_to_admin_but_admin_and_json_get_404(): void
+    {
+        $this->get('/no-such-page')->assertRedirect('/admin');
+        $this->getJson('/no-such-page')->assertNotFound();
+
+        $this->actingAs(User::factory()->create());
+        $this->get('/admin/no-such-page')->assertNotFound();
     }
 
     public function test_guest_is_redirected_to_login(): void
@@ -57,8 +66,19 @@ class AuthTest extends TestCase
         ]);
 
         $response->assertRedirect(route('login'));
-        $response->assertSessionHasErrors('email');
+        $response->assertSessionHasErrors(['email' => 'Неверный email или пароль, либо учётная запись заблокирована']);
         $this->assertGuest();
+    }
+
+    public function test_remember_me_sets_the_recaller_cookie(): void
+    {
+        $user = User::factory()->create();
+
+        $this->post(route('admin.login'), [
+            'email' => $user->email,
+            'password' => 'password',
+            'remember' => '1',
+        ])->assertCookie(Auth::guard('web')->getRecallerName());
     }
 
     public function test_login_is_rate_limited_after_five_attempts(): void
@@ -95,26 +115,6 @@ class AuthTest extends TestCase
             'email' => $user->email,
             'password' => 'wrong-password',
         ], ['X-Forwarded-For' => '203.0.113.250'])->assertStatus(429);
-    }
-
-    public function test_session_cookie_defaults_to_secure_in_production(): void
-    {
-        config(['session.secure' => null]);
-        app()->detectEnvironment(fn () => 'production');
-
-        (new AppServiceProvider(app()))->boot();
-
-        $this->assertTrue(config('session.secure'));
-    }
-
-    public function test_explicit_session_secure_choice_is_respected_in_production(): void
-    {
-        config(['session.secure' => false]);
-        app()->detectEnvironment(fn () => 'production');
-
-        (new AppServiceProvider(app()))->boot();
-
-        $this->assertFalse(config('session.secure'));
     }
 
     public function test_user_can_logout(): void

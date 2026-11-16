@@ -10,7 +10,6 @@ import { swatchColor } from "@/lib/swatch";
 type MatrixRole = {
     id: number;
     name: string;
-    label: string;
     is_system: boolean;
     locked: boolean;
     manageable: boolean;
@@ -20,7 +19,6 @@ type MatrixPermission = {
     name: string;
     action: string;
     label: string;
-    is_system: boolean;
 };
 type MatrixGroup = {
     resource: string;
@@ -261,7 +259,7 @@ usePageHeader(() => ({
                                     background: swatchColor(role.name),
                                 }"
                             />
-                            <span class="role-label">{{ role.label }}</span>
+                            <span class="role-label">{{ role.name }}</span>
                         </div>
                     </div>
 
@@ -299,7 +297,7 @@ usePageHeader(() => ({
                                             ? 'mixed'
                                             : groupState(role, group) === 'on'
                                     "
-                                    :aria-label="`${role.label}: вся группа «${group.label}»`"
+                                    :aria-label="`${role.name}: вся группа «${group.label}»`"
                                     @click="toggleGroup(role, group)"
                                 >
                                     <NIcon
@@ -328,14 +326,6 @@ usePageHeader(() => ({
                                     }}</span>
                                     <span class="perm-sub">
                                         {{ permission.label }}
-                                        <span
-                                            v-if="permission.is_system"
-                                            class="perm-system"
-                                            title="Системное разрешение: на него опирается код"
-                                        >
-                                            <NIcon name="lock" :size="11" />
-                                            системное
-                                        </span>
                                     </span>
                                 </div>
                                 <div class="perm-actions">
@@ -380,7 +370,7 @@ usePageHeader(() => ({
                                     :aria-checked="
                                         isGranted(role.id, permission.name)
                                     "
-                                    :aria-label="`${role.label}: ${permission.name}`"
+                                    :aria-label="`${role.name}: ${permission.name}`"
                                     :disabled="!editable(role)"
                                     @click="toggle(role, permission)"
                                 >
@@ -431,13 +421,6 @@ usePageHeader(() => ({
     align-items: center;
     gap: 2px;
     flex: none;
-}
-.perm-system {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--text-3);
-    font-size: 11px;
 }
 .empty {
     padding: 28px 16px;

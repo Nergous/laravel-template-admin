@@ -19,9 +19,6 @@ const password = defineModel<string>("password", { required: true });
 const roles = defineModel<string[]>("roles", { required: true });
 const isActive = defineModel<boolean>("isActive", { required: true });
 const blockedReason = defineModel<string>("blockedReason", { required: true });
-const mustChangePassword = defineModel<boolean>("mustChangePassword", {
-    required: true,
-});
 
 const props = defineProps({
     errors: {
@@ -241,21 +238,6 @@ const passwordHint = computed(() => {
                         errors.is_active
                     }}</span>
                 </div>
-                <div class="uform__option">
-                    <label class="uform__toggle">
-                        <span class="uform__toggle-text">
-                            <b>Потребовать смену пароля</b>
-                            <span
-                                >При следующем входе пользователь задаст новый
-                                пароль</span
-                            >
-                        </span>
-                        <NSwitch
-                            v-model="mustChangePassword"
-                            aria-label="Потребовать смену пароля при следующем входе"
-                        />
-                    </label>
-                </div>
             </div>
         </NFormField>
 
@@ -349,9 +331,6 @@ const passwordHint = computed(() => {
     flex-direction: column;
     gap: 14px;
     padding: 14px 16px;
-}
-.uform__option + .uform__option {
-    border-top: 1px solid var(--border);
 }
 .uform__reason {
     padding-top: 14px;

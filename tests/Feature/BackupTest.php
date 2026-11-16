@@ -5,15 +5,16 @@ namespace Tests\Feature;
 use App\Jobs\CreateBackup;
 use App\Models\ActivityLog;
 use App\Models\User;
-use App\Services\BackupCipher;
-use App\Services\BackupService;
+use App\Services\System\Backup\BackupConfig;
+use App\Services\System\Backup\BackupFiles;
+use App\Services\System\Backup\BackupManager;
+use App\Services\System\Backup\BackupService;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -48,7 +49,6 @@ class BackupTest extends TestCase
 
         config([
             'backup.path' => $this->dir,
-            'backup.encryption_key' => null,
             'backup.disk' => null,
             'backup.keep.scheduled' => 7,
             'backup.keep.manual' => 5,
@@ -65,14 +65,6 @@ class BackupTest extends TestCase
         parent::tearDown();
     }
 
-    /** Encryption needs libsodium; local PHP builds without it skip these tests. */
-    private function requireSodium(): void
-    {
-        if (! function_exists('sodium_crypto_secretstream_xchacha20poly1305_init_push')) {
-            $this->markTestSkipped('The sodium extension is unavailable');
-        }
-    }
-
     public function test_command_creates_sqlite_dump_with_utc_name(): void
     {
         $user = User::factory()->create(['email' => 'backup-marker@example.test']);
@@ -85,10 +77,9 @@ class BackupTest extends TestCase
         $this->assertStringStartsWith("SQLite format 3\0", $contents);
         $this->assertStringContainsString($user->email, $contents);
 
-        $latest = app(BackupService::class)->latest();
+        $latest = app(BackupFiles::class)->latest();
         $this->assertSame('db-20260924-120000.sqlite', $latest['name']);
         $this->assertSame('scheduled', $latest['kind']);
-        $this->assertFalse($latest['encrypted']);
         $this->assertSame(filesize($path), $latest['size']);
         $this->assertSame('2026-09-24T12:00:00+00:00', $latest['created_at']);
     }
@@ -102,7 +93,7 @@ class BackupTest extends TestCase
 
         $this->assertSame('db-20260924-120000-manual.sqlite', $first['name']);
         $this->assertSame('db-20260924-120000-manual-2.sqlite', $second['name']);
-        $this->assertSame('manual', BackupService::kindOf($second['name']));
+        $this->assertSame('manual', BackupFiles::kindOf($second['name']));
     }
 
     public function test_rotation_is_separate_per_kind(): void
@@ -116,7 +107,7 @@ class BackupTest extends TestCase
             $service->create('manual');
         }
 
-        $names = array_column($service->list(), 'name');
+        $names = array_column(app(BackupFiles::class)->list(), 'name');
 
         $this->assertSame([
             'db-20260924-120200.sqlite',
@@ -132,79 +123,14 @@ class BackupTest extends TestCase
             $this->artisan('app:db-backup', ['--keep' => 1])->assertSuccessful();
         }
 
-        $this->assertSame(['db-20260924-120200.sqlite'], array_column(app(BackupService::class)->list(), 'name'));
+        $this->assertSame(['db-20260924-120200.sqlite'], array_column(app(BackupFiles::class)->list(), 'name'));
     }
 
     public function test_invalid_tag_is_rejected(): void
     {
         $this->artisan('app:db-backup', ['--tag' => '../x'])->assertFailed();
 
-        $this->assertSame([], app(BackupService::class)->list());
-    }
-
-    public function test_encrypted_dump_round_trips_through_decrypt_command(): void
-    {
-        $this->requireSodium();
-        config(['backup.encryption_key' => BackupCipher::generateKey()]);
-        User::factory()->create(['email' => 'secret-marker@example.test']);
-
-        $this->artisan('app:db-backup', ['--tag' => 'manual'])->assertSuccessful();
-
-        $name = 'db-20260924-120000-manual.sqlite.enc';
-        $encrypted = $this->dir.DIRECTORY_SEPARATOR.$name;
-        $this->assertFileExists($encrypted);
-        $this->assertStringNotContainsString('secret-marker@example.test', (string) file_get_contents($encrypted));
-        // Only the encrypted file remains: no plaintext work file is left behind.
-        $this->assertSame([$name], array_values(array_diff(scandir($this->dir), ['.', '..'])));
-
-        $latest = app(BackupService::class)->latest();
-        $this->assertTrue($latest['encrypted']);
-        $this->assertSame('manual', $latest['kind']);
-
-        $output = $this->scratch.DIRECTORY_SEPARATOR.'restored.sqlite';
-        $this->artisan('app:db-backup-decrypt', ['file' => $name, '--output' => $output])->assertSuccessful();
-
-        $plain = (string) file_get_contents($output);
-        $this->assertStringStartsWith("SQLite format 3\0", $plain);
-        $this->assertStringContainsString('secret-marker@example.test', $plain);
-    }
-
-    public function test_decrypt_fails_with_wrong_key_or_truncated_file(): void
-    {
-        $this->requireSodium();
-        config(['backup.encryption_key' => BackupCipher::generateKey()]);
-        $name = app(BackupService::class)->create()['name'];
-        $path = $this->dir.DIRECTORY_SEPARATOR.$name;
-
-        $truncated = $this->scratch.DIRECTORY_SEPARATOR.'truncated.enc';
-        file_put_contents($truncated, substr((string) file_get_contents($path), 0, -20));
-        $out = $this->scratch.DIRECTORY_SEPARATOR.'out-truncated.sqlite';
-        $this->artisan('app:db-backup-decrypt', ['file' => $truncated, '--output' => $out])->assertFailed();
-        $this->assertFileDoesNotExist($out);
-
-        config(['backup.encryption_key' => BackupCipher::generateKey()]);
-        $out = $this->scratch.DIRECTORY_SEPARATOR.'out-wrong-key.sqlite';
-        $this->artisan('app:db-backup-decrypt', ['file' => $path, '--output' => $out])->assertFailed();
-        $this->assertFileDoesNotExist($out);
-    }
-
-    public function test_invalid_key_fails_before_writing_anything(): void
-    {
-        config(['backup.encryption_key' => 'base64:'.base64_encode('short')]);
-
-        $this->artisan('app:db-backup')->assertFailed();
-
-        $this->assertDirectoryDoesNotExist($this->dir);
-    }
-
-    public function test_backup_key_command_prints_a_usable_key(): void
-    {
-        $this->requireSodium();
-        Artisan::call('app:backup-key');
-        $key = strtok(trim(Artisan::output()), "\r\n");
-
-        $this->assertMatchesRegularExpression('/^base64:[A-Za-z0-9+\/=]+$/', (string) $key);
-        $this->assertSame(32, strlen(BackupCipher::decodeKey((string) $key)));
+        $this->assertSame([], app(BackupFiles::class)->list());
     }
 
     public function test_offsite_copy_is_uploaded_and_rotated(): void
@@ -227,23 +153,23 @@ class BackupTest extends TestCase
 
     public function test_listing_a_missing_directory_has_no_side_effects(): void
     {
-        $service = app(BackupService::class);
+        $files = app(BackupFiles::class);
 
-        $this->assertSame([], $service->list());
-        $this->assertNull($service->latest());
+        $this->assertSame([], $files->list());
+        $this->assertNull($files->latest());
         $this->assertDirectoryDoesNotExist($this->dir);
     }
 
     public function test_path_rejects_foreign_names(): void
     {
-        $service = app(BackupService::class);
-        $service->create();
+        app(BackupService::class)->create();
+        $files = app(BackupFiles::class);
         File::put($this->scratch.DIRECTORY_SEPARATOR.'db-outside.sqlite', 'x');
 
-        $this->assertNotNull($service->path('db-20260924-120000.sqlite'));
+        $this->assertNotNull($files->path('db-20260924-120000.sqlite'));
         foreach (['db-..', '../db-outside.sqlite', 'db-../../x', 'other.sqlite', '', 'db-a/b', 'db-a\\b'] as $name) {
-            $this->assertNull($service->path($name), $name);
-            $this->assertFalse($service->delete($name), $name);
+            $this->assertNull($files->path($name), $name);
+            $this->assertFalse($files->delete($name), $name);
         }
     }
 
@@ -261,8 +187,6 @@ class BackupTest extends TestCase
                 ->component('Backups/Index')
                 ->where('backups.0.name', 'db-20260924-120000-manual.sqlite')
                 ->where('backups.0.kind', 'manual')
-                ->where('backups.0.encrypted', false)
-                ->where('encrypted', false)
                 ->where('offsite', null)
                 ->where('keep.manual', 5)
             );
@@ -326,7 +250,7 @@ class BackupTest extends TestCase
 
         $log = ActivityLog::where('action', 'backup_failed')->sole();
         $this->assertStringNotContainsString('blocker', json_encode($log->changes));
-        $this->assertFalse(Cache::has(CreateBackup::PENDING_KEY));
+        $this->assertFalse(Cache::has(BackupManager::PENDING_KEY));
 
         $this->get('/admin/backups')->assertInertia(fn (Assert $page) => $page
             ->where('pending', false)
@@ -364,7 +288,7 @@ class BackupTest extends TestCase
         } catch (\RuntimeException $e) {
             $this->assertStringContainsString('mariadb-dump или mysqldump', $e->getMessage());
             $this->assertStringContainsString('BACKUP_BINARY_PATH', $e->getMessage());
-            $this->assertSame($e->getMessage(), CreateBackup::publicMessage($e));
+            $this->assertSame($e->getMessage(), app(BackupManager::class)->publicMessage($e));
         } finally {
             putenv('PATH='.$path);
             config(['database.default' => $defaultConnection]);
@@ -403,33 +327,16 @@ class BackupTest extends TestCase
             $db->table('notes')->update(['body' => 'after']);
 
             Carbon::setTestNow(Carbon::parse('2026-09-24 12:05:00', 'UTC'));
-            $safety = $service->restore($name);
+            $safety = $service->safetyDump();
+            $service->restore($name);
 
             $this->assertSame('before', DB::connection('restore_test')->table('notes')->value('body'));
             $this->assertSame('db-20260924-120500-prerestore.sqlite', $safety);
-            $this->assertSame('prerestore', BackupService::kindOf((string) $safety));
+            $this->assertSame('prerestore', BackupFiles::kindOf($safety));
         } finally {
             DB::purge('restore_test');
             config(['database.default' => $previous]);
         }
-    }
-
-    public function test_restore_from_an_encrypted_dump_leaves_no_plaintext_behind(): void
-    {
-        $this->requireSodium();
-        config(['backup.encryption_key' => BackupCipher::generateKey()]);
-
-        $this->withOnDiskSqlite(function ($db) {
-            $service = app(BackupService::class);
-            $name = $service->create()['name'];
-            $this->assertStringEndsWith('.sqlite.enc', $name);
-            $db->table('notes')->update(['body' => 'after']);
-
-            $this->assertNull($service->restore($name, safetyDump: false));
-
-            $this->assertSame('before', DB::connection('restore_test')->table('notes')->value('body'));
-            $this->assertSame([$name], array_values(array_diff(scandir($this->dir), ['.', '..'])));
-        });
     }
 
     public function test_restore_command_clears_the_cache_and_brings_the_app_back_up(): void
@@ -443,7 +350,7 @@ class BackupTest extends TestCase
             Cache::put('media.usage-index', ['stale.jpg' => []]);
 
             $this->artisan('app:db-restore', ['file' => $name, '--force' => true, '--no-safety-backup' => true])
-                ->expectsOutputToContain('остановите обработчик очереди и планировщик')
+                ->expectsOutputToContain('остановите планировщик')
                 ->assertSuccessful();
 
             $this->assertSame('before', DB::connection('restore_test')->table('notes')->value('body'));
@@ -473,7 +380,7 @@ class BackupTest extends TestCase
     {
         File::ensureDirectoryExists($this->dir);
         $stale = [];
-        foreach (['.partial-db-20260924-080000.sql', '.restore-db-20260924-080000.sql', '.verify-db-20260924-080000.sql.enc'] as $file) {
+        foreach (['.partial-db-20260924-080000.sql', '.partial-db-20260924-090000.sqlite'] as $file) {
             $stale[] = $path = $this->dir.DIRECTORY_SEPARATOR.$file;
             File::put($path, 'plain dump');
             touch($path, now()->subHours(3)->getTimestamp());
@@ -483,7 +390,11 @@ class BackupTest extends TestCase
         File::put($running, 'in progress');
         touch($running, now()->subMinutes(5)->getTimestamp());
 
-        app(BackupService::class)->list();
+        // Reading the list leaves work files alone: preparing a new dump removes them.
+        app(BackupFiles::class)->list();
+        $this->assertFileExists($stale[0]);
+
+        app(BackupFiles::class)->deleteStaleWorkFiles();
 
         foreach ($stale as $path) {
             $this->assertFileDoesNotExist($path);
@@ -493,21 +404,19 @@ class BackupTest extends TestCase
 
     public function test_backup_job_outlives_the_dump_tool_and_stays_below_retry_after(): void
     {
-        $job = new CreateBackup('token');
+        $config = app(BackupConfig::class);
 
-        $this->assertGreaterThan(BackupService::dumpTimeout(), $job->timeout);
-        foreach (['database', 'redis', 'beanstalkd'] as $connection) {
-            $this->assertGreaterThan($job->timeout, config("queue.connections.{$connection}.retry_after"), $connection);
-        }
+        $this->assertGreaterThan($config->dumpTimeout(), $config->jobTimeout());
+        $this->assertGreaterThan($config->jobTimeout(), config('queue.connections.database.retry_after'));
     }
 
     public function test_a_killed_backup_job_reports_the_failure_and_releases_the_page(): void
     {
-        Cache::put(CreateBackup::PENDING_KEY, 'token', 600);
+        Cache::put(BackupManager::PENDING_KEY, 'token', 600);
 
-        (new CreateBackup('token'))->failed(new TimeoutExceededException('timed out'));
+        (new CreateBackup('token', null, 660))->failed(new TimeoutExceededException('timed out'));
 
-        $this->assertFalse(Cache::has(CreateBackup::PENDING_KEY));
+        $this->assertFalse(Cache::has(BackupManager::PENDING_KEY));
         $this->assertSame(1, ActivityLog::where('action', 'backup_failed')->count());
 
         $this->actingAsUserWith(['backups.view']);

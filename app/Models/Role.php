@@ -2,44 +2,49 @@
 
 namespace App\Models;
 
-use App\Traits\HasSearch;
-use Illuminate\Database\Eloquent\Builder;
+use App\Models\Concerns\HasSearch;
+use App\Models\Concerns\TracksAuthor;
 use Spatie\Permission\Models\Role as SpatieRole;
 
 /**
  * Application role on top of the spatie model.
  *
- * The base spatie model uses `$guarded = []` (everything is mass assignable).
- * Here we guard `is_system`: this flag marks non-deletable/non-renamable system
- * roles (admin/operator) and must NOT come from user input — otherwise a careless
- * `Role::create($request->all())` would bypass the system-role protection.
- * Trusted code (the seeder) sets the flag via explicit assignment: `$role->is_system = true`.
+ * The base spatie model has `$guarded = []` (everything is mass-assignable).
+ * Here `is_system` is guarded: the flag marks system roles (admin/operator)
+ * that cannot be deleted or renamed, and it must NOT come from user input —
+ * otherwise a careless `Role::create($request->all())` would bypass the system
+ * role protection. Trusted code (the seeder) sets the flag by explicit
+ * assignment: `$role->is_system = true`.
  *
- * `created_by`/`updated_by` stay fillable — they are set by RoleService from the
- * actor's id (server side), not from user input.
+ * `created_by`/`updated_by` stay fillable — RoleService sets them from the
+ * actor id (on the server), not from user input. The creator() and editor()
+ * relations come from TracksAuthor.
  *
- * The model is wired in as canonical via config/permission.php → models.role.
+ * The model is registered as the main one via config/permission.php → models.role.
  */
 class Role extends SpatieRole
 {
-    use HasSearch;
+    use HasSearch, TracksAuthor;
 
     /** @var list<string> */
     protected $guarded = ['id', 'is_system'];
 
-    /** Search by name and description (substring, LIKE-escaped). */
-    public function scopeSearch(Builder $query, ?string $search): Builder
+    /** @var list<string> Search by name and description (HasSearch). */
+    protected array $searchable = ['name', 'description'];
+
+    /** @return array<string, string> */
+    protected function casts(): array
     {
-        return $this->scopeSearchLike($query, $search, ['name', 'description']);
+        return ['is_system' => 'boolean'];
     }
 
     /**
-     * Keep the polymorphic subject type equal to the base spatie class.
+     * The polymorphic subject type stays equal to the base spatie class.
      *
      * The activity log (ActivityLog) writes subject_type via getMorphClass(); the
-     * type is deliberately kept stable (see the App\Models\ActivityLog header and
-     * config/audit.php → subjects). Swapping the model for this subclass to guard
-     * is_system must not change the already accumulated subject_type of roles.
+     * type is deliberately stable (see the App\Models\ActivityLog header and
+     * config/activity.php → subjects). Swapping the model for this subclass to
+     * guard is_system must not change the subject_type already stored for roles.
      */
     public function getMorphClass(): string
     {

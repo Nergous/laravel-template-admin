@@ -23,7 +23,6 @@ import { useVisitState } from "@/admin/composables/useVisitState";
 import { can } from "@/lib/can";
 import type { SharedProps } from "@/admin/types";
 import AdminCommandPalette from "./partials/AdminCommandPalette.vue";
-import NotificationBell from "./partials/NotificationBell.vue";
 import { buildNavSections, type NavItem } from "./partials/nav";
 
 // Persistent layout (see app.ts): mounted once for all admin pages. The page
@@ -85,7 +84,6 @@ watch(collapsed, (value) => {
 const isMobile = ref(false); // < 768px viewport
 const drawerOpen = ref(false);
 const user = computed(() => page.props.auth.user);
-const impersonator = computed(() => page.props.auth.impersonator ?? null);
 
 const MOBILE_BP = 768;
 function syncViewport() {
@@ -113,10 +111,6 @@ function onTopbarToggle() {
 }
 function closeDrawer() {
     drawerOpen.value = false;
-}
-
-function stopImpersonation() {
-    router.post("/admin/impersonation/stop");
 }
 
 // Record counts for the sidebar badges (shared prop from HandleInertiaRequests).
@@ -198,10 +192,24 @@ const paletteOpen = ref(false);
                 name: page.props.appName,
                 sub: 'Панель администрирования',
                 glyph: 'A',
+                logo: page.props.brandIcon || '/favicon.svg',
             }"
             @navigate="isMobile && closeDrawer()"
         >
             <template #footer>
+                <!-- The public site opens in a new tab so unsaved admin changes are not lost. -->
+                <a
+                    href="/"
+                    target="_blank"
+                    rel="noopener"
+                    class="sbf__theme sbf__site"
+                    aria-label="Открыть сайт в новой вкладке"
+                    title="Открыть сайт в новой вкладке"
+                    :class="{ 'sbf--collapsed': collapsed }"
+                >
+                    <NIcon name="ext" :size="18" />
+                    <span v-if="!collapsed">Открыть сайт</span>
+                </a>
                 <button
                     type="button"
                     class="sbf__theme"
@@ -252,19 +260,6 @@ const paletteOpen = ref(false);
         </NSidebar>
 
         <div class="admin__main">
-            <div v-if="impersonator && user" class="imp-banner" role="status">
-                <NIcon name="user" :size="16" />
-                <span class="imp-banner__text">
-                    Вы работаете от имени <b>{{ user.name }}</b
-                    >. Ваш аккаунт: {{ impersonator.name }}.
-                </span>
-                <NButton
-                    size="sm"
-                    variant="secondary"
-                    @click="stopImpersonation"
-                    >Вернуться к своему аккаунту</NButton
-                >
-            </div>
             <NTopbar
                 :title="title"
                 :subtitle="subtitle"
@@ -283,9 +278,6 @@ const paletteOpen = ref(false);
                         ><kbd>K</kbd></span
                     >
                 </button>
-                <template #right>
-                    <NotificationBell v-if="can('activity-log.view')" />
-                </template>
             </NTopbar>
 
             <!-- scroll-region: Inertia resets (or preserves) this scroll on visits. -->
@@ -367,21 +359,6 @@ const paletteOpen = ref(false);
     min-width: 0;
     display: flex;
     flex-direction: column;
-}
-.imp-banner {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding: 8px 24px;
-    background: var(--warn-bg);
-    color: var(--text);
-    border-bottom: 1px solid var(--warn);
-    font-size: 13.5px;
-}
-.imp-banner__text {
-    flex: 1;
-    min-width: 200px;
 }
 .admin__backdrop {
     position: fixed;
@@ -530,6 +507,9 @@ const paletteOpen = ref(false);
 }
 .sbf__theme.sbf--collapsed {
     justify-content: center;
+}
+.sbf__site {
+    text-decoration: none;
 }
 .sbf__user {
     display: flex;

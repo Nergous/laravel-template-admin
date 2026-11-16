@@ -9,37 +9,22 @@ import {
     NButton,
     NCard,
     NEmptyState,
-    NConfirmDialog,
 } from "nergous-ui-vue";
 import { usePageHeader } from "@/admin/composables/usePageHeader";
-import type { SharedProps } from "@/admin/types";
+import TrashConfirmDialog from "@/admin/components/TrashConfirmDialog.vue";
+import type { AuditLog, SharedProps } from "@/admin/types";
 import { can } from "@/lib/can";
 import { listUrl } from "@/lib/listUrl";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { swatchColor } from "@/lib/swatch";
 import { activityVisual as visual } from "@/admin/activityVisuals";
 
-interface UserActivity {
-    id: number;
-    action: string;
-    actionLabel: string;
-    actor: string;
-    subject: string;
-    subjectType: string;
-    changesCount: number;
-    createdAt: string | null;
-}
-
 const props = defineProps({
+    // user.can_manage is the server rule (UserPolicy): may the current user edit/delete this account.
     user: { type: Object, required: true },
-    // Server rule (RbacGuard::canManageUser): may the current user edit/delete this account.
-    canManage: { type: Boolean, default: false },
     isSelf: { type: Boolean, default: false },
-    // Server rule (Impersonation::canImpersonate): users.impersonate, another active
-    // account the current user may manage, never a superadmin.
-    canImpersonate: { type: Boolean, default: false },
     // Latest entries where the user is the author or the subject (activity-log.view only).
-    activity: { type: Array as PropType<UserActivity[]>, default: () => [] },
+    activity: { type: Array as PropType<AuditLog[]>, default: () => [] },
     activityLinks: {
         type: Object as PropType<{ byUser: string; aboutUser: string } | null>,
         default: null,
@@ -51,15 +36,16 @@ const page = usePage<SharedProps>();
 const canDelete = computed(
     () =>
         can("users.delete") &&
-        props.canManage &&
+        props.user.can_manage &&
         page.props.auth.user?.id !== props.user.id,
 );
 const deleteOpen = ref(false);
 const deleting = ref(false);
 
-function confirmDelete() {
+function confirmDelete(force: boolean) {
     deleting.value = true;
     router.delete(`/admin/users/${props.user.id}`, {
+        data: force ? { force: 1 } : undefined,
         onFinish: () => {
             deleting.value = false;
             deleteOpen.value = false;
@@ -77,25 +63,8 @@ async function copyLink() {
     }
 }
 
-const impersonateOpen = ref(false);
-const impersonating = ref(false);
-
-function confirmImpersonate() {
-    impersonating.value = true;
-    router.post(
-        `/admin/users/${props.user.id}/impersonate`,
-        {},
-        {
-            onFinish: () => {
-                impersonating.value = false;
-                impersonateOpen.value = false;
-            },
-        },
-    );
-}
-
-function metaFor(log: UserActivity) {
-    return log.changesCount > 0 ? `${log.changesCount} изм.` : "";
+function metaFor(log: AuditLog) {
+    return log.changes_count > 0 ? `${log.changes_count} изм.` : "";
 }
 
 usePageHeader(() => ({
@@ -113,13 +82,6 @@ usePageHeader(() => ({
                     copyState || "Скопировать ссылку"
                 }}</NButton>
                 <NButton
-                    v-if="canImpersonate"
-                    variant="secondary"
-                    icon="eye"
-                    @click="impersonateOpen = true"
-                    >Войти как пользователь</NButton
-                >
-                <NButton
                     v-if="canDelete"
                     variant="danger"
                     icon="trash"
@@ -127,7 +89,7 @@ usePageHeader(() => ({
                     >Удалить</NButton
                 >
                 <NButton
-                    v-if="can('users.edit') && canManage"
+                    v-if="can('users.edit') && user.can_manage"
                     :as="Link"
                     :href="`/admin/users/${user.id}/edit`"
                     variant="primary"
@@ -151,12 +113,6 @@ usePageHeader(() => ({
                             tone="danger"
                             pill
                             >Заблокирован</NBadge
-                        >
-                        <NBadge
-                            v-if="user.must_change_password"
-                            tone="warn"
-                            pill
-                            >Должен сменить пароль</NBadge
                         >
                     </div>
                     <p v-if="user.is_active === false" class="blocked-reason">
@@ -217,10 +173,10 @@ usePageHeader(() => ({
                                 :tone="visual(log.action).tone"
                                 :icon="visual(log.action).icon"
                                 :actor="log.actor"
-                                :verb="log.actionLabel"
+                                :verb="log.action_label"
                                 :object="log.subject"
-                                :tag="log.subjectType"
-                                :time="formatRelative(log.createdAt)"
+                                :tag="log.subject_type"
+                                :time="formatRelative(log.created_at)"
                                 :meta="metaFor(log)"
                             />
                         </li>
@@ -262,11 +218,11 @@ usePageHeader(() => ({
                         </div>
                         <div>
                             <dt>Создал</dt>
-                            <dd>{{ user.creator?.name ?? "—" }}</dd>
+                            <dd>{{ user.creator_name ?? "—" }}</dd>
                         </div>
                         <div>
                             <dt>Изменил</dt>
-                            <dd>{{ user.editor?.name ?? "—" }}</dd>
+                            <dd>{{ user.editor_name ?? "—" }}</dd>
                         </div>
                     </dl>
                 </NCard>
@@ -274,23 +230,12 @@ usePageHeader(() => ({
         </div>
     </div>
 
-    <NConfirmDialog
+    <TrashConfirmDialog
         v-model="deleteOpen"
         :loading="deleting"
         :message="`Отправить пользователя «${user.name}» в корзину?`"
-        confirm-label="В корзину"
+        :force-message="`Удалить пользователя «${user.name}» навсегда? Восстановить его будет нельзя.`"
         @confirm="confirmDelete"
-        danger
-    />
-
-    <NConfirmDialog
-        v-model="impersonateOpen"
-        :loading="impersonating"
-        title="Войти как пользователь"
-        :message="`Вы начнёте работать от имени «${user.name}» и увидите панель с его правами. Ваши действия будут записаны в журнал с пометкой о вас. Вернуться к своему аккаунту можно в любой момент.`"
-        confirm-label="Войти"
-        :danger="false"
-        @confirm="confirmImpersonate"
     />
 </template>
 

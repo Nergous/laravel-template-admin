@@ -12,9 +12,8 @@ import {
     NDrawer,
     NModal,
     NFormField,
-    NInput,
+    NDatePicker,
     NButton,
-    NSelect,
     NMultiSelect,
     NFilterChips,
 } from "nergous-ui-vue";
@@ -38,7 +37,6 @@ type Filters = {
     subject_type?: string | null;
     subject_id?: string | null;
     user_id?: string | null;
-    impersonator_id?: string | null;
     date_from?: string | null;
     date_to?: string | null;
 };
@@ -49,8 +47,6 @@ const props = defineProps({
     actions: { type: Array as PropType<Option[]>, default: () => [] },
     subjectTypes: { type: Array as PropType<Option[]>, default: () => [] },
     actors: { type: Array as PropType<Option[]>, default: () => [] },
-    // Administrators who acted "as" someone; the filter shows only when there are any.
-    impersonators: { type: Array as PropType<Option[]>, default: () => [] },
     // Name of the entity picked by subject_type + subject_id (links from cards).
     subjectLabel: { type: String as PropType<string | null>, default: null },
     fieldLabels: {
@@ -72,7 +68,6 @@ const action = ref(parseList(props.filters.action));
 const subjectType = ref(parseList(props.filters.subject_type));
 const subjectId = ref(props.filters.subject_id ?? "");
 const userId = ref(parseList(props.filters.user_id));
-const impersonatorId = ref(props.filters.impersonator_id ?? "");
 const dateFrom = ref(props.filters.date_from ?? "");
 const dateTo = ref(props.filters.date_to ?? "");
 
@@ -82,20 +77,11 @@ function currentParams() {
         subject_type: joinList(subjectType.value),
         subject_id: subjectId.value || undefined,
         user_id: joinList(userId.value),
-        impersonator_id: impersonatorId.value || undefined,
         date_from: dateFrom.value || undefined,
         date_to: dateTo.value || undefined,
     };
 }
 const { reload } = useIndexFilters("/admin/activity-log", currentParams);
-
-const impersonatorOptions = computed(() => [
-    { value: "", label: "Любой режим входа" },
-    ...props.impersonators.map((o) => ({
-        value: o.value,
-        label: `Действовал ${o.label}`,
-    })),
-]);
 
 const hasFilters = computed(() =>
     Object.values(currentParams()).some((v) => v !== undefined),
@@ -106,7 +92,6 @@ function resetFilters() {
     subjectType.value = [];
     subjectId.value = "";
     userId.value = [];
-    impersonatorId.value = "";
     dateFrom.value = "";
     dateTo.value = "";
     reload({ page: 1 });
@@ -123,8 +108,6 @@ function clearSubject() {
     reload({ page: 1 });
 }
 
-const labelIn = (options: Option[], value: string) =>
-    options.find((option) => option.value === value)?.label ?? value;
 const dayLabel = (iso: string) => iso.split("-").reverse().join(".");
 const activeFilters = computed(() => {
     const list: FilterChip[] = [
@@ -143,12 +126,6 @@ const activeFilters = computed(() => {
             value: props.subjectLabel ?? `#${subjectId.value}`,
         });
     list.push(...listChips("user", "Пользователь", userId.value, props.actors));
-    if (impersonatorId.value)
-        list.push({
-            key: "impersonator",
-            label: "Вход от имени",
-            value: labelIn(props.impersonators, impersonatorId.value),
-        });
     if (dateFrom.value || dateTo.value)
         list.push({
             key: "period",
@@ -171,7 +148,6 @@ function removeFilter(key: string) {
     }
     if (name === "user" && value !== null)
         userId.value = without(userId.value, value);
-    if (name === "impersonator") impersonatorId.value = "";
     if (name === "period") {
         dateFrom.value = "";
         dateTo.value = "";
@@ -210,7 +186,7 @@ const exportUrl = computed(() => {
 });
 
 function metaFor(log: AuditLog) {
-    const n = Number(log.changesCount ?? 0);
+    const n = Number(log.changes_count ?? 0);
     return n > 0 ? `${n} изм.` : "";
 }
 
@@ -349,27 +325,19 @@ usePageHeader(() => ({
                     class="filters__select"
                     @update:model-value="reload({ page: 1 })"
                 />
-                <NSelect
-                    v-if="impersonators.length || impersonatorId"
-                    v-model="impersonatorId"
-                    :options="impersonatorOptions"
-                    aria-label="Вход от имени"
-                    class="filters__select"
-                    @update:model-value="reload({ page: 1 })"
-                />
                 <div class="filters__dates">
-                    <NInput
+                    <NDatePicker
                         v-model="dateFrom"
-                        type="date"
+                        class="filters__date"
                         :max="dateTo || today"
                         aria-label="С даты"
                         @update:model-value="reload({ page: 1 })"
                     />
                     <span class="filters__dash">—</span>
-                    <NInput
+                    <NDatePicker
                         v-model="dateTo"
-                        type="date"
-                        :min="dateFrom || undefined"
+                        class="filters__date"
+                        :min="dateFrom"
                         :max="today"
                         aria-label="По дату"
                         @update:model-value="reload({ page: 1 })"
@@ -417,7 +385,7 @@ usePageHeader(() => ({
                         class="feed-row"
                         role="button"
                         tabindex="0"
-                        :aria-label="`Открыть событие: ${log.actor} ${log.actionLabel} ${log.subject}`"
+                        :aria-label="`Открыть событие: ${log.actor} ${log.action_label} ${log.subject}`"
                         @click="openDetail(log)"
                         @keydown.enter.prevent="openDetail(log)"
                         @keydown.space.prevent="openDetail(log)"
@@ -426,10 +394,10 @@ usePageHeader(() => ({
                             :tone="visual(log.action).tone"
                             :icon="visual(log.action).icon"
                             :actor="log.actor"
-                            :verb="log.actionLabel"
+                            :verb="log.action_label"
                             :object="log.subject"
-                            :tag="log.subjectType"
-                            :time="formatRelative(log.createdAt)"
+                            :tag="log.subject_type"
+                            :time="formatRelative(log.created_at)"
                             :meta="metaFor(log)"
                         />
                     </div>
@@ -462,7 +430,7 @@ usePageHeader(() => ({
     <NDrawer
         v-model="detailOpen"
         title="Событие журнала"
-        :subtitle="selected ? formatDateTime(selected.createdAt) : ''"
+        :subtitle="selected ? formatDateTime(selected.created_at) : ''"
     >
         <template v-if="selected">
             <dl class="detail">
@@ -473,28 +441,30 @@ usePageHeader(() => ({
                 <div class="detail__row">
                     <dt class="detail__key">Действие</dt>
                     <dd class="detail__val">
-                        {{ selected.actionLabel || "—" }}
+                        {{ selected.action_label || "—" }}
                     </dd>
                 </div>
                 <div class="detail__row">
                     <dt class="detail__key">Объект</dt>
                     <dd class="detail__val detail__val--object">
                         <Link
-                            v-if="selected.subjectUrl"
-                            :href="selected.subjectUrl"
+                            v-if="selected.subject_url"
+                            :href="selected.subject_url"
                             class="detail__link"
                             >{{ selected.subject || "—" }}</Link
                         >
                         <span v-else>{{ selected.subject || "—" }}</span>
-                        <span v-if="selected.subjectType" class="detail__tag">{{
-                            selected.subjectType
-                        }}</span>
+                        <span
+                            v-if="selected.subject_type"
+                            class="detail__tag"
+                            >{{ selected.subject_type }}</span
+                        >
                     </dd>
                 </div>
                 <div class="detail__row">
                     <dt class="detail__key">Когда</dt>
                     <dd class="detail__val detail__val--mono">
-                        {{ formatDateTime(selected.createdAt) }}
+                        {{ formatDateTime(selected.created_at) }}
                     </dd>
                 </div>
             </dl>
@@ -591,9 +561,8 @@ usePageHeader(() => ({
             :error="clearForm.errors.before"
             required
         >
-            <NInput
+            <NDatePicker
                 v-model="clearForm.before"
-                type="date"
                 :max="today"
                 :error="!!clearForm.errors.before"
             />
@@ -641,6 +610,9 @@ usePageHeader(() => ({
 }
 .filters__dash {
     color: var(--text-3);
+}
+.filters__date {
+    width: 168px;
 }
 .filters__presets {
     display: flex;

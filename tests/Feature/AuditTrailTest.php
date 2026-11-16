@@ -2,10 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Events\ActivityOccurred;
 use App\Models\ActivityLog;
 use App\Models\Role;
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\System\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -27,22 +28,20 @@ class AuditTrailTest extends TestCase
         $this->assertSame(['restored'], ActivityLog::pluck('action')->all());
     }
 
-    public function test_logout_is_logged_but_stays_out_of_the_bell(): void
+    public function test_logout_is_logged(): void
     {
         $user = $this->actingAsAdmin();
-        $other = User::factory()->create();
 
         $this->post(route('logout'))->assertRedirect(route('login'));
 
         $log = ActivityLog::where('action', 'logout')->firstOrFail();
         $this->assertSame($user->id, $log->user_id);
-        $this->assertSame(0, ActivityLog::forBell($other)->where('action', 'logout')->count());
     }
 
     public function test_settings_changes_are_logged_with_a_diff(): void
     {
         $this->actingAsAdmin();
-        $payload = ['settings' => Setting::grouped()];
+        $payload = ['settings' => app(Settings::class)->all()];
         $payload['settings']['security']['login_throttle'] = 9;
 
         $this->put(route('admin.settings.update'), $payload)->assertRedirect();
@@ -95,7 +94,7 @@ class AuditTrailTest extends TestCase
         $count = function (int $rows) use ($admin): int {
             foreach (User::factory()->count($rows)->create() as $author) {
                 $this->actingAs($author);
-                ActivityLog::record($author, 'updated');
+                ActivityOccurred::dispatch($author, 'updated');
             }
             $this->actingAs($admin);
 
@@ -125,19 +124,6 @@ class AuditTrailTest extends TestCase
                 ->where('subjectLabel', 'First')
                 ->where('logs.data', fn ($logs) => collect($logs)->every(fn ($log) => $log['subject'] === 'First')
                     && collect($logs)->isNotEmpty()));
-    }
-
-    public function test_bell_counter_endpoint(): void
-    {
-        $viewer = $this->actingAsUserWith(['activity-log.view']);
-        $other = User::factory()->create();
-        $before = $this->getJson(route('admin.notifications.count'))->json('count');
-
-        $this->actingAs($other);
-        ActivityLog::record($other, 'updated');
-        $this->actingAs($viewer);
-
-        $this->getJson(route('admin.notifications.count'))->assertOk()->assertJson(['count' => $before + 1]);
     }
 
     public function test_role_deletion_is_logged_after_the_delete(): void

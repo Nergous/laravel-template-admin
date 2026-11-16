@@ -88,7 +88,7 @@ class PermissionTest extends TestCase
 
         $this->assertFalse($bob->hasPermissionTo('users.view'));
 
-        $this->patch(route('admin.permissions.sync'), [
+        $this->patch(route('admin.permissions.toggle'), [
             'role_id' => $editor->id,
             'permission' => 'users.view',
             'granted' => true,
@@ -96,7 +96,7 @@ class PermissionTest extends TestCase
 
         $this->assertTrue($bob->fresh()->hasPermissionTo('users.view'));
 
-        $this->patch(route('admin.permissions.sync'), [
+        $this->patch(route('admin.permissions.toggle'), [
             'role_id' => $editor->id,
             'permission' => 'users.view',
             'granted' => false,

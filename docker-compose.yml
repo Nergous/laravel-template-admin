@@ -1,15 +1,18 @@
 # =============================================================================
-#  Self-contained PRODUCTION stack: app + db (MariaDB) + redis + queue + scheduler.
+#  Self-contained PRODUCTION stack: app + db (MariaDB) + scheduler.
+#  Sessions and cache live in the database (SESSION_DRIVER=database, CACHE_STORE=database),
+#  jobs (media processing, manual backups) run synchronously inside the
+#  request (QUEUE_CONNECTION=sync). No Redis and no separate queue worker needed.
 #
 #  Run:
 #    cp .env.example .env        # then set APP_ENV=production, APP_DEBUG=false,
-#                                # APP_KEY (php artisan key:generate), DB_*/REDIS_* as below
+#                                # APP_KEY (php artisan key:generate), DB_* as below
 #    docker compose up -d --build
 #
 #  For development use a separate file:
 #    docker compose -f compose.dev.yaml up
 #
-#  By default the stack is FULLY isolated (its own DB and redis in containers).
+#  By default the stack is FULLY isolated (its own DB in a container).
 #  To connect to an already existing external DB — set DB_HOST to the external
 #  address and comment out the `db` service + its depends_on.
 #
@@ -57,12 +60,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
-      # Liveness: GET /up checks the database and writable storage only. The queue
-      # backlog is NOT part of it (a long job must not mark the web container
-      # unhealthy, and queue/scheduler wait for this check); see /up?full=1.
+      # Liveness: GET /up checks the database and writable storage only.
+      # The scheduler waits for this check to pass (service_healthy).
       test: ["CMD", "wget", "-qO-", "http://localhost:8000/up"]
       interval: 30s
       timeout: 5s
@@ -77,54 +77,17 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  queue:
-    # Queue worker: processes Jobs (media uploads/replacements UploadMedia and
-    # manual backups CreateBackup). Don't want a worker — set QUEUE_CONNECTION=sync in .env and
-    # don't bring up this service: the jobs run right inside the app HTTP request. The
-    # trade-off and details are in the README (Troubleshooting / Docker section).
-    image: ${APP_IMAGE:-laravel-admin-template}:latest
-    container_name: ${APP_CONTAINER_NAME:-admin-template}-queue
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      RUN_MIGRATIONS: "false"
-      RUN_SEEDS: "false"
-      OPTIMIZE: "false"
-    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
-    volumes:
-      - storage-data:/app/storage
-    networks: [internal]
-    depends_on:
-      # service_healthy ⇒ app has already passed entrypoint (migrations applied, the
-      # jobs table exists) — the worker doesn't go into a restart loop on a cold start.
-      # /up does not look at the queue, so a backlog cannot keep the worker that
-      # would drain it from starting. restart: unless-stopped remains a safety net.
-      app:
-        condition: service_healthy
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      # The worker has no HTTP endpoint: liveness = artisan responds and the DB is reachable.
-      test: ["CMD", "php", "artisan", "db:show", "--quiet"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    cpus: "1.0"
-    mem_limit: 384m
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   scheduler:
     image: ${APP_IMAGE:-laravel-admin-template}:latest
     container_name: ${APP_CONTAINER_NAME:-admin-template}-scheduler
+    # The app service builds the image; without this compose tries to pull it from Docker Hub.
+    pull_policy: never
     restart: unless-stopped
     env_file: [.env]
+    # The FrankenPHP image healthcheck polls Caddy, which does not run here:
+    # without disabling it the scheduler would always be unhealthy.
+    healthcheck:
+      disable: true
     environment:
       RUN_MIGRATIONS: "false"
       RUN_SEEDS: "false"
@@ -137,7 +100,7 @@ services:
       - storage-data:/app/storage
     networks: [internal]
     depends_on:
-      # see queue: we wait for service_healthy so we don't start before migrations.
+      # Wait for app to be service_healthy so we do not start before migrations.
       app:
         condition: service_healthy
       db:
@@ -183,30 +146,8 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  redis:
-    image: redis:7-alpine
-    container_name: ${APP_CONTAINER_NAME:-admin-template}-redis
-    restart: unless-stopped
-    command: redis-server --appendonly yes
-    volumes:
-      - redis-data:/data
-    networks: [internal]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    cpus: "0.5"
-    mem_limit: 256m
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 volumes:
   db-data:
-  redis-data:
   storage-data:
 
 networks:

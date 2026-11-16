@@ -3,7 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Models\User;
-use App\Services\UserService;
+use App\Services\Access\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -18,7 +18,7 @@ class UserServiceTest extends TestCase
     {
         Role::findOrCreate('editor', 'web');
 
-        $user = (new UserService)->create([
+        $user = app(UserService::class)->create([
             'name' => 'Jane',
             'email' => 'jane@example.test',
             'password' => 'Password1',
@@ -34,7 +34,7 @@ class UserServiceTest extends TestCase
         $user = User::factory()->create();
         $original = $user->password;
 
-        (new UserService)->update($user, [
+        app(UserService::class)->update($user, [
             'name' => 'Renamed',
             'email' => $user->email,
             'password' => null,
@@ -52,7 +52,7 @@ class UserServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
 
-        (new UserService)->update($admin, [
+        app(UserService::class)->update($admin, [
             'name' => $admin->name,
             'email' => $admin->email,
             'password' => null,
@@ -65,7 +65,7 @@ class UserServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
 
-        (new UserService)->delete($user, $user);
+        app(UserService::class)->delete($user, $user);
     }
 
     public function test_delete_soft_deletes_another_user(): void
@@ -73,7 +73,7 @@ class UserServiceTest extends TestCase
         $actor = User::factory()->create();
         $target = User::factory()->create();
 
-        (new UserService)->delete($target, $actor);
+        app(UserService::class)->delete($target, $actor);
 
         $this->assertSoftDeleted('users', ['id' => $target->id]);
     }

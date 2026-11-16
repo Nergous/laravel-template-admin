@@ -63,11 +63,7 @@ function toggleGroup(perms: Perm[]) {
             />
         </NFormField>
 
-        <NFormField
-            label="Описание"
-            :error="errors.description"
-            hint="Короткое пояснение, что разрешает роль"
-        >
+        <NFormField label="Описание" :error="errors.description">
             <NTextarea
                 v-model="description"
                 :rows="2"

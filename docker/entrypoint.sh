@@ -109,7 +109,7 @@ fi
 # already ships it (the code there is read-only for www-data); dev creates it once.
 [ -L public/storage ] || as_app php artisan storage:link --force --no-interaction || true
 
-# Migrations (web only; queue/scheduler start with RUN_MIGRATIONS=false).
+# Migrations (web only; the scheduler starts with RUN_MIGRATIONS=false).
 if [ "${RUN_MIGRATIONS:-false}" = "true" ]; then
     as_app php artisan migrate --force --no-interaction
 fi

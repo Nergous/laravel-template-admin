@@ -214,7 +214,9 @@ usePageHeader(() => ({
                         :aria-label="`Редактировать роль ${roleRow(row).name}`"
                     />
                     <NButton
-                        v-if="can('roles.delete') && !roleRow(row).is_system"
+                        v-if="
+                            roleRow(row).can_delete && !roleRow(row).is_system
+                        "
                         variant="ghost"
                         tone="danger"
                         icon="trash"

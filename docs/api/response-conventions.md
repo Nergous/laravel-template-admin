@@ -11,11 +11,22 @@ re-read from each controller.
 | **Redirect** | `redirect()->route(...)` or `back()` with flash messages and/or validation errors | admin mutations (`store`, `update`, `destroy`, bulk actions) |
 | **JSON** | `response()->json(...)` or `204` | the XHR endpoints in [json-endpoints.md](json-endpoints.md) |
 
+Records reach the frontend only through API Resources (`app/Http/Resources`,
+grouped by section: `Access`, `Account`, `Media`, `System`), never as raw
+models. Their keys are **snake_case** (`creator_name`, `editor_name`,
+`can_manage`, `can_delete`, `max_size_kb`, …); the TypeScript side is
+`resources/js/admin/types.ts`. Page-level props of Inertia pages (`perPage`,
+`currentSort`, …) stay camelCase.
+
 Mutations redirect; the result is shown as a toast from `flash` on the next
 page. After a list action the controller returns to the list the user started
 from, with its filters, sorting and page (`Controller::redirectToList()`). A
 page number past the end (after deleting the last rows) redirects to the last
 page (`Controller::redirectPastLastPage()`).
+
+A record that cannot be deleted because something still references it throws
+an `App\Exceptions\ReferenceInUseException` (for media:
+`MediaInUseException`); it renders as a redirect back with the `error` flash.
 
 ## Shared props
 
@@ -25,23 +36,29 @@ built for admin pages and never for a public site added later.
 
 | Prop | Contents |
 | ---- | -------- |
-| `appName` | application name (`config('app.name')`, set from the settings) |
+| `appName` | application name from the settings (`general.app_name`), falling back to `config('app.name')` when empty. The settings do not overwrite `config('app.name')` |
+| `brandIcon` | sidebar brand icon: the favicon from the settings, else `/favicon.svg` |
+| `accent` | accent color preset key (settings → appearance, `App\Enums\AccentPreset`); mirrored on `<html data-accent>` |
 | `timezone` | display time zone (settings → general); dates are stored in UTC |
 | `sessionLifetime` | idle session lifetime in minutes (settings → security); `null` for guests and for a "remember me" session |
-| `auth.user` | `{ id, name, email, roles, must_change_password }` or `null` |
-| `auth.impersonator` | `{ id, name }` of the administrator working "as" this user, else `null` |
+| `auth.user` | `{ id, name, email, roles }` or `null` |
 | `auth.can` | flat list of the user's permission names; the superadmin gets every permission. Read by `can()` in `resources/js/lib/can.ts` for conditional rendering only |
-| `counts` | lazy sidebar badges: `users`, `roles`, `permissions`, `media` (cached for 30 s, `null` without the section's `*.view`) and `recentActivity` (personal unread bell count, `null` without `activity-log.view`) |
+| `counts` | lazy sidebar badges: `users`, `roles`, `permissions`, `media` (`App\Services\System\SidebarCounts`, cached for 30 s, `null` without the section's `*.view`) |
 | `flash` | `success`, `error`, `warning`, `info` messages |
 
 ## Errors
 
-**Admin** (`/admin/*`): with `APP_DEBUG=false`, statuses 403, 404, 419, 429, 500
-and 503 render the Inertia `Error` page (also in maintenance mode). With
-`APP_DEBUG=true` the framework's own error screen is shown. Plain JSON requests
-(`Accept: application/json` without `X-Inertia`) always get the raw status.
+Every error response passes through `App\Exceptions\ErrorPageResponder`
+(hooked up in `bootstrap/app.php`):
 
-**Outside `/admin`:** a non-JSON 404 redirects to `/admin` (`bootstrap/app.php`).
+- **Admin** (`/admin/*`): with `APP_DEBUG=false`, statuses 403, 404, 419, 429,
+  500 and 503 render the Inertia `Error` page (also in maintenance mode). With
+  `APP_DEBUG=true` the framework's own error screen is shown. Plain JSON
+  requests (`Accept: application/json` without `X-Inertia`) always get the raw
+  status.
+- **Outside `/admin`:** there is no public site, so a non-JSON 404 page request
+  redirects to `/admin` (also with `APP_DEBUG=true`).
+- **419** on a non-JSON request redirects back with a warning, see below.
 
 ## CSRF and 419
 
@@ -64,12 +81,13 @@ List pages return a standard Laravel paginator inside an Inertia prop (`data`,
 `current_page`, `last_page`, `per_page`, `total`, `links`, `from`, `to`). Every
 list uses `->withQueryString()`, so filters and sorting survive paging.
 
-Page sizes (`app/Http/Pagination`):
+Page sizes (the `PaginatesList` trait of the list's filter request,
+`app/Http/Requests/Concerns`):
 
 | List | Page size |
 | ---- | --------- |
-| users, user trash, roles | `?per_page` from 10, 25, 50, 100; default 10 (`PerPage`) |
-| media library | the same options, default 25 (`MediaPerPage`) |
+| users, user trash, roles | `?per_page` from 10, 25, 50, 100; default 10 |
+| media library | the same options, default 25 (`MediaFilterRequest::defaultPerPage()`) |
 | activity log | 30, fixed |
 | queue | 20, fixed |
 | media picker (`/admin/media/browse`) | 24, fixed |
@@ -78,22 +96,38 @@ Values outside the whitelist fall back to the default. Pages that take
 `per_page` also receive `perPage` and `perPageOptions` props for
 `AdminPagination.vue`.
 
-Sorting uses `App\Http\Sorts\*` strategies with a whitelist of fields;
-`currentSort` and `currentDirection` come with the paginator.
+Sorting reads `?sort` and `?direction` through the `SortsList` trait of the
+list's filter request: each request whitelists its columns in `sortable()`, and
+anything else falls back to the default. `currentSort` and `currentDirection`
+come with the paginator.
+
+Filters are validated by the same `*FilterRequest`. Multi-value filters are
+comma lists in the address (`?status=active,blocked`) and match any of their
+values.
+
+## Exports
+
+`GET …/export` routes (users, activity log) take the list filters plus
+`format` (`csv` or `xlsx`, CSV by default; any other value is a 422) and
+`columns` (comma list of column keys, empty for all). The response is a
+streamed `App\Http\Responses\TableDownload` built from an `app/Exports/*`
+definition (`App\Support\Export\TableExport`) and written by `CsvWriter` or
+`XlsxWriter`. Rows are streamed in chunks, so a large list is never loaded into
+memory. The user export is logged (`users_exported`, with the row count).
 
 ## Infrastructure routes
 
 | Method | URI | What |
 | ------ | --- | ---- |
-| GET | `/up` | liveness: the database answers `select 1` and `storage/app` is writable; 200 or 500. Used by the Docker health check; queue and scheduler containers wait for it. A queue backlog does not fail it |
+| GET | `/up` | liveness (`App\Listeners\DiagnoseHealth`): the database answers `select 1` and `storage/app` is writable; 200 or 500. Used by the Docker health check; the scheduler container waits for it. A queue backlog does not fail it |
 | GET | `/up?full=1` | the same plus the queue: 500 when, with the `database` queue driver, a runnable job has waited more than 15 minutes (`QueueStats::STALLED_AFTER_MINUTES`). For external monitoring |
 | GET | `/` | redirect to `/admin` |
-| GET | `/robots.txt` | generated from the SEO settings; `Disallow: /` when indexing is off |
-| GET | `/sitemap.xml` | URLs from the sources registered in `App\Support\Sitemap` (none by default); 404 when indexing or the sitemap is off |
+| GET | `/robots.txt` | `Site\RobotsController`, generated from the SEO settings; `Disallow: /` when indexing is off |
+| GET | `/sitemap.xml` | `Site\SitemapController`: URLs from the `SitemapSource` classes tagged with `App\Services\Site\Sitemap::SOURCES` (none by default); 404 when indexing or the sitemap is off |
 
 ## Media metadata
 
-`PATCH /admin/media/{media}` (`RenameMediaRequest`, `media.edit`) updates any of:
+`PATCH /admin/media/{media}` (`UpdateMediaRequest`, `media.edit`) updates any of:
 
 - `original_name` — display name, required when sent, ≤255, no `/`, `\` or
   control characters;
@@ -112,4 +146,3 @@ The `/admin/*` routes are versionless and change together with the Vue code in
 the same commit. If an external API is ever needed, it goes into its own prefix
 (for example `/api/v1`) with token authentication, outside the admin session and
 CSRF, and with its own documentation.
-

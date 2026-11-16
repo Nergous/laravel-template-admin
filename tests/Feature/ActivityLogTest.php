@@ -27,22 +27,6 @@ class ActivityLogTest extends TestCase
             );
     }
 
-    public function test_recent_feed_forbidden_without_activity_log_view(): void
-    {
-        $this->actingAsUserWith([]); // authenticated, but without activity-log.view
-
-        $this->getJson(route('admin.notifications.recent'))->assertForbidden();
-    }
-
-    public function test_recent_feed_accessible_with_activity_log_view(): void
-    {
-        $this->actingAsUserWith(['activity-log.view']);
-
-        $this->getJson(route('admin.notifications.recent'))
-            ->assertOk()
-            ->assertJsonStructure(['count', 'items']);
-    }
-
     public function test_clear_forbidden_without_delete_permission(): void
     {
         // Has the view permission but not the clear one: granularity of view != delete.

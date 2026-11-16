@@ -143,7 +143,7 @@ function ariaSort(col: string) {
                     </span>
                 </span>
                 <span class="ftable__cell ftable__muted" role="cell">{{
-                    f.created_local || "—"
+                    formatDateTime(f.created_at)
                 }}</span>
                 <span class="ftable__cell ftable__muted" role="cell"
                     >Папка</span
@@ -233,7 +233,7 @@ function ariaSort(col: string) {
                     </button>
                 </span>
                 <span class="ftable__cell ftable__muted" role="cell">{{
-                    m.created_local || formatDateTime(m.created_at)
+                    formatDateTime(m.created_at)
                 }}</span>
                 <span
                     class="ftable__cell ftable__muted ftable__ellipsis"

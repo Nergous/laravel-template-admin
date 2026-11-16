@@ -242,7 +242,7 @@ class RbacTest extends TestCase
         $editor = Role::create(['name' => 'editor', 'guard_name' => 'web']);
         $this->actingAsUserWith(['permissions.edit']);
 
-        $this->patch(route('admin.permissions.sync'), [
+        $this->patch(route('admin.permissions.toggle'), [
             'role_id' => $editor->id,
             'permission' => 'users.delete',
             'granted' => true,
@@ -257,7 +257,7 @@ class RbacTest extends TestCase
         $editor = Role::create(['name' => 'editor', 'guard_name' => 'web']);
         $this->actingAsUserWith(['permissions.edit', 'media.view']);
 
-        $this->patch(route('admin.permissions.sync'), [
+        $this->patch(route('admin.permissions.toggle'), [
             'role_id' => $editor->id,
             'permission' => 'media.view',
             'granted' => true,
@@ -272,7 +272,7 @@ class RbacTest extends TestCase
         $operator = Role::findByName('operator', 'web');
         $this->actingAsUserWith(['permissions.edit', 'media.view']);
 
-        $this->patch(route('admin.permissions.sync'), [
+        $this->patch(route('admin.permissions.toggle'), [
             'role_id' => $operator->id,
             'permission' => 'media.view',
             'granted' => false,

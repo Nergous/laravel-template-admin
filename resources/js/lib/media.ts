@@ -122,7 +122,6 @@ export interface FolderEntry {
     total: number;
     size: number;
     created_at: string | null;
-    created_local: string | null;
 }
 
 /** "A/B/C" → "A/B"; a top-level folder's parent is the root (""). */

@@ -1,5 +1,5 @@
 // Multi-value list filters: several choices of one filter travel as one
-// comma-separated query parameter (?type=article,interview), like the server
+// comma-separated query parameter (?role=admin,editor), like the server
 // reads them (App\Support\FilterValues). Choices of one filter combine with OR,
 // different filters with AND.
 
@@ -38,7 +38,7 @@ export function labelOf(
 
 /**
  * Text of a closed multi-select: the placeholder, the chosen label, or the
- * first chosen label with the count of the others ("Статья +2").
+ * first chosen label with the count of the others ("Администратор +2").
  */
 export function listSummary(
     values: readonly string[],

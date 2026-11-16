@@ -18,8 +18,6 @@ const VISUAL: Record<string, { tone: ActivityTone; icon: string }> = {
     logout: { tone: "info", icon: "log-out" },
     session_ended: { tone: "info", icon: "lock" },
     sessions_ended: { tone: "info", icon: "lock" },
-    impersonation_started: { tone: "accent", icon: "eye" },
-    impersonation_stopped: { tone: "accent", icon: "eye-off" },
     settings_updated: { tone: "info", icon: "settings" },
     users_exported: { tone: "info", icon: "download" },
     upload_failed: { tone: "danger", icon: "alert-triangle" },

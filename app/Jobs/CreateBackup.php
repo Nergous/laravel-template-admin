@@ -2,118 +2,59 @@
 
 namespace App\Jobs;
 
-use App\Models\ActivityLog;
 use App\Models\User;
-use App\Services\BackupService;
+use App\Services\System\Backup\BackupManager;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\TimeoutExceededException;
-use Illuminate\Support\Facades\Cache;
 
 /**
- * A manual backup requested from /admin/backups. Runs in the queue so a large
- * database does not hold the HTTP request.
+ * A manual backup requested from the /admin/backups page. With the sync queue
+ * (the default) it runs inside the request, with a queue worker in the background.
+ * The work itself and the page state (pending flag, last failure) live in BackupManager.
  *
- * While it waits or runs, the PENDING_KEY cache entry holds its token (the page
- * polls it). A failure is stored under FAILURE_KEY with a message that is safe to
- * show in the UI; the raw error (it may contain hosts, users or paths from the
- * dump tool) only goes to the application log.
- *
- * The job timeout is the dump tool timeout plus a margin (timeoutSeconds()), so
- * the tool normally stops first and handle() reports it. If the worker still
- * kills the job, failed() records the failure and clears the pending flag; the
- * half-written work file is removed by BackupService on its next run.
+ * The job timeout is the dump tool timeout plus a margin (BackupConfig::jobTimeout()),
+ * so usually the tool stops first and handle() deals with the failure. If the
+ * worker still kills the job, failed() records the failure and clears the
+ * pending flag; an unfinished work file is removed before the next dump.
  */
 class CreateBackup implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable;
 
-    public const PENDING_KEY = 'backups.pending';
-
-    public const FAILURE_KEY = 'backups.last_failure';
-
-    /** Set from config in the constructor; must stay below the queue retry_after (config/queue.php). */
-    public int $timeout;
-
-    /** A dump is not retried automatically: the admin sees the error and decides. */
+    /** The dump is not retried automatically: the administrator sees the error and decides. */
     public int $tries = 1;
 
+    /**
+     * @param  int|null  $userId  Who requested the backup; the id is stored, not the model: the job
+     *                            must report a failure even if the user is gone
+     * @param  int  $timeout  Job timeout in seconds; must stay below the queue's retry_after (config/queue.php)
+     */
     public function __construct(
         public readonly string $token,
-        public readonly ?int $userId = null,
-    ) {
-        $this->timeout = self::timeoutSeconds();
-    }
+        public readonly ?int $userId,
+        public int $timeout,
+    ) {}
 
-    /** Job timeout: the dump tool limit (config backup.timeout) plus a margin for encryption and upload. */
-    public static function timeoutSeconds(): int
+    public function handle(BackupManager $backups): void
     {
-        return BackupService::dumpTimeout() + 60;
-    }
-
-    public function handle(BackupService $backups): void
-    {
-        $user = $this->user();
-
-        try {
-            ActivityLog::actingAs($user, function () use ($backups) {
-                $result = $backups->create(BackupService::KIND_MANUAL);
-
-                ActivityLog::record(null, 'backup_created', $result['offsite_error'] !== null
-                    ? ['error' => [null, 'Копия не выгружена на внешний диск']]
-                    : null, $result['name']);
-            });
-        } catch (\Throwable $e) {
-            report($e);
-            $this->recordFailure(self::publicMessage($e));
-        } finally {
-            $this->releasePending();
-        }
+        $backups->runManual($this->token, $this->actor());
     }
 
     /**
-     * Called by the worker when the job dies outside handle() — killed on the
-     * timeout or lost and retried past $tries — so the page stops waiting and
-     * shows why.
+     * Called by the queue when the job died outside handle() — killed on timeout
+     * or lost and out of $tries — so the page stops waiting and shows the
+     * reason.
      */
     public function failed(?\Throwable $e): void
     {
-        $this->recordFailure($e instanceof TimeoutExceededException
-            ? 'Создание копии прервано: превышено время ожидания. Увеличьте BACKUP_TIMEOUT или создайте копию командой php artisan app:db-backup.'
-            : 'Ошибка при создании дампа. Подробности — в журнале сервера.');
-        $this->releasePending();
+        // The queue calls failed() without dependency injection.
+        app(BackupManager::class)->abortManual($this->token, $this->actor(), $e);
     }
 
-    /**
-     * Our own validation errors are written for people; anything wrapping a
-     * process or driver error is replaced with a generic message.
-     */
-    public static function publicMessage(\Throwable $e): string
-    {
-        $own = in_array($e::class, [\RuntimeException::class, \InvalidArgumentException::class], true)
-            && $e->getPrevious() === null;
-
-        return $own
-            ? mb_strimwidth($e->getMessage(), 0, 240, '…')
-            : 'Ошибка при создании дампа. Подробности — в журнале сервера.';
-    }
-
-    private function recordFailure(string $message): void
-    {
-        Cache::put(self::FAILURE_KEY, ['token' => $this->token, 'message' => $message, 'at' => now()->toIso8601String()], now()->addDay());
-        ActivityLog::actingAs($this->user(), fn () => ActivityLog::record(null, 'backup_failed', ['error' => [null, $message]]));
-    }
-
-    private function releasePending(): void
-    {
-        if (Cache::get(self::PENDING_KEY) === $this->token) {
-            Cache::forget(self::PENDING_KEY);
-        }
-    }
-
-    private function user(): ?User
+    /** The requester, including one moved to the trash; null — the system or the user is gone. */
+    private function actor(): ?User
     {
         return $this->userId ? User::withTrashed()->find($this->userId) : null;
     }

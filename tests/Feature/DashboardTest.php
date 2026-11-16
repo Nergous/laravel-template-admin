@@ -7,6 +7,9 @@ use App\Models\Media;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -25,9 +28,28 @@ class DashboardTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard')
                 ->has('stats')
-                ->has('roleDistribution')
+                ->missing('roleDistribution')
+                ->missing('content')
                 ->has('recentActivity')
+                ->missing('system')
             );
+    }
+
+    public function test_stats_are_gated_by_section_permissions(): void
+    {
+        $this->actingAsUserWith([]);
+
+        $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+            ->where('stats', [])
+        );
+
+        $this->actingAsUserWith(['media.view']);
+
+        $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+            ->has('stats.media')
+            ->missing('stats.users')
+            ->missing('stats.logins')
+        );
     }
 
     public function test_dashboard_hides_recent_activity_without_permission(): void
@@ -77,11 +99,10 @@ class DashboardTest extends TestCase
                 ->where('roles', Role::count())
                 ->where('permissions', Permission::count())
                 ->where('media', Media::count())
-                ->has('recentActivity')
             )
         );
 
-        $this->assertTrue(Cache::has('admin.sidebar-counts'));
+        $this->assertTrue(Cache::has('admin.sidebar-counts.v3'));
     }
 
     public function test_kpis_include_blocked_users_and_logins(): void
@@ -101,6 +122,44 @@ class DashboardTest extends TestCase
         );
     }
 
+    public function test_attention_is_empty_without_permissions(): void
+    {
+        $this->actingAsUserWith([]);
+        $this->failedJob();
+
+        $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+            ->where('attention', [])
+        );
+    }
+
+    public function test_attention_lists_failed_jobs_and_missing_backup(): void
+    {
+        config(['backup.path' => $this->emptyBackupDir()]);
+        $this->actingAsUserWith(['queue.view', 'backups.view']);
+        $this->failedJob();
+
+        $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+            ->has('attention', 2)
+            ->where('attention.0.key', 'failed_jobs')
+            ->where('attention.0.value', '1')
+            ->where('attention.0.url', route('admin.queue.index', ['status' => 'failed']))
+            ->where('attention.1.key', 'backup')
+            ->where('attention.1.value', 'нет ни одной')
+        );
+    }
+
+    public function test_attention_skips_a_fresh_backup(): void
+    {
+        $dir = $this->emptyBackupDir();
+        File::put($dir.'/db-'.now()->format('Ymd-His').'.sql', '-- dump');
+        config(['backup.path' => $dir]);
+        $this->actingAsUserWith(['backups.view']);
+
+        $this->get('/admin')->assertInertia(fn (Assert $page) => $page
+            ->where('attention', [])
+        );
+    }
+
     public function test_media_card_reports_images_without_alt(): void
     {
         $this->actingAsUserWith(['media.view']);
@@ -112,26 +171,24 @@ class DashboardTest extends TestCase
         );
     }
 
-    public function test_system_health_is_gated_by_permissions(): void
+    private function failedJob(): void
     {
-        $dir = sys_get_temp_dir().DIRECTORY_SEPARATOR.'dash-backups-'.uniqid();
-        config(['backup.path' => $dir]);
+        DB::table('failed_jobs')->insert([
+            'uuid' => (string) Str::uuid(),
+            'connection' => 'database',
+            'queue' => 'default',
+            'payload' => json_encode(['displayName' => 'App\\Jobs\\UploadMedia']),
+            'exception' => 'RuntimeException: boom',
+            'failed_at' => now(),
+        ]);
+    }
 
-        try {
-            $this->actingAsUserWith([]);
-            $this->get('/admin')->assertInertia(fn (Assert $page) => $page
-                ->where('system.queue', null)
-                ->where('system.backup', null)
-            );
+    private function emptyBackupDir(): string
+    {
+        $dir = storage_path('framework/testing/dashboard-backups-'.uniqid());
+        File::ensureDirectoryExists($dir);
+        $this->beforeApplicationDestroyed(fn () => File::deleteDirectory($dir));
 
-            $this->actingAsUserWith(['queue.view', 'backups.view']);
-            $this->get('/admin')->assertInertia(fn (Assert $page) => $page
-                ->where('system.queue.failed', 0)
-                ->where('system.backup.latest', null)
-                ->where('system.backup.stale', true)
-            );
-        } finally {
-            @rmdir($dir);
-        }
+        return $dir;
     }
 }

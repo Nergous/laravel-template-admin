@@ -10,10 +10,13 @@ import { permissionGroupLabels } from "@/admin/pages/Roles/permissionGroupLabels
 
 const props = defineProps({ role: { type: Object, required: true } });
 
-// System roles and roles assigned to users cannot be deleted (server rule).
+// System roles and roles assigned to users cannot be deleted, nor a role above
+// the current user (server rules: RoleService, RolePolicy::delete).
 const canDelete = computed(
     () =>
-        can("roles.delete") && !props.role.is_system && !props.role.users_count,
+        props.role.can_delete &&
+        !props.role.is_system &&
+        !props.role.users_count,
 );
 const deleteOpen = ref(false);
 const deleting = ref(false);

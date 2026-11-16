@@ -2,23 +2,22 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasSearch;
+use App\Models\Concerns\LogsActivity;
+use App\Models\Concerns\TracksAuthor;
 use App\Support\FilterValues;
-use App\Traits\HasSearch;
-use App\Traits\LogsActivity;
-use App\Traits\TracksAuthor;
 use Carbon\Carbon;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
 /**
- * Admin panel user model.
+ * Admin panel user.
  *
- * Roles and permissions are managed by the spatie/laravel-permission package.
+ * Roles and permissions are managed by spatie/laravel-permission.
  *
  * @property int $id
  * @property string $name
@@ -26,10 +25,7 @@ use Spatie\Permission\Traits\HasRoles;
  * @property string $password
  * @property bool $is_active
  * @property string|null $blocked_reason
- * @property bool $must_change_password
  * @property Carbon|null $last_login_at
- * @property Carbon|null $notifications_seen_at
- * @property list<string>|null $notification_mutes
  * @property Carbon|null $email_verified_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
@@ -37,7 +33,10 @@ use Spatie\Permission\Traits\HasRoles;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasRoles, HasSearch, LogsActivity, Notifiable, SoftDeletes, TracksAuthor;
+    use HasFactory, HasRoles, HasSearch, LogsActivity, SoftDeletes, TracksAuthor;
+
+    /** Role filter value that selects users without roles. */
+    public const WITHOUT_ROLES = '__none';
 
     protected $fillable = [
         'name',
@@ -45,57 +44,52 @@ class User extends Authenticatable
         'password',
         'is_active',
         'blocked_reason',
-        'must_change_password',
-        'notification_mutes',
     ];
 
     /**
-     * Mirrors the column defaults, so a freshly created model (factories,
-     * services) is active before it is reloaded from the database.
+     * Mirrors the column defaults so that a freshly created model (factories,
+     * services) is active even before it is re-read from the database.
      *
      * @var array<string, mixed>
      */
     protected $attributes = [
         'is_active' => true,
-        'must_change_password' => false,
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
-        // Generated (STORED) column only on MySQL/MariaDB — technical,
-        // enforces UNIQUE on active emails. Hidden so that serialization
-        // (auth.user in Inertia, etc.) is identical across all drivers.
+        // A generated (STORED) column on MySQL/MariaDB only — technical, it
+        // enforces UNIQUE for active emails. Hidden so that serialization
+        // (auth.user in Inertia etc.) is the same on every driver.
         'email_active',
-        // Personal bell preferences; not part of the account data other admins see.
-        'notification_mutes',
     ];
 
     /**
-     * Technical columns that change on routine actions (login, opening the
-     * notification bell). LogsActivity skips them so they do not flood the log.
+     * Technical columns that change on ordinary actions (sign-in).
+     * LogsActivity skips them so they do not clutter the log.
      *
      * @var list<string>
      */
-    protected array $auditExclude = ['last_login_at', 'notifications_seen_at', 'notification_mutes'];
+    protected array $auditExclude = ['last_login_at'];
+
+    /** @var list<string> Search by name and email (HasSearch). */
+    protected array $searchable = ['name', 'email'];
 
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
             'last_login_at' => 'datetime',
-            'notifications_seen_at' => 'datetime',
             'is_active' => 'boolean',
-            'must_change_password' => 'boolean',
-            'notification_mutes' => 'array',
             'password' => 'hashed',
         ];
     }
 
     /**
-     * Updates technical columns without model events, timestamps, or audit
-     * entries (last login, notification read marker). Values go through the
-     * model casts first, so arrays and dates are stored in their column format.
+     * Updates technical columns without model events, timestamps or log
+     * entries (last sign-in, password, remember token). Values pass through
+     * the model casts first, so arrays and dates are stored in the column format.
      *
      * @param  array<string, mixed>  $values
      */
@@ -108,21 +102,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Search by name and email (substring).
-     *
-     * @param  string|null  $search  Search string
-     */
-    public function scopeSearch(Builder $query, ?string $search): Builder
-    {
-        return $this->scopeSearchLike($query, $search, ['name', 'email']);
-    }
-
-    /**
      * Filter by role names (spatie): a user with any of them matches.
      *
-     * @param  string|list<string>|null  $role  Role names, comma-separated or a list
-     *                                          (FilterValues); empty — filter is not applied;
-     *                                          self::WITHOUT_ROLES — users without any role
+     * @param  string|list<string>|null  $role  Comma-separated or listed role names
+     *                                          (FilterValues); empty — no filter;
+     *                                          self::WITHOUT_ROLES — users without roles
      */
     public function scopeFilterByRole(Builder $query, string|array|null $role): Builder
     {
@@ -144,7 +128,4 @@ class User extends Authenticatable
             }
         });
     }
-
-    /** Role filter value that selects users without any role. */
-    public const WITHOUT_ROLES = '__none';
 }

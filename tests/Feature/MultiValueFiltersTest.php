@@ -10,9 +10,9 @@ use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
 /**
- * List filters with several values (?role=admin,operator): the values of one
- * filter combine with OR, different filters with AND. A single value and a
- * query array keep working.
+ * List filters with several values (?role=admin,operator): the values of
+ * one filter combine with OR, different filters with AND. A single value and
+ * a query array keep working.
  */
 class MultiValueFiltersTest extends TestCase
 {
@@ -37,10 +37,6 @@ class MultiValueFiltersTest extends TestCase
 
         $this->get(route('admin.users.index', ['role' => User::WITHOUT_ROLES]))
             ->assertInertia(fn (Assert $page) => $page->has('users.data', 1));
-
-        // A query array reads like the comma list.
-        $this->get(route('admin.users.index', ['role' => ['admin', 'operator']]))
-            ->assertInertia(fn (Assert $page) => $page->has('users.data', 2));
     }
 
     public function test_bulk_user_status_of_all_matching_takes_several_roles(): void

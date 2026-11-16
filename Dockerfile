@@ -7,7 +7,6 @@
 #           no PHP-FPM; optional worker mode).
 #  Stages:  vendor             → composer dependencies (without dev)
 #           assets             → frontend build (Vite/Vue)
-#           frankenphp-builder → server binary with patched Go dependencies
 #           base               → shared runtime with PHP extensions
 #           prod    → final image (default)
 #           dev     → development image (with dev dependencies, no build)
@@ -34,47 +33,23 @@ COPY resources ./resources
 COPY public ./public
 RUN npm run build
 
-# ---------- patched FrankenPHP binary ----------
-# The current stable image still ships older transitive Go modules. Rebuild with
-# only the modules used by docker/Caddyfile while pinning the fixed versions;
-# Trivy verifies the resulting binary in CI.
-FROM dunglas/frankenphp:1-builder-php8.4-alpine AS frankenphp-builder
-COPY --from=caddy:builder /usr/bin/xcaddy /usr/bin/xcaddy
-RUN CGO_ENABLED=1 \
-    XCADDY_SETCAP=1 \
-    XCADDY_GO_BUILD_FLAGS="-ldflags='-w -s' -tags=nobadger,nomysql,nopgx" \
-    CGO_CFLAGS="$(php-config --includes)" \
-    CGO_LDFLAGS="$(php-config --ldflags) $(php-config --libs)" \
-    xcaddy build \
-        --output /usr/local/bin/frankenphp \
-        --with github.com/dunglas/frankenphp=./ \
-        --with github.com/dunglas/frankenphp/caddy=./caddy/ \
-        --with github.com/dunglas/caddy-cbrotli \
-        --with github.com/getkin/kin-openapi/openapi3@v0.144.0 \
-        --with golang.org/x/crypto/ssh@v0.55.0 \
-        --with google.golang.org/grpc@v1.83.2
-
 # ---------- base runtime (shared base for prod and dev) ----------
 # Pinned to major version 1: a floating tag once pulled in a FrankenPHP build
 # where php_server's custom try_files broke URL rewriting (bare 404 on every route).
+# The stock FrankenPHP server binary is used as is: it already ships the brotli
+# module docker/Caddyfile relies on (encode zstd br gzip).
 FROM dunglas/frankenphp:1-php8.4-alpine AS base
-
-COPY --from=frankenphp-builder /usr/local/bin/frankenphp /usr/local/bin/frankenphp
 
 # Extensions covering the full range of DBs/drivers the project supports:
 #   pdo_mysql  — MySQL/MariaDB (stack default)
-#   pdo_pgsql  — PostgreSQL
 #   pdo_sqlite — SQLite (.env.example default, tests)
-#   redis      — cache/sessions/queues
 #   gd         — image optimization (ImageOptimizer -> WebP)
 #   exif       — JPEG orientation (ImageOptimizer rotates photos before WebP)
 #   intl       — localization (RU project)
-#   bcmath/pcntl/opcache/zip/mbstring — Laravel runtime + queue worker
+#   bcmath/pcntl/opcache/zip/mbstring — Laravel runtime
 RUN install-php-extensions \
         pdo_mysql \
-        pdo_pgsql \
         pdo_sqlite \
-        redis \
         gd \
         exif \
         intl \
@@ -90,12 +65,12 @@ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 # Unprivileged application user (uid/gid 1000 — compatible with bind-mount).
 # The FrankenPHP image already contains www-data; we give it a predictable uid, and the
 # right to bind privileged ports isn't needed — we listen on :8000.
-# mariadb-client / postgresql-client provide mariadb-dump / pg_dump (and the
-# mariadb / psql clients for app:db-restore) for the backups page on MySQL/PostgreSQL.
+# mariadb-client provides mariadb-dump and the mariadb client (app:db-backup,
+# app:db-restore and the backups page).
 # Caddy keeps its autosave config and storage locks in /config and /data
 # (XDG_CONFIG_HOME/XDG_DATA_HOME); the server runs as www-data after su-exec.
 RUN set -eux; \
-    apk add --no-cache shadow su-exec mariadb-client postgresql-client; \
+    apk add --no-cache shadow su-exec mariadb-client; \
     usermod -u 1000 www-data 2>/dev/null || true; \
     groupmod -g 1000 www-data 2>/dev/null || true; \
     mkdir -p /config/caddy /data/caddy; \

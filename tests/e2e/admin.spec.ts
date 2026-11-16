@@ -67,11 +67,50 @@ test("the save bar follows unsaved changes", async ({ page }) => {
     await expect(page.getByText("Изменений нет")).toBeVisible();
 });
 
-test("icon-only buttons explain themselves on hover", async ({ page }) => {
+test("the accent color previews, cancels and saves", async ({ page }) => {
+    await page.goto("/admin/settings?tab=appearance");
+    const html = page.locator("html");
+    const colors = page.getByRole("radiogroup", { name: "Акцентный цвет" });
+    await expect(html).toHaveAttribute("data-accent", "blue");
+    const accent = () =>
+        page.evaluate(() =>
+            getComputedStyle(document.documentElement)
+                .getPropertyValue("--accent")
+                .trim(),
+        );
+
+    // Arrow keys move the choice; the admin recolors before saving.
+    await colors.getByRole("radio", { name: "Синий" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(colors.getByRole("radio", { name: "Индиго" })).toBeChecked();
+    await expect(html).toHaveAttribute("data-accent", "indigo");
+    expect(await accent()).toBe("#4f46e5");
+
+    await page.getByRole("button", { name: "Отменить изменения" }).click();
+    await expect(html).toHaveAttribute("data-accent", "blue");
+
+    await colors.getByRole("radio", { name: "Зелёный" }).click();
+    await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+    await expect(page.getByText("Изменений нет")).toBeVisible();
     await page.goto("/admin");
+    await expect(html).toHaveAttribute("data-accent", "green");
+    expect(await accent()).toBe("#15803d");
+
+    // Back to the default, so the other tests see the usual colors.
+    await page.goto("/admin/settings?tab=appearance");
+    await colors.getByRole("radio", { name: "Синий" }).click();
+    await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+    await expect(page.getByText("Изменений нет")).toBeVisible();
+});
+
+test("icon-only buttons explain themselves on hover", async ({ page }) => {
+    await page.goto("/admin/users");
     const tip = page.locator(".n-itip");
-    await page.getByRole("button", { name: /^Уведомления/ }).hover();
-    await expect(tip).toHaveText(/^Уведомления/);
+    await page
+        .getByRole("link", { name: /^Открыть пользователя/ })
+        .first()
+        .hover();
+    await expect(tip).toHaveText(/^Открыть пользователя/);
 
     await page.keyboard.press("Escape");
     await expect(tip).toHaveCount(0);
@@ -112,17 +151,5 @@ test.describe("on a phone", () => {
                 document.documentElement.clientWidth,
         );
         expect(overflow).toBeLessThanOrEqual(0);
-    });
-
-    test("the topbar controls do not cover each other", async ({ page }) => {
-        await page.goto("/admin");
-        const search = await page
-            .getByRole("button", { name: "Поиск и команды" })
-            .boundingBox();
-        const bell = await page
-            .getByRole("button", { name: /^Уведомления/ })
-            .boundingBox();
-        expect(search && bell).toBeTruthy();
-        expect(search!.x + search!.width).toBeLessThanOrEqual(bell!.x);
     });
 });

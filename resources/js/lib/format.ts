@@ -12,6 +12,7 @@ type DateValue = Parameters<typeof toDate>[0];
 let timeZone: string | undefined;
 let format = createFormat(locale);
 let dateOnly = isoDate();
+let wallClock = wallClockFormat();
 
 function isoDate() {
     return new Intl.DateTimeFormat("sv-SE", {
@@ -19,6 +20,20 @@ function isoDate() {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
+    });
+}
+
+// Numeric wall-clock parts in the display zone, for the datetime-local helpers.
+function wallClockFormat() {
+    return new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
     });
 }
 
@@ -36,6 +51,7 @@ export function setDisplayTimeZone(zone: string | null | undefined): void {
     }
     format = createFormat(locale, { timeZone });
     dateOnly = isoDate();
+    wallClock = wallClockFormat();
 }
 
 /** Day, month, year, hours, and minutes in the display time zone. */
@@ -83,4 +99,64 @@ export function pluralize(
     many: string,
 ): string {
     return format.plural(n, { one, few, many, other: few });
+}
+
+/** Wall-clock parts of a moment in the display time zone. */
+function wallParts(ms: number) {
+    const parts: Record<string, number> = {};
+    for (const part of wallClock.formatToParts(new Date(ms))) {
+        if (part.type !== "literal") parts[part.type] = Number(part.value);
+    }
+    return parts;
+}
+
+/** Offset of the display time zone at a moment, in ms (UTC+3 → 3 h). */
+function zoneOffset(ms: number): number {
+    const p = wallParts(ms);
+    const asUtc = Date.UTC(
+        p.year,
+        p.month - 1,
+        p.day,
+        p.hour % 24,
+        p.minute,
+        p.second,
+    );
+    return asUtc - Math.floor(ms / 1000) * 1000;
+}
+
+/**
+ * UTC ISO string → value of an <input type="datetime-local"> in the display
+ * time zone of the site (not the browser's), so editors in other zones see
+ * the same time as the site and the lists.
+ */
+export function toZonedInput(iso: string | null | undefined): string {
+    const d = toDate(iso ?? null);
+    if (!d) return "";
+    const p = wallParts(d.getTime());
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return (
+        p.year +
+        "-" +
+        pad(p.month) +
+        "-" +
+        pad(p.day) +
+        "T" +
+        pad(p.hour % 24) +
+        ":" +
+        pad(p.minute)
+    );
+}
+
+/** Value of a datetime-local input read in the display time zone → UTC ISO string. */
+export function fromZonedInput(
+    value: string | null | undefined,
+): string | null {
+    const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(value ?? "");
+    if (!m) return null;
+    const [, y, mo, d, h, mi] = m.map(Number);
+    const wall = Date.UTC(y, mo - 1, d, h, mi);
+    // Two passes settle the offset around daylight-saving switches.
+    let ms = wall - zoneOffset(wall);
+    ms = wall - zoneOffset(ms);
+    return new Date(ms).toISOString();
 }

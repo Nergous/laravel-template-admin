@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import type { PropType } from "vue";
+import { ref, watch, type PropType } from "vue";
 import type { AdminSettings, MediaItem } from "@/admin/types";
 import { router, useForm, usePage } from "@inertiajs/vue3";
 import { usePageHeader } from "@/admin/composables/usePageHeader";
@@ -17,10 +16,15 @@ import {
     NActionBar,
 } from "nergous-ui-vue";
 import MediaPicker from "@/admin/components/MediaPicker.vue";
+import AccentPicker from "@/admin/components/AccentPicker.vue";
 import { useUnsavedGuard } from "@/admin/composables/useUnsavedGuard";
 
 const props = defineProps({
     settings: { type: Object as PropType<AdminSettings>, required: true },
+    accents: {
+        type: Array as PropType<{ value: string; label: string }[]>,
+        required: true,
+    },
 });
 
 const form = useForm<{ settings: AdminSettings }>({ settings: props.settings });
@@ -30,6 +34,7 @@ const tabs = [
     { value: "general", label: "Общие" },
     { value: "seo", label: "SEO" },
     { value: "security", label: "Безопасность" },
+    { value: "appearance", label: "Оформление" },
 ];
 
 // The open tab lives in the address (?tab=seo): a link or a reload opens the
@@ -134,6 +139,16 @@ function cancel() {
     form.clearErrors();
 }
 
+// The chosen accent previews at once on the whole admin. Cancel restores it
+// through the form; leaving without saving, the next page puts back the saved
+// preset (app.ts, shared prop accent).
+watch(
+    () => form.settings.appearance.accent,
+    (accent) => {
+        if (accent) document.documentElement.dataset.accent = accent;
+    },
+);
+
 const pickerOpen = ref(false);
 // Image settings chosen from the media library.
 type ImageSetting = "favicon" | "og_image";
@@ -202,7 +217,7 @@ usePageHeader(() => ({
 
                 <NFormField
                     label="Часовой пояс"
-                    hint="Даты в админке показываются в этом поясе; в базе они хранятся в UTC"
+                    hint="Даты в админке показываются в этом поясе"
                     :error="form.errors['settings.general.timezone']"
                     tag="div"
                 >
@@ -216,7 +231,7 @@ usePageHeader(() => ({
 
                 <NFormField
                     label="Favicon"
-                    hint="Иконка вкладки браузера — выбирается из медиатеки"
+                    hint="Иконка вкладки браузера"
                     tag="div"
                 >
                     <div class="og-picker">
@@ -310,7 +325,7 @@ usePageHeader(() => ({
 
                 <NFormField
                     label="OG-изображение"
-                    hint="Превью ссылки в соцсетях — выбирается из медиатеки"
+                    hint="Превью ссылки в соцсетях"
                     tag="div"
                 >
                     <div class="og-picker">
@@ -432,6 +447,36 @@ usePageHeader(() => ({
                 </div>
             </div>
         </NCard>
+
+        <NCard v-show="tab === 'appearance'" v-bind="panelProps('appearance')">
+            <header class="card-head">
+                <span class="card-head__icon">
+                    <NIcon name="eye" :size="20" />
+                </span>
+                <div class="card-head__text">
+                    <h2 class="card-head__title">Оформление</h2>
+                    <div class="card-head__sub">
+                        Акцентный цвет админки — для всех пользователей
+                    </div>
+                </div>
+            </header>
+
+            <div class="card-body">
+                <NFormField
+                    label="Акцентный цвет"
+                    hint="Кнопки, ссылки, выделение и активные пункты меню. В тёмной теме цвет чуть светлее"
+                    :error="form.errors['settings.appearance.accent']"
+                    tag="div"
+                >
+                    <AccentPicker
+                        v-model="form.settings.appearance.accent"
+                        :options="accents"
+                        aria-label="Акцентный цвет"
+                    />
+                </NFormField>
+            </div>
+        </NCard>
+
         <NActionBar :dirty="form.isDirty">
             <NButton
                 variant="secondary"
@@ -463,6 +508,8 @@ usePageHeader(() => ({
     />
 </template>
 
+<style scoped src="../../settingsForm.css"></style>
+
 <style scoped>
 .settings {
     display: flex;
@@ -474,128 +521,5 @@ usePageHeader(() => ({
 }
 .settings__tabs {
     margin-bottom: 2px;
-}
-.card-head {
-    display: flex;
-    align-items: center;
-    gap: 13px;
-    margin-bottom: 22px;
-}
-.card-head__icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 11px;
-    background: var(--accent-soft);
-    color: var(--accent);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex: none;
-}
-.card-head__title {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 800;
-    letter-spacing: -0.01em;
-    color: var(--text);
-}
-.card-head__sub {
-    font-size: 12.5px;
-    color: var(--text-3);
-    margin-top: 2px;
-}
-
-.card-body {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-}
-.grid-2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-}
-
-.toggle-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 14px 0;
-    border-top: 1px solid var(--border);
-    /* whole row is a <label> — clicking the caption toggles the switch */
-    cursor: pointer;
-}
-.toggle-row:first-child {
-    border-top: none;
-}
-.toggle-row__text b {
-    display: block;
-    font-size: 13.5px;
-    font-weight: 700;
-    color: var(--text);
-}
-.toggle-row__text span {
-    display: block;
-    font-size: 12px;
-    color: var(--text-3);
-    margin-top: 2px;
-}
-
-.og-picker {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-}
-.og-picker__preview {
-    width: 120px;
-    height: 75px; /* ~16/10 */
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    border: 1px solid var(--border);
-    background: var(--surface-3);
-    flex: none;
-}
-.og-picker__preview img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
-.og-picker__empty {
-    width: 120px;
-    height: 75px;
-    border-radius: var(--radius-md);
-    border: 1px dashed var(--border-2);
-    background: var(--surface-2);
-    color: var(--text-3);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    font-size: 11.5px;
-    text-align: center;
-    flex: none;
-}
-.og-picker__preview--fav,
-.og-picker__empty--fav {
-    width: 64px;
-    height: 64px;
-}
-.og-picker__actions {
-    display: flex;
-    gap: 8px;
-}
-
-@media (max-width: 720px) {
-    .grid-2 {
-        grid-template-columns: 1fr;
-    }
 }
 </style>

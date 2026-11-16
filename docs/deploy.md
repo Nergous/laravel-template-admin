@@ -8,10 +8,9 @@ directory on the server (e.g. `/opt/app`), next to `docker-compose.yml` and `.en
 
 1. Install Docker Engine with the Compose plugin.
 2. Install nginx on the host. The `app` container serves plain HTTP and listens on
-   `127.0.0.1:${APP_PORT}` only (8888 by default): Docker writes its own iptables
-   rules, so a port published on `0.0.0.0` would be reachable from the internet even
-   behind ufw/firewalld. nginx takes the domain on 80/443, terminates TLS and proxies
-   to the container.
+   `127.0.0.1:${APP_PORT}` only (8888 by default): the port is published on loopback,
+   so it is not reachable from outside even with an open firewall. nginx takes the
+   domain on 80/443, terminates TLS and proxies to the container.
 3. Copy the code to the server (`git clone`, or `rsync` without `vendor`,
    `node_modules`, `storage/app/*` and `.env`).
 
@@ -21,6 +20,12 @@ The full nginx example is `docker/nginx.conf.example`. The essentials:
 upstream laravel_app {
     server 127.0.0.1:8888;   # APP_PORT from .env
     keepalive 16;
+}
+
+server {
+    listen 80;
+    server_name example.com;
+    location / { return 301 https://$host$request_uri; }
 }
 
 server {
@@ -45,7 +50,16 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host  $host;
         proxy_set_header X-Forwarded-Port  $server_port;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout    120s;
+        proxy_read_timeout    120s;
         gzip off;   # Caddy inside the container already compresses
+    }
+
+    location = /up {
+        proxy_pass http://laravel_app;
+        proxy_set_header Host $host;
+        access_log off;
     }
 }
 ```
@@ -72,17 +86,16 @@ DB_USERNAME=laravel
 DB_PASSWORD=...               # long random password
 DB_ROOT_PASSWORD=...          # another long random password
 
-SESSION_DRIVER=redis
-CACHE_STORE=redis
-QUEUE_CONNECTION=redis
-REDIS_HOST=redis
+SESSION_DRIVER=database
+CACHE_STORE=database
+QUEUE_CONNECTION=sync
 
 LOG_LEVEL=warning
 LOG_STACK=stderr
 
 TRUSTED_PROXIES=172.16.0.0/12
 
-BACKUP_ENCRYPTION_KEY=        # php artisan app:backup-key; keep a copy off the server
+BACKUP_DISK=                  # empty = no offsite copy
 ```
 
 - **`TRUSTED_PROXIES`** lists the addresses whose `X-Forwarded-*` headers are
@@ -91,15 +104,21 @@ BACKUP_ENCRYPTION_KEY=        # php artisan app:backup-key; keep a copy off the 
   range `172.16.0.0/12` is needed (docker-compose.yml uses it by default). Without it
   the app sees nginx's address instead of the visitor's (the activity log and the
   login throttle break) and treats the connection as HTTP. Empty trusts `127.0.0.1`
-  and `::1` only (nginx and PHP on one host without Docker), `none` trusts no one.
-- **`SESSION_DRIVER`**: with `redis` the profile page cannot list sessions or end a
-  single one, only "sign out other devices". Use `database` if the list is needed.
-- **`QUEUE_CONNECTION`**: `redis` is recommended. With `database` the queue page
-  also shows pending jobs and `/up?full=1` checks for a stalled queue.
-- **`BACKUP_TIMEOUT`** (600 s by default) limits `mariadb-dump`; the queued manual
-  backup gets 60 s more. The queue's retry window must be longer
-  (`REDIS_QUEUE_RETRY_AFTER` or `DB_QUEUE_RETRY_AFTER`, 720 by default): raise it
-  together with `BACKUP_TIMEOUT`.
+  and `::1` only (nginx and PHP on one host without Docker), `none` trusts no one,
+  `*` only when the app is reachable through the proxy alone.
+- **Sessions and cache** live in the database; the stack has no Redis. Jobs (media
+  processing, manual backups) run synchronously inside the request; there is no queue
+  worker. The session list on the profile page works: any session can be ended.
+- **`BACKUP_TIMEOUT`** (600 s by default) limits `mariadb-dump`. A manual backup from
+  the admin panel runs inside the request, and nginx waits 120 s for the answer
+  (`proxy_read_timeout` in `docker/nginx.conf.example`), so for a large database use
+  `php artisan app:db-backup` in the `app` container.
+- Media files live on the `public` disk by default (`MEDIA_DISK=public`, the
+  `storage-data` volume). `MEDIA_IMAGE_FORMAT=avif` switches WebP to AVIF when GD in
+  the image can encode it.
+
+The server's `APP_KEY` does not have to match another machine's: the database stores
+nothing encrypted with it, changing the key only ends the sessions.
 
 ## 3. First start
 
@@ -115,8 +134,8 @@ afterwards. Alternatively skip `RUN_SEEDS` and run
 `docker compose exec -it -u www-data app php artisan app:create-admin` later.
 Later restarts go without these variables.
 
-`app`, `queue`, `db` and `redis` should be `healthy`; `scheduler` has no health
-check, `running` is enough. Check the app: `curl -fsS http://127.0.0.1:8888/up`.
+`app` and `db` should be `healthy`; `scheduler` has no health check, `running` is
+enough. Check the app: `curl -fsS http://127.0.0.1:8888/up`.
 
 Run commands inside the container with `-u www-data`, otherwise cache and log files
 are created as root.
@@ -128,9 +147,9 @@ git pull
 RUN_MIGRATIONS=true docker compose up -d --build
 ```
 
-`app` applies the migrations on start; `queue` and `scheduler` wait until `app` is
-`healthy`. An existing database is never re-seeded, so permissions configured in the
-admin panel are kept.
+`app` applies the migrations on start; `scheduler` waits until `app` is `healthy`.
+An existing database is never re-seeded, so permissions configured in the admin panel
+are kept. Ordinary restarts without a code change go without `RUN_MIGRATIONS`.
 
 ## 5. Backups
 
@@ -141,7 +160,8 @@ admin panel are kept.
   references (`media:prune-orphans`).
 - If the nightly dump fails, the backups page shows a warning and the error goes to the
   activity log and the server log. The page also warns when there is no scheduled copy
-  or the newest is older than 26 hours (the scheduler is not running).
+  or the newest is older than 26 hours (the scheduler is not running). The next
+  successful run clears the warning.
 - Dumps hold the database only. Without `BACKUP_DISK` (an offsite copy) take the dumps
   and the media files off the server yourself from time to time:
 
@@ -153,10 +173,12 @@ admin panel are kept.
 ## 6. Restoring a backup
 
 ```bash
-docker compose stop queue scheduler
+docker compose stop scheduler
+# A dump from another machine: first docker compose cp ... app:/app/storage/app/backups/
+# and chown www-data:www-data, as in section 7.
 docker compose exec -u www-data app php artisan app:db-restore db-<date>.sql --force
 docker compose exec -u www-data app php artisan migrate --force
-docker compose start queue scheduler
+docker compose start scheduler
 ```
 
 `app:db-restore`:
@@ -165,27 +187,28 @@ docker compose start queue scheduler
   (maintenance enabled before the command stays on);
 - drops every table and view of the current schema and loads the dump into the empty
   schema, so tables of migrations newer than the dump do not survive;
-- clears the application and permission caches (settings and permissions of the
-  replaced database live there);
+- clears the application and permission caches (`cache:clear`,
+  `permission:cache-reset`): settings and permissions of the replaced database live
+  there;
 - without `--no-safety-backup` first saves the current state as `db-…-prerestore`,
-  which the same command can restore;
-- accepts encrypted dumps (`*.enc`) when `BACKUP_ENCRYPTION_KEY` is set.
+  which the same command can restore.
 
-Stop the queue worker and the scheduler first: otherwise they write to the database
-while it is being replaced. `migrate` catches the schema up when the code is newer
-than the dump.
+Stop the scheduler first: otherwise it writes to the database while it is being
+replaced. `migrate` catches the schema up when the code is newer than the dump; without
+schema changes it does nothing.
 
 ## 7. Moving a database to another machine
 
 1. On the source machine: `php artisan app:db-backup --tag=transfer --keep=0` (set
-   `BACKUP_BINARY_PATH` when `mariadb-dump` is not in `PATH`) and pack the media
-   files: `tar -czf transfer/media.tar.gz -C storage/app/public .`
-2. Copy both files to the server (`scp`). `transfer/` and `*.sql` are ignored by Git
-   and Docker.
-3. On the server:
+   `BACKUP_BINARY_PATH` when `mariadb-dump` is not in `PATH`). The command checks that
+   the dump was written completely. Pack the media files:
+   `tar -czf transfer/media.tar.gz -C storage/app/public .`
+2. Copy both files to the server (`scp`). `transfer/`, `*.sql` and
+   `storage/app/backups` are ignored by Git and Docker.
+3. On the server (the entrypoint creates `storage/app/backups` in the container):
 
    ```bash
-   docker compose stop queue scheduler
+   docker compose stop scheduler
    docker compose cp transfer/db-<date>-transfer.sql app:/app/storage/app/backups/
    docker compose exec app chown www-data:www-data storage/app/backups/db-<date>-transfer.sql
    docker compose exec -u www-data app php artisan app:db-restore db-<date>-transfer.sql --force --no-safety-backup
@@ -193,22 +216,22 @@ than the dump.
 
    docker compose cp transfer/media.tar.gz app:/tmp/media.tar.gz
    docker compose exec app sh -c 'tar -xzf /tmp/media.tar.gz -C storage/app/public && chown -R www-data:www-data storage/app/public && rm /tmp/media.tar.gz'
-   docker compose start queue scheduler
+   docker compose start scheduler
    ```
 
-4. Delete the transfer files afterwards: they hold real user data.
-
-The server's `APP_KEY` does not have to match the source: the database stores nothing
-encrypted with it, changing the key only ends the sessions.
+4. Check: `/up` answers 200, `docker compose ps` shows `app` and `db` `healthy` and
+   `scheduler` `running`, you can sign in to `/admin`, the media library shows the
+   files, and a manual backup on the backups page appears in the list.
+5. Delete the transfer files afterwards: they hold real user data.
 
 ## 8. Monitoring
 
 - `/up` checks that the database answers and `storage/app` is writable; the `app`
-  container's health check uses it. The queue backlog is not part of it, so a long job
-  cannot mark the web container unhealthy.
-- `/up?full=1` additionally answers 500 when, with the `database` queue driver, a job
-  has waited for a worker longer than 15 minutes. Point external monitoring at it.
-- Logs: `docker compose logs -f app queue scheduler`.
+  container's health check uses it.
+- `/up?full=1` additionally answers 500 when a queued job has waited for a worker longer
+  than 15 minutes (with `QUEUE_CONNECTION=sync` nothing waits, so the check never
+  fires). Point external monitoring at it: `https://<domain>/up?full=1`.
+- Logs: `docker compose logs -f app scheduler`.
 
 ## 9. Maintenance mode
 

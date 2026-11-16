@@ -14,13 +14,13 @@ class SeedFreshDatabaseTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * The production admin comes from config('app.initial_admin'): with a cached
-     * config (the Docker entrypoint runs config:cache) env() returns null, so the
-     * seeder must not read ADMIN_* from the environment itself.
+     * The production administrator comes from config('rbac.initial_admin'). With a
+     * cached config (the Docker entrypoint runs config:cache) env() returns null, so
+     * the seeder must not read ADMIN_* from the environment itself.
      */
     public function test_production_admin_is_created_from_config(): void
     {
-        config(['app.initial_admin' => ['email' => 'chief@example.test', 'name' => 'Главный', 'password' => 'Str0ng!Passw0rd#42']]);
+        config(['rbac.initial_admin' => ['email' => 'chief@example.test', 'name' => 'Главный', 'password' => 'Str0ng!Passw0rd#42']]);
         $this->app->detectEnvironment(fn () => 'production');
 
         try {

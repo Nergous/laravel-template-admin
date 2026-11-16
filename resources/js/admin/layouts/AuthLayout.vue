@@ -57,7 +57,12 @@ useFlashToasts();
     justify-content: center;
     padding: 48px;
     color: #fff;
-    background: linear-gradient(150deg, #0066ff, #3384ff 60%, #4aa3ff);
+    background: linear-gradient(
+        150deg,
+        var(--accent),
+        color-mix(in srgb, var(--accent) 80%, #fff) 60%,
+        color-mix(in srgb, var(--accent) 71%, #fff)
+    );
 }
 .auth__side-inner {
     max-width: 380px;

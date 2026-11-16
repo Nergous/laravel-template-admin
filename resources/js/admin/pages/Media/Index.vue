@@ -65,7 +65,7 @@ const props = defineProps({
     },
     uploadRules: {
         type: Object as PropType<UploadRules>,
-        default: () => ({ extensions: [], maxSizeKb: 51200, maxFiles: 10 }),
+        default: () => ({ extensions: [], max_size_kb: 51200, max_files: 10 }),
     },
 });
 
@@ -729,6 +729,9 @@ usePageHeader(() => ({
     font: inherit;
     font-size: 12.5px;
     cursor: pointer;
+    transition:
+        border-color 0.15s ease,
+        color 0.15s ease;
 }
 .folder-chip:hover,
 .folder-chip--on {

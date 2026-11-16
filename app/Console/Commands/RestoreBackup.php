@@ -2,25 +2,27 @@
 
 namespace App\Console\Commands;
 
-use App\Models\ActivityLog;
-use App\Services\BackupService;
+use App\Events\ActivityOccurred;
+use App\Services\System\Backup\BackupFiles;
+use App\Services\System\Backup\BackupService;
+use Exception;
 use Illuminate\Console\Command;
 
 /**
  * Restores the database from a local dump (see BackupService::restore()):
  *   php artisan app:db-restore db-20260924-030000.sqlite
- *   php artisan app:db-restore db-20260924-030000.sql.enc --force
+ *   php artisan app:db-restore db-20260924-030000.sql --force
  *
- * A safety dump of the current state (kind "prerestore") is made first unless
+ * First a copy of the current state is saved (the "prerestore" kind) unless
  * --no-safety-backup is given.
  *
- * While restoring, the application is in maintenance mode (unless it already
- * was, it is brought back up afterwards, also on failure). The queue worker and
- * the scheduler are separate processes: stop them before running this command,
- * otherwise they keep writing into the database mid-way — and with SQLite they
- * hold the database file open while it is replaced. Afterwards the cache is
- * cleared (cache:clear, permission:cache-reset): it still holds settings and
- * permissions of the replaced database.
+ * During the restore the application is put into maintenance mode and brought
+ * back afterwards, also on failure. If maintenance mode was on before the run, it
+ * stays on. A queue worker and the scheduler are separate processes: stop them
+ * before running the command, otherwise they keep writing to the database
+ * while it is replaced, and with SQLite they keep the database file open. After
+ * the restore the cache is cleared (cache:clear, permission:cache-reset): it holds
+ * the settings and permissions of the replaced database.
  */
 class RestoreBackup extends Command
 {
@@ -31,29 +33,29 @@ class RestoreBackup extends Command
 
     protected $description = 'Восстанавливает БД из резервной копии (текущие данные будут заменены)';
 
-    public function handle(BackupService $backups): int
+    public function handle(BackupService $backups, BackupFiles $files): int
     {
         $file = (string) $this->argument('file');
 
-        if ($backups->path($file) === null) {
-            $this->error("Резервная копия «{$file}» не найдена в {$backups->directory()}.");
+        if ($files->path($file) === null) {
+            $this->error("Резервная копия «{$file}» не найдена в {$files->directory()}.");
 
             return self::FAILURE;
         }
 
         try {
             $backups->assertRestorable($file);
-        } catch (\Throwable $e) {
+        } catch (Exception $e) {
             $this->error('Восстановление не выполнено: '.$e->getMessage());
 
             return self::FAILURE;
         }
 
-        $this->warn('Перед восстановлением остановите обработчик очереди и планировщик (в Docker: docker compose stop queue scheduler),'
+        $this->warn('Перед восстановлением остановите планировщик (в Docker: docker compose stop scheduler) и обработчик очереди, если он запущен,'
             .' иначе они продолжат писать в базу во время замены.');
 
         if (! $this->option('force')
-            && ! $this->confirm('Текущая база «'.config('database.default')."» будет заменена данными из {$file}. Обработчик очереди и планировщик остановлены?")) {
+            && ! $this->confirm('Текущая база «'.config('database.default')."» будет заменена данными из {$file}. Планировщик и обработчик очереди остановлены?")) {
             $this->line('Отменено.');
 
             return self::FAILURE;
@@ -61,15 +63,16 @@ class RestoreBackup extends Command
 
         $maintenance = $this->laravel->maintenanceMode();
         $wasDown = $maintenance->active();
-        // Kept to put it back: with the cache maintenance driver cache:clear drops the flag.
+        // Saved to restore it later: with the cache maintenance driver cache:clear resets the flag.
         $downPayload = $wasDown ? $maintenance->data() : null;
         if (! $wasDown) {
             $this->callSilently('down', ['--retry' => 60]);
         }
 
         try {
-            $safety = $backups->restore($file, ! $this->option('no-safety-backup'));
-        } catch (\Throwable $e) {
+            $safety = $this->option('no-safety-backup') ? null : $backups->safetyDump();
+            $backups->restore($file);
+        } catch (Exception $e) {
             $this->error('Восстановление не выполнено: '.$e->getMessage());
 
             return self::FAILURE;
@@ -78,10 +81,10 @@ class RestoreBackup extends Command
                 $this->runQuietly('up');
             }
 
-            // Settings, permissions and other cached rows belong to the replaced
-            // database; clear them on failure too, the database may be half-loaded.
-            // The media usage index and the manual redirect map live in the default
-            // cache store as well, so cache:clear drops them too.
+            // Settings, permissions and other cached data belong to the replaced
+            // database. Cleared on failure too: the database may be half-loaded. The media
+            // usage index also lives in the default cache store, so cache:clear resets it
+            // as well.
             $this->runQuietly('cache:clear');
             $this->runQuietly('permission:cache-reset');
 
@@ -94,21 +97,21 @@ class RestoreBackup extends Command
             $this->line("Копия состояния до восстановления: {$safety}");
         }
 
-        // Written into the restored database, so the history shows where it came from.
-        ActivityLog::record(null, 'backup_restored', null, $file);
-        $this->info("База восстановлена из {$file}. Кэш очищен. Запустите обработчик очереди и планировщик снова.");
+        // Written into the restored database so the log shows where it came from.
+        ActivityOccurred::by(null, null, 'backup_restored', null, $file);
+        $this->info("База восстановлена из {$file}. Кэш очищен. Запустите планировщик (и обработчик очереди, если он используется) снова.");
 
         return self::SUCCESS;
     }
 
-    /** Runs a follow-up command; its failure is reported without hiding the restore result. */
+    /** Runs an extra command; its error is printed but does not hide the restore result. */
     private function runQuietly(string $command): void
     {
         try {
             if ($this->callSilently($command) !== self::SUCCESS) {
                 $this->warn("Команда {$command} завершилась с ошибкой — выполните её вручную.");
             }
-        } catch (\Throwable $e) {
+        } catch (Exception $e) {
             report($e);
             $this->warn("Команда {$command} не выполнена ({$e->getMessage()}) — выполните её вручную.");
         }

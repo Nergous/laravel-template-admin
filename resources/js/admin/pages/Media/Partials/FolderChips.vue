@@ -39,6 +39,9 @@ const model = defineModel<string>({ required: true });
     font: inherit;
     font-size: 12.5px;
     cursor: pointer;
+    transition:
+        border-color 0.15s ease,
+        color 0.15s ease;
 }
 .folder-chip:hover,
 .folder-chip--on {

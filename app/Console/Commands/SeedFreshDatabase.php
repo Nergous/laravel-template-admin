@@ -11,9 +11,9 @@ use RuntimeException;
 
 class SeedFreshDatabase extends Command
 {
-    protected $signature = 'app:seed-fresh {--users : Include initial users}';
+    protected $signature = 'app:seed-fresh {--users : Создать и начальных пользователей}';
 
-    protected $description = 'Seed an empty database once without changing existing data';
+    protected $description = 'Один раз заполняет пустую БД начальными данными, существующие данные не меняет';
 
     private const MARKER_KEY = 'system.initial_seed';
 
@@ -33,7 +33,7 @@ class SeedFreshDatabase extends Command
     {
         foreach (['settings', 'users', 'roles', 'permissions'] as $table) {
             if (! Schema::hasTable($table)) {
-                $this->error("Table {$table} is missing; run migrations before seeding.");
+                $this->error("Нет таблицы {$table}: сначала выполните миграции.");
 
                 return self::FAILURE;
             }
@@ -42,20 +42,20 @@ class SeedFreshDatabase extends Command
         $marker = DB::table('settings')->where('key', self::MARKER_KEY)->value('value');
 
         if ($marker === 'complete') {
-            $this->info('Initial seeds already completed; skipping.');
+            $this->info('Начальные данные уже созданы, пропускаем.');
 
             return self::SUCCESS;
         }
 
         if ($marker !== null && $marker !== 'pending') {
-            $this->error('Unknown initial seed state; refusing to change database data.');
+            $this->error('Неизвестное состояние начального заполнения, данные БД не изменены.');
 
             return self::FAILURE;
         }
 
         if ($marker === null) {
             if ($this->hasApplicationData()) {
-                $this->info('Existing application data found; initial seeds skipped.');
+                $this->info('В БД уже есть данные приложения, начальное заполнение пропущено.');
 
                 return self::SUCCESS;
             }
@@ -71,7 +71,7 @@ class SeedFreshDatabase extends Command
             ]);
         }
 
-        // The pending marker survives a failed seed transaction, so the next boot retries.
+        // The pending marker survives the transaction rollback, so the next run repeats the seeding.
         DB::transaction(function (): void {
             $this->runSeeder(RolePermissionSeeder::class);
 
@@ -85,7 +85,7 @@ class SeedFreshDatabase extends Command
             ]);
         });
 
-        $this->info('Initial seeds completed.');
+        $this->info('Начальные данные созданы.');
 
         return self::SUCCESS;
     }
@@ -114,7 +114,7 @@ class SeedFreshDatabase extends Command
         ]);
 
         if ($exitCode !== self::SUCCESS) {
-            throw new RuntimeException("Initial seeder {$class} failed.");
+            throw new RuntimeException("Сидер {$class} завершился с ошибкой.");
         }
     }
 }

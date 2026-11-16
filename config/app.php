@@ -3,99 +3,58 @@
 return [
 
     /*
-    |--------------------------------------------------------------------------
-    | Application Name
-    |--------------------------------------------------------------------------
-    |
-    | This value is the name of your application, which will be used when the
-    | framework needs to place the application's name in a notification or
-    | other UI elements where an application name needs to be displayed.
-    |
+    | Default application name. The admin panel and the site show the name from
+    | the general.app_name setting; this value is seen where there is no
+    | database (500/503 error pages, the console).
     */
 
-    'name' => env('APP_NAME', 'Laravel'),
+    'name' => env('APP_NAME', 'Admin Panel'),
 
     /*
-    |--------------------------------------------------------------------------
-    | Application Environment
-    |--------------------------------------------------------------------------
-    |
-    | This value determines the "environment" your application is currently
-    | running in. This may determine how you prefer to configure various
-    | services the application utilizes. Set this in your ".env" file.
-    |
+    | Application environment (production, local, testing). Set in .env.
     */
 
     'env' => env('APP_ENV', 'production'),
 
     /*
-    |--------------------------------------------------------------------------
-    | Application Debug Mode
-    |--------------------------------------------------------------------------
-    |
-    | When your application is in debug mode, detailed error messages with
-    | stack traces will be shown on every error that occurs within your
-    | application. If disabled, a simple generic error page is shown.
-    |
+    | Debug mode: shows errors with stack traces when enabled. Off in production.
     */
 
     'debug' => (bool) env('APP_DEBUG', false),
 
     /*
-    |--------------------------------------------------------------------------
-    | Application URL
-    |--------------------------------------------------------------------------
-    |
-    | This URL is used by the console to properly generate URLs when using
-    | the Artisan command line tool. You should set this to the root of
-    | the application so that it's available within Artisan commands.
-    |
+    | Root URL of the application; Artisan commands need it to generate links.
     */
 
     'url' => env('APP_URL', 'http://localhost'),
 
     /*
-    |--------------------------------------------------------------------------
-    | Application Timezone
-    |--------------------------------------------------------------------------
-    |
-    | Here you may specify the default timezone for your application, which
-    | will be used by the PHP date and date-time functions. The timezone
-    | is set to "UTC" by default as it is suitable for most use cases.
-    |
+    | Timestamps are stored in UTC for web, queue and scheduler; do not change it.
+    | The display zone comes from the general.timezone setting (App\Services\System\DisplayTime).
     */
 
     'timezone' => 'UTC',
 
     /*
-    |--------------------------------------------------------------------------
-    | Application Locale Configuration
-    |--------------------------------------------------------------------------
-    |
-    | The application locale determines the default locale that will be used
-    | by Laravel's translation / localization methods. This option can be
-    | set to any locale for which you plan to have translation strings.
-    |
+    | Default and fallback translation locale; the Faker locale is for test data.
     */
 
-    'locale' => env('APP_LOCALE', 'en'),
+    'locale' => env('APP_LOCALE', 'ru'),
 
-    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'en'),
+    'fallback_locale' => env('APP_FALLBACK_LOCALE', 'ru'),
 
-    'faker_locale' => env('APP_FAKER_LOCALE', 'en_US'),
+    'faker_locale' => env('APP_FAKER_LOCALE', 'ru_RU'),
 
     /*
-    |--------------------------------------------------------------------------
-    | Encryption Key
-    |--------------------------------------------------------------------------
-    |
-    | This key is utilized by Laravel's encryption services and should be set
-    | to a random, 32 character string to ensure that all encrypted values
-    | are secure. You should do this prior to deploying the application.
-    |
+    | Encryption cipher; do not change it, or encrypted data becomes unreadable.
     */
 
     'cipher' => 'AES-256-CBC',
+
+    /*
+    | Encryption key (APP_KEY, a random 32-character string). Old keys in
+    | APP_PREVIOUS_KEYS (comma-separated) decrypt data after a key rotation.
+    */
 
     'key' => env('APP_KEY'),
 
@@ -106,38 +65,13 @@ return [
     ],
 
     /*
-    |--------------------------------------------------------------------------
-    | Maintenance Mode Driver
-    |--------------------------------------------------------------------------
-    |
-    | These configuration options determine the driver used to determine and
-    | manage Laravel's "maintenance mode" status. The "cache" driver will
-    | allow maintenance mode to be controlled across multiple machines.
-    |
-    | Supported drivers: "file", "cache"
-    |
+    | Maintenance mode driver: file or cache (cache works across several servers).
+    | store — the cache store for the cache driver.
     */
 
     'maintenance' => [
         'driver' => env('APP_MAINTENANCE_DRIVER', 'file'),
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Initial Administrator
-    |--------------------------------------------------------------------------
-    |
-    | Used by Database\Seeders\UserSeeder in production (app:seed-fresh --users,
-    | RUN_SEEDS=true) on an empty database. Without a password no account is
-    | created; use php artisan app:create-admin instead.
-    |
-    */
-
-    'initial_admin' => [
-        'email' => env('ADMIN_EMAIL', 'admin@example.com'),
-        'name' => env('ADMIN_NAME', 'Администратор'),
-        'password' => env('ADMIN_PASSWORD'),
     ],
 
 ];

@@ -7,15 +7,15 @@ use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 
 /**
- * A list filter of several choices, in the format App\Support\FilterValues
- * reads: a comma-separated string or an array. Every value must be allowed;
- * an empty value passes. Used where the filters select records to act on
- * (bulk actions on everything matching), so a typo cannot widen the selection.
+ * A multi-value list filter in the format read by App\Support\FilterValues:
+ * a comma-separated string or an array. Every value must be allowed; an empty
+ * value passes. Used where filters select records for an action (bulk actions
+ * on all matching) so that a typo cannot widen the selection.
  */
 final class FilterList implements ValidationRule
 {
     /**
-     * @param  list<string>|null  $allowed  Allowed values; null takes any value up to $maxLength
+     * @param  list<string>|null  $allowed  Allowed values; null — any value up to $maxLength
      */
     private function __construct(
         private readonly ?array $allowed,
@@ -32,6 +32,15 @@ final class FilterList implements ValidationRule
     public static function ids(): self
     {
         return new self(null, true, 20);
+    }
+
+    /**
+     * Any strings up to 255 characters: for filters where an unknown value
+     * simply finds nothing (e.g. a deleted role).
+     */
+    public static function any(): self
+    {
+        return new self(null, false, 255);
     }
 
     public function validate(string $attribute, mixed $value, Closure $fail): void

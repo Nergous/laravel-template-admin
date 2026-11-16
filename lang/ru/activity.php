@@ -1,10 +1,11 @@
 <?php
 
 /**
- * Localized labels for the activity log (ActivityLog).
+ * Activity log labels (App\Services\System\ActivityLogLabels).
  *
- * action keys correspond to the values of the activity_log.action column,
- * subjects — short keys for subject types (see ActivityLog::subjectTypeLabel).
+ * actions — values of the activity_log.action column; subjects — subject type keys
+ * from config('activity.subjects') plus system for entries without a subject;
+ * fields — field names in change diffs.
  */
 return [
     'actions' => [
@@ -19,8 +20,6 @@ return [
         'logout' => 'Выход из системы',
         'session_ended' => 'Сеанс завершён',
         'sessions_ended' => 'Завершены другие сеансы',
-        'impersonation_started' => 'Вход от имени пользователя',
-        'impersonation_stopped' => 'Возврат к своему аккаунту',
         'settings_updated' => 'Изменены настройки',
         'users_exported' => 'Экспорт пользователей',
         'upload_failed' => 'Ошибка обработки файла',
@@ -44,11 +43,10 @@ return [
         'user' => 'Пользователь',
         'media' => 'Медиа',
         'role' => 'Роль',
-        'permission' => 'Разрешение',
         'system' => 'Система',
     ],
 
-    // Human names of the fields in change diffs (the log detail drawer).
+    // Field names in change diffs (the entry detail drawer).
     'fields' => [
         'name' => 'Имя',
         'email' => 'Email',
@@ -58,7 +56,6 @@ return [
         'must_change_password' => 'Сменить пароль при входе',
         'deleted_at' => 'Удалён',
         'description' => 'Описание',
-        'permission' => 'Право',
         'permissions_granted' => 'Выданы права',
         'permissions_revoked' => 'Сняты права',
         'original_name' => 'Имя файла',
@@ -84,6 +81,7 @@ return [
         'sessions' => 'Завершено сеансов',
         'ip' => 'IP-адрес',
         'agent' => 'Устройство',
+        'reason' => 'Причина',
         'error' => 'Ошибка',
         'count' => 'Количество',
         'rows' => 'Строк',
@@ -101,5 +99,6 @@ return [
         'seo.sitemap' => 'Sitemap',
         'security.session_lifetime' => 'Время жизни сессии, мин',
         'security.login_throttle' => 'Попыток входа в минуту',
+        'appearance.accent' => 'Акцентный цвет',
     ],
 ];

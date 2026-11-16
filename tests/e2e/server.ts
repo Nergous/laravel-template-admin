@@ -64,7 +64,6 @@ const env: Record<string, string> = {
     MEDIA_DISK: "public",
     BACKUP_PATH: relDir + "/backups",
     BACKUP_DISK: "",
-    BACKUP_ENCRYPTION_KEY: "",
     PULSE_ENABLED: "false",
     TELESCOPE_ENABLED: "false",
     NIGHTWATCH_ENABLED: "false",

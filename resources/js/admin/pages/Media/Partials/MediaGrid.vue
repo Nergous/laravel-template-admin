@@ -106,7 +106,7 @@ const { showThumb, onImgError } = thumbs;
                     <span v-if="f.size">{{ formatBytes(f.size) }}</span>
                 </div>
                 <div class="mcard__date">
-                    {{ f.created_local || "—" }}
+                    {{ formatDateTime(f.created_at) }}
                 </div>
             </div>
         </div>
@@ -225,7 +225,7 @@ const { showThumb, onImgError } = thumbs;
                     >
                 </div>
                 <div class="mcard__date">
-                    {{ m.created_local || formatDateTime(m.created_at) }}
+                    {{ formatDateTime(m.created_at) }}
                 </div>
             </div>
         </div>

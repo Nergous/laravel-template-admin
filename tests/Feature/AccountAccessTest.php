@@ -3,14 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\ActivityLog;
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\System\Settings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Block reasons, granular permissions (export, impersonation) and the per-IP
- * login limit.
+ * Block reasons, the export permission and the per-IP login limit.
  */
 class AccountAccessTest extends TestCase
 {
@@ -51,17 +50,9 @@ class AccountAccessTest extends TestCase
         $this->assertTrue(ActivityLog::where('action', 'users_exported')->exists());
     }
 
-    public function test_impersonation_needs_its_own_permission(): void
-    {
-        $target = User::factory()->create();
-
-        $this->actingAsUserWith(['users.view', 'users.edit']);
-        $this->post(route('admin.users.impersonate', $target))->assertForbidden();
-    }
-
     public function test_one_ip_cannot_cycle_through_many_emails(): void
     {
-        Setting::set('security', 'login_throttle', 1);
+        app(Settings::class)->set('security', 'login_throttle', 1);
 
         foreach (range(1, 4) as $i) {
             $this->post(route('admin.login'), ['email' => "user{$i}@example.test", 'password' => 'wrong-password'])

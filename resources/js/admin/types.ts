@@ -12,15 +12,14 @@ export type AdminUser = {
     is_active?: boolean;
     /** Why the account is blocked (only while is_active is false). */
     blocked_reason?: string | null;
-    must_change_password?: boolean;
     last_login_at?: string | null;
     /** Whether the current user may edit/delete this account (server rule). */
     can_manage?: boolean;
     created_at?: string | null;
     updated_at?: string | null;
     deleted_at?: string | null;
-    creator?: { name: string } | null;
-    editor?: { name: string } | null;
+    creator_name?: string | null;
+    editor_name?: string | null;
 };
 
 export type AdminRole = {
@@ -29,6 +28,7 @@ export type AdminRole = {
     description?: string | null;
     is_system?: boolean;
     can_edit?: boolean;
+    can_delete?: boolean;
     permissions_count?: number;
     users_count?: number;
     permission_names?: string[];
@@ -58,7 +58,6 @@ export interface MediaItem {
     focal_x?: number | null;
     focal_y?: number | null;
     created_at?: string;
-    created_local?: string;
     alt?: string | null;
     folder?: string | null;
     /** Places that reference the file (settings favicon, OG image…). */
@@ -68,8 +67,8 @@ export interface MediaItem {
 /** File details from GET /admin/media/{id}. */
 export interface MediaDetails extends MediaItem {
     dimensions: { width: number; height: number } | null;
-    uploaded_by: string | null;
-    updated_by: string | null;
+    creator_name: string | null;
+    editor_name: string | null;
     updated_at: string | null;
     /** Where the file is referenced, with a link to edit each place. */
     places: MediaPlace[];
@@ -97,7 +96,7 @@ export interface MediaRef {
     alt?: string | null;
 }
 
-/** Settings of the /admin/settings page by group (Setting::SETTINGS_PAGE_GROUPS). */
+/** Settings of the /admin/settings page by group (SettingsSchema::SETTINGS_PAGE). */
 export type AdminSettings = {
     general: { app_name: string; timezone: string; favicon: string };
     seo: {
@@ -109,6 +108,7 @@ export type AdminSettings = {
         sitemap: boolean;
     };
     security: { session_lifetime: number; login_throttle: number };
+    appearance: { accent: string };
 };
 
 export interface Pagination<T> {
@@ -125,18 +125,20 @@ export interface Pagination<T> {
 export interface AuditLog {
     id: number;
     action: string;
-    actionLabel: string;
+    action_label: string;
     actor: string;
     subject: string;
-    subjectType: string;
-    subjectUrl: string | null;
-    changesCount: number;
+    subject_type: string;
+    subject_url: string | null;
+    changes_count: number;
     changes: Record<string, unknown> | null;
-    createdAt: string | null;
+    created_at: string | null;
 }
 
 export interface SharedProps extends PageProps {
     appName: string;
+    /** Sidebar brand icon URL: the favicon setting or the default favicon. */
+    brandIcon?: string;
     /** Display time zone (IANA); dates arrive as UTC ISO strings. */
     timezone: string;
     /** Idle session lifetime in minutes; null with a "remember me" cookie. */
@@ -147,10 +149,7 @@ export interface SharedProps extends PageProps {
             name: string;
             email: string;
             roles: string[];
-            must_change_password: boolean;
         } | null;
-        /** The administrator behind a "sign in as" session, null otherwise. */
-        impersonator?: { id: number; name: string } | null;
         can: string[];
     };
     counts: {
@@ -158,13 +157,8 @@ export interface SharedProps extends PageProps {
         roles?: number | null;
         permissions?: number | null;
         media?: number | null;
-        recentActivity?: number | null;
     } | null;
     flash: Partial<
         Record<"success" | "error" | "warning" | "info", string | null>
     >;
 }
-
-/** Bell notification categories (ActivityLog::NOTIFICATION_CATEGORIES). */
-export type NotificationCategory =
-    "auth" | "users" | "roles" | "media" | "settings" | "system";

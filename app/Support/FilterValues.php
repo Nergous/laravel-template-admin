@@ -5,18 +5,18 @@ namespace App\Support;
 use BackedEnum;
 
 /**
- * Values of a list filter that takes several choices. In the address they are
- * one comma-separated parameter (?type=article,interview); a single value
- * (?type=article) and a query array (?type[]=article) are read the same way.
+ * Values of a list filter that allows several choices. In the URL they are
+ * one comma-separated parameter (?type=image,video); a single value
+ * (?type=image) and a query-string array (?type[]=image) read the same way.
  * Choices of one filter combine with OR (whereIn), different filters with AND.
  *
- * The readers here are lenient: unknown values are dropped, so an old link
- * still opens the list. Requests that act on the selection validate the same
- * format strictly with App\Rules\FilterList.
+ * The readers are lenient: unknown values are dropped, so an old link still
+ * opens the list. Requests that act on the selection validate the same format
+ * strictly via App\Rules\FilterList.
  */
 final class FilterValues
 {
-    /** Most choices one filter takes; the rest are ignored. */
+    /** At most this many choices of one filter are read: the rest are dropped. */
     public const MAX = 50;
 
     /**
@@ -69,21 +69,7 @@ final class FilterValues
     }
 
     /**
-     * Values from a fixed set.
-     *
-     * @param  list<string>  $allowed
-     * @return list<string>
-     */
-    public static function in(mixed $raw, array $allowed): array
-    {
-        return array_values(array_filter(
-            self::strings($raw),
-            fn (string $value) => in_array($value, $allowed, true),
-        ));
-    }
-
-    /**
-     * Cases of a backed enum.
+     * Cases of the backed enum that exist; unknown values are dropped.
      *
      * @template T of BackedEnum
      *

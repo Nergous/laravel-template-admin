@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\ActivityLog;
 use App\Models\User;
+use App\Services\System\ActivityLogLabels;
 use Tests\TestCase;
 
 class ActivityLogLabelTest extends TestCase
@@ -12,23 +13,28 @@ class ActivityLogLabelTest extends TestCase
     {
         $log = new ActivityLog(['subject_type' => User::class]);
 
-        $this->assertSame(__('activity.subjects.user'), $log->subjectTypeLabel());
+        $this->assertSame(__('activity.subjects.user'), $this->labels()->subjectType($log));
     }
 
     public function test_newly_registered_subject_uses_its_lang_key(): void
     {
-        config(['audit.subjects' => ['App\\Models\\Widget' => 'widget']]);
+        config(['activity.subjects' => ['App\\Models\\Widget' => 'widget']]);
         app('translator')->addLines(['activity.subjects.widget' => 'Виджет'], 'ru');
 
         $log = new ActivityLog(['subject_type' => 'App\\Models\\Widget']);
 
-        $this->assertSame('Виджет', $log->subjectTypeLabel());
+        $this->assertSame('Виджет', $this->labels()->subjectType($log));
     }
 
     public function test_unregistered_subject_type_falls_back_to_class_basename(): void
     {
         $log = new ActivityLog(['subject_type' => 'App\\Models\\Unknown']);
 
-        $this->assertSame('Unknown', $log->subjectTypeLabel());
+        $this->assertSame('Unknown', $this->labels()->subjectType($log));
+    }
+
+    private function labels(): ActivityLogLabels
+    {
+        return $this->app->make(ActivityLogLabels::class);
     }
 }

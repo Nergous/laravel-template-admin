@@ -7,7 +7,52 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+The admin was restructured (architecture, fixes and feature removals). These entries come
+first in each section and are marked **Breaking** where an existing installation or
+integration has to change. Earlier entries of this section describe intermediate states;
+where they conflict (the bell, "sign in as", the forced password change, backup
+encryption), the first entries win.
+
 ### Added
+
+- record-level authorization through policies (`UserPolicy`, `RolePolicy`)
+  applied with `can:` route middleware; a record above the actor answers 403.
+- permanent deletion of users — the "Удалить навсегда" checkbox in
+  `TrashConfirmDialog` sends `force=1` to `DELETE /admin/users/{user}` and
+  `DELETE /admin/users/bulk`.
+- admin accent color — settings tab "Оформление" (`appearance.accent`), nine
+  presets (`AccentPreset`, `AccentColor`, `AccentPicker`, `accents.css`), applied as
+  `<html data-accent>` and the shared `accent` prop.
+- `MediaPicker` can upload files; `GET /admin/media/browse` returns the upload
+  limits in `upload` (`extensions`, `max_size_kb`, `max_files`) or `null` without
+  `media.upload`.
+- dashboard card "Требует внимания" (`DashboardAttention`): failed jobs, a
+  stalled queue, a missing backup or one older than 48 hours.
+- failed and successful sign-ins log the IP, the user agent and the reason of a
+  failure; auth messages live in `lang/ru/auth.php`.
+- `can_delete` on roles (deleting a role requires holding all its permissions)
+  and `can_manage` on users in the API Resources.
+- API Resources (`app/Http/Resources/{Access,Account,Media,System}`), filter
+  FormRequests (`*FilterRequest` with the `SortsList`, `PaginatesList` and
+  `ChoosesExport` traits), `SelectionRequest` (at most 500 ids) with
+  `App\Support\Selection` (bulk actions in one transaction, chunked by id).
+- string enums with `Concerns\HasLabel` (labels in `lang/ru/enums.php`); the
+  `ActivityOccurred` event → `WriteActivityLog` listener → `ActivityRecorder` with an
+  explicit actor; request-scoped services (`#[Scoped]`) and `#[Config]`/`#[Auth]`
+  injection; model concerns `HasSearch` (with `$searchable`), `LogsActivity`,
+  `TracksAuthor`; `MediaObserver`/`MediaTextObserver`; `DiagnoseHealth` for `/up`;
+  the `ApplyRuntimeSettings` middleware; `ErrorPageResponder`;
+  `ReferenceInUseException`.
+- HTML sanitizing (`App\Support\Html\HtmlSanitizer`, `SafeUrl`, `SafeStyle`)
+  with the Blade directives `@html`, `@htmlText`, `@htmlWithoutLinks`, `@htmlInline`,
+  and the `HtmlEditor` rich-text field with a highlighted raw HTML mode.
+- sitemap sources (`SitemapSource`, `SitemapEntry`, `SitemapChangeFrequency`)
+  registered with the `Sitemap::SOURCES` container tag; none by default.
+- `PermissionMigration::rename()`; the brand icon (favicon) and an
+  "Открыть сайт" link in the sidebar; `NDatePicker` in the activity log.
+- migrations `2026_10_06_000002`, `…000003`, `…000006` and `…000007` that drop
+  `permissions.is_system`, `users.must_change_password`, impersonation and the
+  notification columns.
 
 - Account blocking, a forced password change on next login and the last-login time for
   users; a self-service profile page with password change and active sessions.
@@ -83,6 +128,45 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 ### Changed
 
+- controllers are grouped as `Admin/{Access,Account,Content/Media,System}`
+  (plus the invokable `DashboardController` and `SearchController`), sign-in is
+  `Auth\AuthenticatedSessionController`, FormRequests and services follow the same
+  sections (`app/Services/{Access,Auth,Media,Site,System}`), robots/sitemap are
+  `Site\RobotsController` and `Site\SitemapController`. **Breaking** for code that
+  references the old `Admin*Controller`, `App\Support\RbacGuard`, `App\Support\Sitemap`
+  or `App\Support\MediaReferenceRegistry` classes (now under `App\Services\…`).
+- **Breaking** — the permission matrix routes were renamed:
+  `admin.permissions.sync` → `admin.permissions.toggle` and
+  `admin.permissions.sync-many` → `admin.permissions.toggle-many` (same URIs). A toggle
+  that changes nothing is not logged; changes are logged as `permissions_granted` /
+  `permissions_revoked`.
+- **Breaking** — JSON and Inertia record payloads come from API Resources with
+  snake_case keys: activity log entries, `creator_name`/`editor_name` (media details
+  formerly `uploaded_by`/`updated_by`), `user.can_manage`, `role.can_delete`, upload rules
+  `max_size_kb`/`max_files`. Media is exposed only through Resources.
+- **Breaking** — `QUEUE_CONNECTION=sync` is the default: uploads and manual backups
+  run inside the request. The `database` queue still works with your own
+  `queue:work`.
+- **Breaking** — the Docker image uses the stock FrankenPHP build (no xcaddy
+  stage) and drops `pdo_pgsql`, `postgresql-client` and the `redis` extension; the
+  compose stacks have no `redis` and no `queue` service (production: `app`, `scheduler`,
+  `db`). The scheduler service uses `pull_policy: never` and has its healthcheck disabled.
+- **Breaking** — `config/audit.php` is now `config/activity.php`; the initial
+  admin settings moved to `config/rbac.php` (`rbac.initial_admin`).
+- **Breaking** — a user or role above the actor now answers **403** (policy)
+  instead of a 422 validation error on the `user`/`role` key.
+- list filters are validated by FormRequests; an unknown export `format` is a
+  validation error; XLSX exports are streamed.
+- the superadmin `Gate::before` is registered in `AppServiceProvider`.
+- the application name comes from the settings in `HandleInertiaRequests` and
+  `admin.blade.php`; `config('app.name')` is no longer overwritten.
+- the session cookie is `Secure` by default in production
+  (`SESSION_SECURE_COOKIE`); the CSP allows `https:` images and adds `frame-src`.
+- "remember me" survives a password change on the current device; activity log
+  links to records respect the viewer's permissions.
+- nergous-ui-vue 1.2.0; dates in forms convert through
+  `toZonedInput`/`fromZonedInput`.
+- the queue `retry_after` default follows the longest job (`DB_QUEUE_RETRY_AFTER`).
 - The frontend moved to nergous-ui-vue 1.1.0: the toolbar, filters, chips, column
   picker, confirmation dialog, save bar, breadcrumbs, popovers, tooltips, hotkeys
   and Enter-to-submit come from the library, and its Russian locale replaces the
@@ -128,6 +212,25 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 ### Removed
 
+- **Breaking** — "sign in as" (impersonation): the routes, the
+  `users.impersonate` permission, the impersonator columns of the activity log and the
+  log entries of entering and leaving the mode (deleted by a migration).
+- **Breaking** — the forced password change on next login
+  (`users.must_change_password`, the `RequirePasswordChange` middleware, the users list
+  filter).
+- **Breaking** — the notification bell: `NotificationController`, the
+  `/admin/notifications/*` routes and the users' notification columns. The activity log
+  stays.
+- **Breaking** — the `permissions.is_system` column (`roles.is_system` stays).
+- **Breaking** — backup encryption: `BackupCipher`, `app:backup-key`,
+  `app:db-backup-decrypt`, `BACKUP_ENCRYPTION_KEY` and `*.enc` dumps. Decrypt existing
+  encrypted dumps before upgrading.
+- **Breaking** — the `media:backfill-thumbs` command, the queue worker service and
+  Redis, the `role`/`role_or_permission` middleware aliases, `App\Http\Sorts` and
+  `App\Http\Pagination` (replaced by the filter request traits).
+- the S/M/L interface density switch (the medium density only).
+- the dashboard roles, permissions, role distribution and system cards.
+- compiled Blade views under `storage/framework/views` are no longer tracked.
 - Creating, renaming and deleting permissions from the panel: the routes, the
   `PermissionRequest` and the `permissions.create`/`permissions.delete` permissions
   are gone; permissions are defined in code and seeders.
@@ -135,6 +238,12 @@ and the project adheres to [semantic versioning](https://semver.org/).
 
 ### Fixed
 
+- the stored MIME type matches the file after WebP/AVIF conversion.
+- `MediaStorage::copy()` throws when the source cannot be read or the target
+  cannot be written instead of returning a path to a missing file.
+- CSV export writes quotes per RFC 4180 (no backslash escape character), so a
+  value ending in `\` no longer breaks the row.
+- an unknown export format no longer falls back silently to CSV.
 - Media upload, file replacement and marking notifications as read sent no CSRF token
   after the token rotated (419 errors); `csrfHeaders()` now reads the `XSRF-TOKEN` cookie.
 - Restoring a soft-deleted record was logged twice.

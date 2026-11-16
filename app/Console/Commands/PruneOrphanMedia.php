@@ -3,23 +3,24 @@
 namespace App\Console\Commands;
 
 use App\Models\Media;
+use App\Support\Media\MediaFiles;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 /**
- * Removes files that no media row references.
+ * Deletes files no media library record references.
  *
- * Two sources of orphans:
- *  - storage/app/temp — uploads whose job never ran or crashed before cleanup;
- *  - the media/ directory on the media disk (config('media.disk')) —
- *    originals/thumbnails left after failed jobs or manual database edits.
+ * Where stray files come from:
+ *  - storage/app/temp — uploads whose job never ran or failed before cleanup;
+ *  - the media/ folder on the media disk (config('media.disk')) — originals and previews
+ *    left after failed jobs or manual database edits.
  *
- * Only files older than --hours (24 by default, at least 1) are touched: a
- * job writes its new files before it points the row at them (an upload, a
- * replacement, a crop), and a job attempt is capped at 5 minutes. Temp files
- * of jobs still waiting in a database queue are kept at any age. Runs daily
- * from the scheduler (routes/console.php).
+ * Only files older than --hours (24 by default, at least 1) are deleted: a job
+ * writes the new files first and only then switches the record to them (upload,
+ * replacement, crop), and one job attempt is limited to 5 minutes.
+ * Temporary files of jobs still waiting in the database queue are never deleted,
+ * whatever their age. The scheduler runs the command daily (routes/console.php).
  *
  * Usage:
  *   php artisan media:prune-orphans --dry-run
@@ -43,7 +44,7 @@ class PruneOrphanMedia extends Command
 
         $known = [];
         Media::query()->select(['id', 'filename', 'variants'])->lazyById()->each(function (Media $media) use (&$known) {
-            foreach ($media->storedPaths() as $path) {
+            foreach (MediaFiles::of($media)->paths() as $path) {
                 $known[$path] = true;
             }
         });
@@ -57,8 +58,8 @@ class PruneOrphanMedia extends Command
     }
 
     /**
-     * Temp paths named by jobs waiting in the database queue (a backlog older
-     * than the age window). Other queue drivers rely on the window alone.
+     * Temporary files of jobs waiting in the database queue (in case the queue backs
+     * up longer than the age window). For other queue drivers the window is enough.
      *
      * @return array<string, true>
      */

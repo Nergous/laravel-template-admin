@@ -9,7 +9,6 @@ import {
     NInput,
     NBadge,
     NAvatar,
-    NCheckbox,
     NEmptyState,
     NFormField,
     NToolbar,
@@ -23,6 +22,7 @@ import {
 import type { Column } from "nergous-ui-vue";
 import type { AdminUser, Pagination, SharedProps } from "@/admin/types";
 import AdminPagination from "@/admin/components/AdminPagination.vue";
+import TrashConfirmDialog from "@/admin/components/TrashConfirmDialog.vue";
 import ExportMenu from "@/admin/components/ExportMenu.vue";
 import { useBulkSelection } from "@/admin/composables/useBulkSelection";
 import { useIndexFilters } from "@/admin/composables/useIndexFilters";
@@ -67,7 +67,6 @@ const props = defineProps({
             search?: string;
             role?: string | string[];
             status?: string;
-            must_change_password?: string;
         }>,
         default: () => ({}),
     },
@@ -78,9 +77,6 @@ const page = usePage<SharedProps>();
 // Several roles: comma-separated in the address, any of them matches.
 const role = ref(parseList(props.filters.role));
 const status = ref(props.filters.status ?? "");
-const mustChangePassword = ref(
-    ["1", "true"].includes(props.filters.must_change_password ?? ""),
-);
 
 const roleOptions = computed(() => [
     { value: props.withoutRolesValue, label: "Без роли" },
@@ -108,12 +104,6 @@ const activeFilters = computed(() => {
             label: "Статус",
             value: optionLabel(statusOptions, status.value),
         });
-    if (mustChangePassword.value)
-        list.push({
-            key: "password",
-            label: "Смена пароля",
-            value: "требуется",
-        });
     return list;
 });
 function removeFilter(key: string) {
@@ -122,14 +112,12 @@ function removeFilter(key: string) {
     if (name === "role" && value !== null)
         role.value = without(role.value, value);
     if (name === "status") status.value = "";
-    if (name === "password") mustChangePassword.value = false;
     reload({ page: 1 });
 }
 function resetFilters() {
     search.value = "";
     role.value = [];
     status.value = "";
-    mustChangePassword.value = false;
     reload({ page: 1 });
 }
 
@@ -141,7 +129,6 @@ function filterParams(): Record<string, string> {
     const roles = joinList(role.value);
     if (roles) params.role = roles;
     if (status.value) params.status = status.value;
-    if (mustChangePassword.value) params.must_change_password = "1";
     return params;
 }
 
@@ -149,7 +136,6 @@ const { reload, onSearch, onSort } = useIndexFilters("/admin/users", () => ({
     search: search.value,
     role: joinList(role.value),
     status: status.value || undefined,
-    must_change_password: mustChangePassword.value ? 1 : undefined,
     sort: props.currentSort,
     direction: props.currentDirection,
     per_page: props.perPage,
@@ -283,11 +269,6 @@ usePageHeader(() => ({
                 aria-label="Фильтр по статусу"
                 @update:model-value="reload({ page: 1 })"
             />
-            <NCheckbox
-                v-model="mustChangePassword"
-                @update:model-value="reload({ page: 1 })"
-                >Требуется смена пароля</NCheckbox
-            >
             <NButton
                 v-if="trashedCount > 0 && can('users.delete')"
                 :as="Link"
@@ -480,23 +461,22 @@ usePageHeader(() => ({
         />
     </div>
 
-    <NConfirmDialog
+    <TrashConfirmDialog
         v-model="del.open"
         :loading="del.loading"
         :message="`Отправить пользователя «${del.payload?.name}» в корзину?`"
-        confirm-label="В корзину"
+        :force-message="`Удалить пользователя «${del.payload?.name}» навсегда? Восстановить его будет нельзя.`"
         @confirm="confirmDelete"
-        danger
     />
 
-    <NConfirmDialog
+    <TrashConfirmDialog
         v-model="bulkOpen"
         title="Переместить в корзину"
+        force-title="Удалить навсегда"
         :message="`Переместить выбранных пользователей (${selectedCount}) в корзину?`"
-        confirm-label="В корзину"
+        :force-message="`Удалить выбранных пользователей (${selectedCount}) навсегда? Восстановить их будет нельзя.`"
         :loading="bulkLoading"
         @confirm="confirmBulkDelete"
-        danger
     />
 
     <NConfirmDialog
@@ -515,7 +495,7 @@ usePageHeader(() => ({
         <NFormField
             v-if="statusAction === false"
             label="Причина блокировки"
-            hint="Необязательно. Пользователь увидит её при попытке входа."
+            hint="Пользователь увидит её при попытке входа."
             class="block-reason"
         >
             <NInput

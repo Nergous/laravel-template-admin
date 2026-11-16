@@ -1,7 +1,8 @@
 <?php
 
+use App\Events\ActivityOccurred;
 use App\Models\ActivityLog;
-use App\Services\BackupService;
+use App\Services\System\Backup\BackupService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -16,14 +17,14 @@ Artisan::command('inspire', function () {
 // (docker-compose.yml, `php artisan schedule:work`). Add new ones via
 // Schedule::command(...)->daily() and so on right here.
 
-// Daily activity log cleanup: deletes records older than
-// config('audit.retention_days') (see config/audit.php). An explicit --model instead
-// of auto-discovery. MassPrunable → a single DELETE without model events.
+// Daily activity log pruning: entries older than config('activity.retention_days')
+// (see config/activity.php). The model is named explicitly, no auto-discovery.
+// ActivityLog is MassPrunable, so pruning is a single DELETE without model events.
 Schedule::command('model:prune', ['--model' => [ActivityLog::class]])->daily();
 
 // Daily DB dump into config('backup.path') (storage/app/backups by default) with
-// rotation of scheduled dumps; optional encryption and an offsite copy to
-// BACKUP_DISK are configured in config/backup.php.
+// rotation of scheduled dumps; an optional offsite copy to BACKUP_DISK is
+// configured in config/backup.php.
 // Nobody watches the scheduler output, so a failed run (non-zero exit: no dump, or
 // no offsite copy) is logged, written to the activity log and flagged in the cache
 // for the backups page; the next successful run clears the flag. The command
@@ -34,7 +35,7 @@ Schedule::command('app:db-backup')
     ->onFailure(function () {
         Log::error('Scheduled database backup (app:db-backup) failed; see the previous log entries for the cause.');
         Cache::forever(BackupService::SCHEDULED_FAILURE_KEY, ['at' => now()->toIso8601String()]);
-        ActivityLog::record(null, 'backup_failed', ['error' => [null, 'Плановая резервная копия не создана или не выгружена']]);
+        ActivityOccurred::by(null, null, 'backup_failed', ['error' => [null, 'Плановая резервная копия не создана или не выгружена']]);
     });
 
 // Daily cleanup of files no media row references (stale temp uploads, leftovers

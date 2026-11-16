@@ -40,6 +40,12 @@
     height: 30px;
     padding: 0;
 }
+/* Up/down buttons of sortable lists: at the list edge they fade out quietly
+   instead of turning into a filled grey square. */
+.n-btn.n-btn--ghost[data-sort-move]:disabled {
+    background: transparent;
+    opacity: 0.35;
+}
 /* Visually hidden, still read by screen readers (live announcements). */
 .sr-only {
     position: absolute;

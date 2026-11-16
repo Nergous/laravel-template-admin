@@ -3,23 +3,25 @@
 namespace Database\Seeders;
 
 use App\Models\Role;
-use App\Support\RbacGuard;
+use App\Services\Access\RbacGuard;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 
 class RolePermissionSeeder extends Seeder
 {
+    public function __construct(private readonly RbacGuard $rbac) {}
+
     /**
-     * Permissions the application code relies on. They are seeded as system
-     * permissions (permissions.is_system): the admin panel cannot rename or
-     * delete them. Add your own "module.action" permissions here (and a
+     * Permissions the application code relies on. Every permission comes from
+     * code: the admin panel cannot create, rename or delete them. Add your own
+     * "module.action" permissions here (and a
      * migration for existing installations, see App\Support\Migrations\PermissionMigration).
      *
      * @var list<string>
      */
     public const PERMISSIONS = [
-        'users.view', 'users.create', 'users.edit', 'users.delete', 'users.export', 'users.impersonate',
+        'users.view', 'users.create', 'users.edit', 'users.delete', 'users.export',
         'roles.view', 'roles.create', 'roles.edit', 'roles.delete',
         'permissions.view', 'permissions.edit',
         'media.view', 'media.upload', 'media.edit', 'media.delete',
@@ -56,7 +58,7 @@ class RolePermissionSeeder extends Seeder
     {
         $this->createPermissions();
 
-        $this->systemRole(RbacGuard::superadminRole(), 'Полный доступ ко всем разделам панели.')
+        $this->systemRole($this->rbac->superadminRole(), 'Полный доступ ко всем разделам панели.')
             ->syncPermissions(self::PERMISSIONS);
         $this->systemRole('operator', 'Управление медиатекой: загрузка, переименование и удаление файлов.')
             ->syncPermissions(self::OPERATOR_PERMISSIONS);
@@ -75,8 +77,8 @@ class RolePermissionSeeder extends Seeder
     {
         $this->createPermissions();
 
-        $admin = Role::where('name', RbacGuard::superadminRole())->where('guard_name', 'web')->first()
-            ?? $this->systemRole(RbacGuard::superadminRole(), 'Полный доступ ко всем разделам панели.');
+        $admin = Role::where('name', $this->rbac->superadminRole())->where('guard_name', 'web')->first()
+            ?? $this->systemRole($this->rbac->superadminRole(), 'Полный доступ ко всем разделам панели.');
         $missing = array_values(array_diff(self::PERMISSIONS, $admin->permissions()->pluck('name')->all()));
         if ($missing !== []) {
             $admin->givePermissionTo($missing);
@@ -93,12 +95,7 @@ class RolePermissionSeeder extends Seeder
     private function createPermissions(): void
     {
         foreach (self::PERMISSIONS as $name) {
-            $permission = Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
-
-            if (! $permission->is_system) {
-                $permission->is_system = true;
-                $permission->save();
-            }
+            Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']);
         }
     }
 

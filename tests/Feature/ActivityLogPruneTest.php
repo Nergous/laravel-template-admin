@@ -8,9 +8,8 @@ use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 /**
- * Regression for finding M3: the daily model:prune trims the activity log
- * (activity_log) by the config('audit.retention_days') retention period, while a
- * zero retention fully disables pruning.
+ * The daily model:prune deletes activity log entries (activity_log) older than
+ * config('activity.retention_days'); a zero retention disables pruning entirely.
  */
 class ActivityLogPruneTest extends TestCase
 {
@@ -27,7 +26,7 @@ class ActivityLogPruneTest extends TestCase
 
     public function test_prune_removes_records_older_than_retention(): void
     {
-        config(['audit.retention_days' => 180]);
+        config(['activity.retention_days' => 180]);
 
         $old = $this->makeLog('old', now()->subDays(200));
         $fresh = $this->makeLog('fresh', now()->subDays(10));
@@ -42,7 +41,7 @@ class ActivityLogPruneTest extends TestCase
     public function test_prune_disabled_when_retention_is_zero(): void
     {
         // The config must be set BEFORE calling the command — prunable() reads it.
-        config(['audit.retention_days' => 0]);
+        config(['activity.retention_days' => 0]);
 
         $old = $this->makeLog('old', now()->subDays(200));
 

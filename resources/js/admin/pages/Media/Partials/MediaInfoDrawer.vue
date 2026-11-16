@@ -83,8 +83,8 @@ async function open(m: MediaItem) {
     info.value = {
         ...m,
         dimensions: null,
-        uploaded_by: null,
-        updated_by: null,
+        creator_name: null,
+        editor_name: null,
         updated_at: null,
         places: [],
     };
@@ -331,15 +331,15 @@ defineExpose({ open });
                     </dd>
                 </template>
                 <dt>Загрузил</dt>
-                <dd>{{ info.uploaded_by || "—" }}</dd>
+                <dd>{{ info.creator_name || "—" }}</dd>
                 <dt>Загружен</dt>
                 <dd>
-                    {{ info.created_local || formatDateTime(info.created_at) }}
+                    {{ formatDateTime(info.created_at) }}
                 </dd>
-                <template v-if="info.updated_by">
+                <template v-if="info.editor_name">
                     <dt>Изменил</dt>
                     <dd>
-                        {{ info.updated_by }} ·
+                        {{ info.editor_name }} ·
                         {{ formatDateTime(info.updated_at) }}
                     </dd>
                 </template>

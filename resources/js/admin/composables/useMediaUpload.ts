@@ -11,11 +11,11 @@ import {
 } from "@/lib/api";
 import { formatBytes, pluralize } from "@/lib/format";
 
-/** Mirrors MediaRequest validation so bad files are caught before upload. */
+/** Mirrors App\Support\Media\UploadRules so bad files are caught before upload. */
 export interface UploadRules {
     extensions: string[];
-    maxSizeKb: number;
-    maxFiles: number;
+    max_size_kb: number;
+    max_files: number;
 }
 /** An upload_failed log entry reported by the poll endpoint. */
 export interface PollFailure {
@@ -55,10 +55,10 @@ export function acceptAttr(rules: UploadRules) {
 export function checkFiles(
     files: File[],
     rules: UploadRules,
-    maxFiles = rules.maxFiles,
+    maxFiles = rules.max_files,
 ) {
     const errors: string[] = [];
-    const maxSizeBytes = rules.maxSizeKb * 1024;
+    const maxSizeBytes = rules.max_size_kb * 1024;
     if (files.length > maxFiles) {
         errors.push(
             `Можно загрузить не более ${maxFiles} ${pluralize(maxFiles, "файла", "файлов", "файлов")} за раз, выбрано ${files.length}.`,
@@ -122,6 +122,8 @@ export function useMediaUpload(options: {
     /** Folder the files go into ("" — the library root). */
     folder: () => string;
     onItems: (items: MediaItem[]) => void;
+    /** Files skipped as duplicates, each reported once. */
+    onDuplicates?: (duplicates: PollDuplicate[]) => void;
 }) {
     const toast = useToast();
 
@@ -261,6 +263,8 @@ export function useMediaUpload(options: {
                 for (const d of freshDuplicates) reportedDuplicates.add(d.id);
                 duplicateCount.value = reportedDuplicates.size;
                 reportDuplicates(toast, freshDuplicates);
+                if (freshDuplicates.length)
+                    options.onDuplicates?.(freshDuplicates);
             } catch (err) {
                 if (err instanceof SessionExpiredError) {
                     stopPolling();

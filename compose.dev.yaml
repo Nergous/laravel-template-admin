@@ -1,5 +1,5 @@
 # =============================================================================
-#  DEV stack with hot-reload: code bind-mount + Vite dev server + queue + DB.
+#  DEV stack with hot-reload: code bind-mount + Vite dev server + DB.
 #
 #  Run:
 #    cp .env.example .env        # APP_ENV=local, APP_DEBUG=true (the defaults are fine)
@@ -9,8 +9,7 @@
 #    app   — FrankenPHP serves Laravel at http://localhost:8000, with the code mounted
 #            via bind-mount (PHP edits are picked up: opcache validate_timestamps=1).
 #    vite  — Vite dev server (HMR) at http://localhost:5173.
-#    queue — queue:listen (re-reads the code on every job, handy in dev).
-#    db    — MariaDB. app and queue are pointed at it through `environment:` below
+#    db    — MariaDB. app is pointed at it through `environment:` below
 #            (it overrides DB_* from .env, whose default is the host SQLite file), so the
 #            stack really runs on the same database engine as production.
 #
@@ -76,29 +75,6 @@ services:
       - node-modules-dev:/app/node_modules
     networks: [internal]
 
-  queue:
-    image: laravel-admin-template:dev
-    container_name: admin-template-dev-queue
-    restart: unless-stopped
-    env_file: [.env]
-    environment:
-      <<: *dev-db-env
-      APP_ENV: local
-      RUN_MIGRATIONS: "false"
-      RUN_SEEDS: "false"
-      OPTIMIZE: "false"
-    # queue:listen re-reads the code between jobs — exactly what you want in development.
-    command: php artisan queue:listen --tries=1 --timeout=0
-    volumes:
-      - .:/app
-      - vendor-dev:/app/vendor
-    networks: [internal]
-    depends_on:
-      app:
-        condition: service_started
-      db:
-        condition: service_healthy
-
   db:
     # Same LTS line as production (docker-compose.yml).
     image: mariadb:12.3
@@ -121,14 +97,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-
-  redis:
-    image: redis:7-alpine
-    container_name: admin-template-dev-redis
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:${DEV_REDIS_PORT:-6379}:6379"
-    networks: [internal]
 
 volumes:
   db-data-dev:

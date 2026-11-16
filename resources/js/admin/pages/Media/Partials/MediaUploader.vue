@@ -27,7 +27,7 @@ const { uploading, phase, pct, processingLabel, precheckErrors, upload } =
 const accept = computed(() => acceptAttr(props.uploadRules));
 const dropHint = computed(
     () =>
-        `изображения, видео, аудио, документы · до ${formatBytes(props.uploadRules.maxSizeKb * 1024)} · не более ${props.uploadRules.maxFiles} за раз`,
+        `изображения, видео, аудио, документы · до ${formatBytes(props.uploadRules.max_size_kb * 1024)} · не более ${props.uploadRules.max_files} за раз`,
 );
 </script>
 

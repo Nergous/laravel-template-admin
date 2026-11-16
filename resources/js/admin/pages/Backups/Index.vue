@@ -22,13 +22,11 @@ interface BackupFile {
     size: number;
     created_at: string;
     kind: string;
-    encrypted: boolean;
 }
 
 const props = defineProps({
     backups: { type: Array as PropType<BackupFile[]>, default: () => [] },
     driver: { type: String, default: "" },
-    encrypted: { type: Boolean, default: false },
     offsite: { type: String as PropType<string | null>, default: null },
     keep: {
         type: Object as PropType<{ scheduled: number; manual: number }>,
@@ -130,15 +128,8 @@ usePageHeader(() => ({
             <p class="intro__text">
                 Плановые копии создаёт команда <code>app:db-backup</code> по
                 расписанию, ручные — кнопка справа. {{ retention }}
-                <template v-if="encrypted">
-                    Копии зашифрованы ключом
-                    <code>BACKUP_ENCRYPTION_KEY</code>, расшифровка —
-                    <code>app:db-backup-decrypt</code>.
-                </template>
-                <template v-else>
-                    Файл содержит все учётные записи и настройки — скачивайте
-                    его только на доверенные устройства.
-                </template>
+                Файл содержит все учётные записи и настройки — скачивайте его
+                только на доверенные устройства.
                 <template v-if="offsite">
                     Копии дублируются на диск <code>{{ offsite }}</code
                     >.
@@ -204,9 +195,7 @@ usePageHeader(() => ({
             <ul v-if="backups.length" class="list">
                 <li v-for="file in backups" :key="file.name" class="row">
                     <span class="row__ico"
-                        ><NIcon
-                            :name="file.encrypted ? 'lock' : 'layers'"
-                            :size="18"
+                        ><NIcon name="layers" :size="18"
                     /></span>
                     <div class="row__main">
                         <span class="row__head">
@@ -222,13 +211,6 @@ usePageHeader(() => ({
                                 >{{
                                     kindLabels[file.kind] ?? file.kind
                                 }}</NBadge
-                            >
-                            <NBadge
-                                v-if="file.encrypted"
-                                size="sm"
-                                pill
-                                tone="ok"
-                                >зашифрована</NBadge
                             >
                         </span>
                         <span class="row__meta">

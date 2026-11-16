@@ -9,17 +9,12 @@ import {
     NStatCard,
     NActivityRow,
     NEmptyState,
-    NBadge,
+    NIcon,
 } from "nergous-ui-vue";
 import { can } from "@/lib/can";
-import {
-    formatBytes,
-    formatDateTime,
-    formatNumber,
-    formatRelative,
-} from "@/lib/format";
-import { swatchColor } from "@/lib/swatch";
+import { formatBytes, formatNumber, formatRelative } from "@/lib/format";
 import { activityVisual } from "@/admin/activityVisuals";
+import type { AuditLog } from "@/admin/types";
 
 type StatCard = {
     value: number;
@@ -30,16 +25,12 @@ type StatCard = {
     no_alt?: number;
 };
 
-type SystemHealth = {
-    queue: {
-        pending: number | null;
-        oldest_pending_at: string | null;
-        failed: number;
-    } | null;
-    backup: {
-        latest: { name: string; created_at: string } | null;
-        stale: boolean;
-    } | null;
+type AttentionItem = {
+    key: string;
+    tone: "danger" | "warn" | "info";
+    label: string;
+    value: string;
+    url: string;
 };
 
 const props = defineProps({
@@ -47,46 +38,25 @@ const props = defineProps({
         type: Object as PropType<Record<string, StatCard>>,
         required: true,
     },
-    roleDistribution: {
-        type: Array as PropType<{ name: string; count: number }[]>,
+    /** Problems to act on; empty when everything is fine. */
+    attention: {
+        type: Array as PropType<AttentionItem[]>,
         default: () => [],
     },
     recentActivity: {
-        type: Array as PropType<
-            {
-                id: number;
-                user: string | null;
-                action: string;
-                action_label: string;
-                subject_label: string;
-                subject_type: string;
-                changes_count: number;
-                created_human: string;
-            }[]
-        >,
+        type: Array as PropType<AuditLog[]>,
         default: () => [],
-    },
-    system: {
-        type: Object as PropType<SystemHealth>,
-        default: () => ({ queue: null, backup: null }),
     },
 });
 
 const cards = [
+    { key: "media", label: "Медиафайлы", icon: "asset", href: "/admin/media" },
     {
         key: "users",
         label: "Пользователи",
         icon: "users",
         href: "/admin/users",
     },
-    { key: "roles", label: "Роли", icon: "shield", href: "/admin/roles" },
-    {
-        key: "permissions",
-        label: "Разрешения",
-        icon: "lock",
-        href: "/admin/permissions",
-    },
-    { key: "media", label: "Медиафайлы", icon: "asset", href: "/admin/media" },
     {
         key: "logins",
         label: "Входы за 24 ч",
@@ -95,8 +65,7 @@ const cards = [
     },
 ];
 
-// Render only the cards for which the server sent a metric — so the
-// template doesn't break if the stats set is trimmed (e.g. the media library is removed).
+// Only the cards the server sent (each one is gated by its section permission).
 const visibleCards = computed(() => cards.filter((c) => props.stats[c.key]));
 
 // The media card opens the images to fix while some lack alternative text.
@@ -125,34 +94,19 @@ const quickActions = computed(() =>
     ].filter((action) => can(action.perm)),
 );
 
+const attentionIcon: Record<AttentionItem["tone"], string> = {
+    danger: "alert-triangle",
+    warn: "alert-triangle",
+    info: "bell",
+};
+
 const cardSub = (s: StatCard) =>
     s.bytes !== undefined ? `${formatBytes(s.bytes)} · ${s.sub}` : s.sub;
 
-// A pending job older than 15 minutes means the worker is down (same threshold as /up).
-const QUEUE_STALE_MS = 15 * 60 * 1000;
-const queueStuck = computed(() => {
-    const at = props.system.queue?.oldest_pending_at;
-    return !!at && Date.now() - new Date(at).getTime() > QUEUE_STALE_MS;
-});
-const showSystem = computed(
-    () => !!props.system.queue || !!props.system.backup,
-);
-
 // Tone and icon per action; the verb comes from the server (lang/ru/activity.php).
-const actOf = (a: { action: string }) => activityVisual(a.action);
-const actMeta = (a: { changes_count: number }) =>
+const actOf = (a: AuditLog) => activityVisual(a.action);
+const actMeta = (a: AuditLog) =>
     a.changes_count ? `${a.changes_count} изм.` : "";
-
-const bars = computed(() => {
-    const total = props.roleDistribution.reduce((s, r) => s + r.count, 0) || 1;
-    // Same name-hash palette as Roles/Users/Permissions so a role keeps one color everywhere.
-    return props.roleDistribution.map((r) => ({
-        name: r.name,
-        count: r.count,
-        pct: Math.round((r.count / total) * 100),
-        color: swatchColor(r.name),
-    }));
-});
 
 usePageHeader(() => ({
     title: "Главная",
@@ -190,123 +144,64 @@ usePageHeader(() => ({
         </Link>
     </div>
 
-    <NCard v-if="showSystem" padding="20px" class="system-card">
+    <NCard v-if="attention.length" padding="20px" class="section-card">
         <div class="card-head">
-            <h2 class="card-title">Состояние системы</h2>
+            <h2 class="card-title">Требует внимания</h2>
         </div>
-        <div class="system-grid">
-            <Link v-if="system.queue" href="/admin/queue" class="system-item">
-                <span class="system-label">Очередь задач</span>
-                <span class="system-value">
-                    <template v-if="system.queue.pending === null"
-                        >не database-драйвер</template
-                    >
-                    <template v-else
-                        >{{ formatNumber(system.queue.pending) }} в
-                        ожидании</template
-                    >
-                    <NBadge v-if="queueStuck" tone="warn" size="sm"
-                        >воркер не отвечает</NBadge
-                    >
-                </span>
-                <span v-if="system.queue.oldest_pending_at" class="system-sub"
-                    >Самая старая:
-                    {{ formatRelative(system.queue.oldest_pending_at) }}</span
+        <ul class="attention-list">
+            <li v-for="item in attention" :key="item.key">
+                <Link
+                    :href="item.url"
+                    class="attention-item"
+                    :class="'attention-item--' + item.tone"
                 >
-            </Link>
-            <Link v-if="system.queue" href="/admin/queue" class="system-item">
-                <span class="system-label">Упавшие задачи</span>
-                <span class="system-value">
-                    {{ formatNumber(system.queue.failed) }}
-                    <NBadge
-                        v-if="system.queue.failed > 0"
-                        tone="danger"
-                        size="sm"
-                        >требуют внимания</NBadge
-                    >
-                </span>
-            </Link>
-            <Link
-                v-if="system.backup"
-                href="/admin/backups"
-                class="system-item"
-            >
-                <span class="system-label">Последний бэкап</span>
-                <span class="system-value">
-                    <template v-if="system.backup.latest">{{
-                        formatRelative(system.backup.latest.created_at)
-                    }}</template>
-                    <template v-else>ещё не создавался</template>
-                    <NBadge v-if="system.backup.stale" tone="warn" size="sm"
-                        >устарел</NBadge
-                    >
-                </span>
-                <span v-if="system.backup.latest" class="system-sub">{{
-                    formatDateTime(system.backup.latest.created_at)
-                }}</span>
-            </Link>
-        </div>
+                    <span class="attention-item__icon">
+                        <NIcon :name="attentionIcon[item.tone]" :size="16" />
+                    </span>
+                    <span class="attention-item__label">{{ item.label }}</span>
+                    <span class="attention-item__value">{{ item.value }}</span>
+                    <NIcon
+                        name="chevron-right"
+                        :size="16"
+                        class="attention-item__go"
+                    />
+                </Link>
+            </li>
+        </ul>
     </NCard>
 
-    <div
-        v-if="can('activity-log.view') || can('roles.view')"
-        class="grid-2"
-        :class="{
-            'grid-2--single': !can('activity-log.view') || !can('roles.view'),
-        }"
+    <NCard
+        v-if="can('activity-log.view')"
+        padding="0"
+        class="activity-card section-card"
     >
-        <NCard
-            v-if="can('activity-log.view')"
-            padding="0"
-            class="activity-card"
-        >
-            <div class="card-head card-head--inset">
-                <h2 class="card-title">Последние действия</h2>
-                <Link href="/admin/activity-log" class="dash-link"
-                    >Весь журнал →</Link
-                >
-            </div>
-            <template v-if="recentActivity.length">
-                <NActivityRow
-                    v-for="a in recentActivity"
-                    :key="a.id"
-                    :tone="actOf(a).tone || 'info'"
-                    :icon="actOf(a).icon || 'edit'"
-                    :actor="a.user || 'Система'"
-                    :verb="(a.action_label || a.action).toLowerCase()"
-                    :object="a.subject_label || ''"
-                    :tag="a.subject_type || ''"
-                    :time="a.created_human || ''"
-                    :meta="actMeta(a)"
-                />
-            </template>
-            <NEmptyState
-                v-else
-                icon="activity"
-                title="Активности пока нет"
-                description="Действия пользователей появятся здесь."
+        <div class="card-head card-head--inset">
+            <h2 class="card-title">Последние действия</h2>
+            <Link href="/admin/activity-log" class="dash-link"
+                >Весь журнал →</Link
+            >
+        </div>
+        <template v-if="recentActivity.length">
+            <NActivityRow
+                v-for="a in recentActivity"
+                :key="a.id"
+                :tone="actOf(a).tone || 'info'"
+                :icon="actOf(a).icon || 'edit'"
+                :actor="a.actor"
+                :verb="(a.action_label || a.action).toLowerCase()"
+                :object="a.subject"
+                :tag="a.subject_type"
+                :time="formatRelative(a.created_at)"
+                :meta="actMeta(a)"
             />
-        </NCard>
-
-        <NCard v-if="can('roles.view')" padding="20px">
-            <div class="card-head">
-                <h2 class="card-title">Распределение ролей</h2>
-            </div>
-            <div v-for="b in bars" :key="b.name" class="bar-row">
-                <div class="bar-top">
-                    <span
-                        ><i :style="{ background: b.color }" />{{
-                            b.name
-                        }}</span
-                    >
-                    <span class="bar-count">{{ b.count }}</span>
-                </div>
-                <div class="bar">
-                    <div :style="{ width: b.pct + '%', background: b.color }" />
-                </div>
-            </div>
-        </NCard>
-    </div>
+        </template>
+        <NEmptyState
+            v-else
+            icon="activity"
+            title="Активности пока нет"
+            description="Действия пользователей появятся здесь."
+        />
+    </NCard>
 </template>
 
 <style scoped>
@@ -318,7 +213,7 @@ usePageHeader(() => ({
 }
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
     gap: var(--kpi-gap, 16px);
 }
 .kpi-link {
@@ -331,64 +226,79 @@ usePageHeader(() => ({
 .kpi-link :deep(.n-stat) {
     flex: 1;
     min-width: 0;
+    /* NStatCard animates only its padding; keep that and fade the hover border. */
+    transition:
+        padding 0.18s ease,
+        border-color 0.15s ease;
 }
 .kpi-link:hover :deep(.n-stat) {
     border-color: var(--accent);
 }
-.kpi-link:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-}
-.grid-2 {
-    display: grid;
-    grid-template-columns: 1.5fr 1fr;
-    gap: 16px;
+.section-card {
     margin-top: 16px;
 }
-.grid-2--single {
-    grid-template-columns: 1fr;
-}
-.system-card {
-    margin-top: 16px;
-}
-.system-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 12px;
-}
-.system-item {
+.attention-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 12px 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.attention-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 8px;
+    margin: 0 -8px;
+    border-radius: 8px;
     color: inherit;
     text-decoration: none;
 }
-.system-item:hover {
+.attention-item:hover {
     background: var(--surface-2);
 }
-.system-label {
-    font-size: 12px;
-    color: var(--text-muted);
+.attention-item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
 }
-.system-value {
+.attention-item__icon {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-weight: 700;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    border-radius: 8px;
 }
-.system-sub {
-    font-size: 12px;
-    color: var(--text-muted);
+.attention-item--danger .attention-item__icon {
+    background: var(--danger-bg);
+    color: var(--danger);
+}
+.attention-item--warn .attention-item__icon {
+    background: var(--warn-bg);
+    color: var(--warn);
+}
+.attention-item--info .attention-item__icon {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+.attention-item__label {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+}
+.attention-item__value {
+    color: var(--text-2);
+    font-size: 13px;
+    white-space: nowrap;
+}
+.attention-item__go {
+    color: var(--text-3);
 }
 @media (max-width: 920px) {
     .kpi-grid {
         grid-template-columns: repeat(2, 1fr);
-    }
-    .grid-2 {
-        grid-template-columns: 1fr;
     }
 }
 .card-head {
@@ -421,42 +331,5 @@ usePageHeader(() => ({
 }
 .dash-link:hover {
     text-decoration: underline;
-}
-.bar-row {
-    margin-bottom: 14px;
-}
-.bar-row:last-child {
-    margin-bottom: 0;
-}
-.bar-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
-    font-size: 13px;
-    font-weight: 600;
-}
-.bar-top span:first-child {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.bar-top i {
-    width: 9px;
-    height: 9px;
-    border-radius: 3px;
-}
-.bar-count {
-    font-family: var(--font-mono);
-}
-.bar {
-    height: 7px;
-    border-radius: 999px;
-    background: var(--surface-3);
-    overflow: hidden;
-}
-.bar > div {
-    height: 100%;
-    border-radius: 999px;
 }
 </style>

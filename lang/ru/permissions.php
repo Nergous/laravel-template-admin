@@ -1,7 +1,7 @@
 <?php
 
 /**
- * Localized labels for the permissions matrix (AdminPermissionController).
+ * Localized labels for the permissions matrix (PermissionController).
  *
  * resources — the permission-name prefix before the dot (users.view → users),
  * actions — the suffix after the dot (users.view → view).
@@ -29,6 +29,5 @@ return [
         'manage' => 'Управление',
         'download' => 'Скачивание',
         'export' => 'Экспорт',
-        'impersonate' => 'Вход от имени',
     ],
 ];

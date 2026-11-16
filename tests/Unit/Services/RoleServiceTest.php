@@ -4,7 +4,7 @@ namespace Tests\Unit\Services;
 
 use App\Models\Role;
 use App\Models\User;
-use App\Services\RoleService;
+use App\Services\Access\RoleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
@@ -19,7 +19,7 @@ class RoleServiceTest extends TestCase
         Permission::findOrCreate('demo.alpha', 'web');
         $actor = User::factory()->create();
 
-        $role = (new RoleService)->create(
+        $role = app(RoleService::class)->create(
             ['name' => 'editor', 'description' => 'Редакторы'],
             ['demo.alpha'],
             $actor,
@@ -35,7 +35,7 @@ class RoleServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
 
-        (new RoleService)->update($role, ['name' => 'superadmin', 'description' => null], [], null);
+        app(RoleService::class)->update($role, ['name' => 'superadmin', 'description' => null], [], User::factory()->create());
     }
 
     public function test_delete_rejects_system_role(): void
@@ -44,7 +44,7 @@ class RoleServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
 
-        (new RoleService)->delete($role);
+        app(RoleService::class)->delete($role, User::factory()->create());
     }
 
     /**
@@ -67,6 +67,6 @@ class RoleServiceTest extends TestCase
 
         $this->expectException(ValidationException::class);
 
-        (new RoleService)->delete($role);
+        app(RoleService::class)->delete($role, User::factory()->create());
     }
 }

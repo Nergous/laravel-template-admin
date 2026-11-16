@@ -4,7 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Role;
 use App\Models\User;
-use App\Support\RbacGuard;
+use App\Services\Access\RbacGuard;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -28,7 +28,7 @@ class CreateAdminCommandTest extends TestCase
 
         $user = User::where('email', 'boss@example.test')->firstOrFail();
 
-        $this->assertTrue($user->hasRole(RbacGuard::superadminRole()));
+        $this->assertTrue($user->hasRole(app(RbacGuard::class)->superadminRole()));
         $this->assertTrue($user->can('users.view'));
         $this->assertTrue($user->can('settings.edit'));
 
@@ -60,7 +60,7 @@ class CreateAdminCommandTest extends TestCase
     {
         $this->seed(RolePermissionSeeder::class);
         Role::findByName('operator')->syncPermissions(['media.view']);
-        Role::findByName(RbacGuard::superadminRole())->revokePermissionTo('queue.manage');
+        Role::findByName(app(RbacGuard::class)->superadminRole())->revokePermissionTo('queue.manage');
 
         $this->artisan('app:create-admin', ['email' => 'boss@example.test', 'name' => 'Boss'])
             ->expectsQuestion('Введите пароль', 'Str0ng!Passw0rd#42')

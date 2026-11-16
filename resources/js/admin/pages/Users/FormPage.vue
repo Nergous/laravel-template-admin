@@ -26,7 +26,6 @@ const form = useForm({
     roles: props.user?.roles?.map((role) => role.name) ?? [],
     is_active: props.user?.is_active ?? true,
     blocked_reason: props.user?.blocked_reason ?? "",
-    must_change_password: props.user?.must_change_password ?? false,
 });
 
 useUnsavedGuard(() => form.isDirty && !form.processing);
@@ -70,7 +69,6 @@ usePageHeader(() => ({
                         v-model:roles="form.roles"
                         v-model:is-active="form.is_active"
                         v-model:blocked-reason="form.blocked_reason"
-                        v-model:must-change-password="form.must_change_password"
                         :errors="form.errors"
                         :all-roles="allRoles"
                         :is-edit="isEdit"
@@ -85,7 +83,7 @@ usePageHeader(() => ({
                         v-if="canDelete && user"
                         :url="`/admin/users/${user.id}`"
                         :message="`Отправить пользователя «${user.name}» в корзину?`"
-                        confirm-label="В корзину"
+                        :force-message="`Удалить пользователя «${user.name}» навсегда? Восстановить его будет нельзя.`"
                     />
                     <NButton :as="Link" :href="backUrl" variant="secondary"
                         >Отмена</NButton
@@ -129,11 +127,11 @@ usePageHeader(() => ({
                         </div>
                         <div>
                             <dt>Создал</dt>
-                            <dd>{{ user.creator?.name ?? "—" }}</dd>
+                            <dd>{{ user.creator_name ?? "—" }}</dd>
                         </div>
                         <div>
                             <dt>Изменил</dt>
-                            <dd>{{ user.editor?.name ?? "—" }}</dd>
+                            <dd>{{ user.editor_name ?? "—" }}</dd>
                         </div>
                     </dl>
                 </NCard>

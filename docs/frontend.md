@@ -1,7 +1,7 @@
 # Admin frontend
 
 The admin panel is an Inertia 3 application on Vue 3.5 and TypeScript, built by
-Vite 8. Interface components come from `nergous-ui-vue` (1.1.0). The entry point
+Vite 8. Interface components come from `nergous-ui-vue` (1.2.0). The entry point
 is `resources/js/admin/app.ts`, the root Blade template is
 `resources/views/admin.blade.php`.
 
@@ -16,9 +16,10 @@ The HTTP contracts the frontend relies on are described in
 | `lib/` | page-independent helpers: `api.ts` (`apiFetch`, session tracking, redirect to sign-in), `csrf.ts` (CSRF headers and token refresh), `can.ts` (permission checks for display), `format.ts` (dates in the site timezone, numbers, sizes; built on the library's `createFormat`), `filterList.ts` (multi-value list filters), `listUrl.ts` (list addresses), `media.ts` (file labels and icons), `swatch.ts` (badge colors) |
 | `admin/app.ts` | Inertia bootstrap, persistent layout, shared props, the library locale and Enter handling |
 | `admin/types.ts` | types of page props and server responses |
-| `admin/layouts/` | `AdminLayout.vue` (sidebar, topbar, breadcrumbs, notifications, session timer), `AuthLayout.vue` (sign-in screen), `partials/` (`AdminCommandPalette.vue` for Cmd+K search, `NotificationBell.vue`, `nav.ts` for sidebar items) |
-| `admin/components/` | project components on top of the library: `AdminPagination`, `DeleteButton`, `ExportMenu`, `MediaPicker`, `MediaField`, `DrawerFooter` |
-| `admin/composables/` | logic shared by pages: lists, row selection, forms, session, media library, notifications |
+| `admin/styles.css`, `admin/accents.css`, `admin/settingsForm.css` | global admin styles, accent color presets, shared settings form cards |
+| `admin/layouts/` | `AdminLayout.vue` (sidebar with the brand icon and an "open site" link, topbar, breadcrumbs, session timer), `AuthLayout.vue` (sign-in screen), `partials/` (`AdminCommandPalette.vue` for Cmd+K search, `nav.ts` for sidebar items) |
+| `admin/components/` | project components on top of the library: `AdminPagination`, `DeleteButton`, `TrashConfirmDialog`, `ExportMenu`, `MediaPicker`, `MediaField`, `HtmlEditor`, `AccentPicker`, `DrawerFooter` |
+| `admin/composables/` | logic shared by pages: lists, row selection, forms, session, media library |
 | `admin/pages/<Section>/` | Inertia pages: `Index.vue`, `FormPage.vue`, `Show.vue`, `Trashed.vue`; large page parts live next to them in `Partials/` |
 
 Frontend tests live in `tests/js/` (logic without a browser) and `tests/e2e/`
@@ -40,6 +41,8 @@ Generic pieces are taken from the library instead of being kept in the project:
 | Sticky save bar | `NActionBar` |
 | Breadcrumbs, popovers, icon tooltips | `NBreadcrumbs`, `NPopover`, `NIconTooltip` |
 | Pagination | `NPagination`, wrapped by `AdminPagination` |
+| Date fields | `NDatePicker`; `toZonedInput`/`fromZonedInput` in `lib/format.ts` convert between UTC and the display timezone |
+| Rich text | `NRichText`, wrapped by `HtmlEditor` |
 
 The library ships no Inertia code. The project connects it to Inertia where
 needed, for example `NBreadcrumbs` gets `link-as="Link"`.
@@ -53,7 +56,7 @@ layout: (name) => (usesAdminLayout(name) ? AdminLayout : null),
 ```
 
 The layout mounts once and survives page changes: the sidebar, topbar, toasts,
-session timer and notification polling are not recreated. A page therefore
+and session timer are not recreated. A page therefore
 does not wrap itself in `AdminLayout` and passes it no slots. The page sets the
 topbar title, subtitle and tab title through `usePageHeader()`:
 
@@ -71,11 +74,14 @@ button is marked with `data-enter-submit`:
 
 - Enter in a text field clicks the nearest marked button: inside an open dialog
   or drawer, the button of that dialog; on the page, the page's save button;
-- in a `textarea` Enter inserts a line break, and Ctrl/Cmd+Enter submits;
+- in a `textarea` and the rich-text editor Enter inserts a line break, and
+  Ctrl/Cmd+Enter submits;
 - a form with its own `type="submit"` button works as usual;
 - a field that handles Enter itself is wrapped in `data-enter-ignore`
   (dropdowns and `role="combobox"` are skipped automatically);
-- `data-enter-scope` limits the search to part of the page, like a dialog.
+- `data-enter-scope` limits the search to part of the page, like a dialog;
+- a dialog with a marked button focuses its first field on open, so Enter
+  submits the form instead of closing the dialog.
 
 ## Back to the list: `listUrl` and `LIST_PATHS`
 
@@ -99,7 +105,8 @@ unsaved changes and the user:
 - closes or reloads the tab (`beforeunload`).
 
 Submitting the form itself (not a GET) and the forced redirect to sign-in
-(`isRedirectingToLogin()`) pass without a question.
+(`isRedirectingToLogin()`) pass without a question. Jumps to anchors inside the
+page do not count as navigation.
 
 ## Session and background requests
 
@@ -109,14 +116,17 @@ timer off).
 
 - The time of the last server response is kept in `localStorage`
   (`admin-last-request`) and shared by all tabs, since every request extends the
-  same session. `apiFetch` and Inertia visits update it.
+  same session. `apiFetch`, successful Inertia visits and visits with validation
+  errors update it.
 - While the user works (clicks, keys, scrolling in the last 5 minutes) and the
   last response is older than 5 minutes (or half the session for sessions under
-  10 minutes), a quiet `POST /admin/session/ping` goes out.
+  10 minutes), a quiet `POST /admin/session/ping` goes out, so long work in a
+  single form does not lose the session.
 - A minute before the end a warning with an "extend" button appears; when the
   session expires, the user is sent to sign-in.
-- Background requests extend the session, so they run only in a visible tab of
-  an active user (`isUserActive()`), for example the notification counter.
+- Background requests extend the session too. Any polling added to the admin
+  should run only in a visible tab of an active user (`isUserActive()`), so an
+  abandoned tab does not keep the session open.
 
 ## Row selection and bulk actions
 
@@ -135,7 +145,9 @@ all N" once the page is selected.
 
 The media library uses `useMediaSelection`: `bulkFolderBody()` puts the
 destination folder in `target`, because `folder` is the filter of the open
-folder. Deletion in lists is done by `useListDelete` with `NConfirmDialog`. The
+folder. Deletion in lists is done by `useListDelete` with `NConfirmDialog`;
+records with a trash use `TrashConfirmDialog`, whose "Удалить навсегда"
+checkbox switches the request to permanent deletion. The
 server skips records that may not be touched and reports their number in the
 flash message. The full contract is in
 [api/json-endpoints.md](api/json-endpoints.md#bulk-action-payloads).
@@ -146,11 +158,12 @@ All requests to JSON routes go through `apiFetch()` from `lib/api.ts`:
 
 - it adds `Accept: application/json`, `X-Requested-With` and, for mutating
   requests, the CSRF header from the `XSRF-TOKEN` cookie (read on every attempt);
-- on 419 it fetches a fresh token and retries once. If the refresh returns 401,
+- on 419 it fetches a fresh token (`GET /admin/search`) and retries once. If the refresh returns 401,
   the user goes to sign-in; if the retry gives 419 again, a message asks to
   reload the page;
 - 401 means the session is gone: `redirectToLogin()` shows a message and opens
-  the sign-in page, and the caller gets `SessionExpiredError`.
+  the sign-in page, and the caller gets `SessionExpiredError`. The unsaved-changes
+  guard does not stop this redirect.
 
 Inertia visits are handled by the server: on 419 it returns to the same page
 with a "page expired, repeat the action" warning. Media uploads use
@@ -178,7 +191,8 @@ search, chips are not needed: the value is visible in the field.
 `AdminPagination.vue` maps the Laravel paginator onto `NPagination`:
 
 - it takes `paginator` (`current_page`, `last_page`, `total`), `perPage` and
-  `perPageOptions` (the page gets them from the server, `App\Http\Pagination\PerPage`);
+  `perPageOptions` (the page gets them from the server, the
+  `App\Http\Requests\Concerns\PaginatesList` trait);
 - it hides while the list fits one page of the smallest size;
 - it supports jumping to a page and choosing the page size, and emits
   `update:page` and `update:pageSize`.
@@ -214,6 +228,24 @@ shows a skeleton, on a reload it dims tables and cards.
 opens the same tab. The address changes through `router.replace` without a
 request, and unsaved form values stay.
 
+**HTML editor.** `HtmlEditor` is a rich-text field (`NRichText preset="full"`)
+with a raw HTML mode that highlights the markup (`admin/highlightHtml.ts`).
+Images and file links come from the media library through `MediaPicker`; the
+server sanitizes the saved HTML again (`App\Support\Html\HtmlSanitizer`).
+Content with named anchors (`<a name>`) opens in HTML mode, because the visual
+editor would drop them. The base pages do not use it; it is ready for project
+forms.
+
+**Accent color.** Settings -> "Оформление" picks one of the
+`App\Services\System\AccentColor` presets for all users. The server puts the key
+on `<html data-accent>` (`admin.blade.php`), so the color is right from the first
+frame; `app.ts` updates the attribute from the shared `accent` prop after every
+visit, and the settings page previews an unsaved choice. The preset tokens
+(`--accent`, `--accent-h`, `--accent-soft`, `--accent-on`, `--accent-ink`) for
+the light and dark themes live in `admin/accents.css` and keep WCAG AA contrast.
+A new preset goes into both places; `SettingsTest` checks that every key has
+both themes. Write custom colors through these variables, not literal values.
+
 ## Checks and tests
 
 ```bash
@@ -226,21 +258,21 @@ npm run test:e2e       # Playwright and axe, after npm run build
 
 Tests in `tests/js/` run on the built-in `node --test`: Node 23.6 and newer
 strip TypeScript types itself, no build is needed. They cover media selection,
-the move payload, keyboard crop and focal point, and the multi-value filter
-helpers. Logic without DOM that can be checked on plain objects and Vue `ref`s
-goes there.
+the move payload, keyboard crop and focal point, the multi-value filter helpers
+and the HTML highlighter of `HtmlEditor`. Logic without DOM that can be checked
+on plain objects and Vue `ref`s goes there.
 
 Browser tests (`tests/e2e/`) cover sign-in, breadcrumbs, filter chips, the
-settings tab in the address, the save bar, tooltips, the dashboard actions,
-tables and the topbar at 390 px, and run axe (WCAG 2.1 A and AA) over the main
-pages in both themes. Playwright needs Chromium
+settings tab in the address, the save bar, the accent color, tooltips, the
+dashboard actions and tables at 390 px, and run axe (WCAG 2.1 A and AA) over the
+main pages in both themes. Playwright needs Chromium
 (`npx playwright install chromium`, once).
 
 The working database is never used. `tests/e2e/server.ts` creates an empty
 SQLite file in `storage/framework/testing/e2e`, writes `.env.e2e` and starts the
-application with `APP_ENV=e2e`, so Laravel does not read `.env`. Before
-migrating, the script asks the loaded application which database it uses and
-stops unless it is that file. It then runs migrations and seeders
+application with `APP_ENV=e2e`, so Laravel does not read `.env`. The config
+cache points to a file that does not exist. Before migrating, the script asks
+the loaded application which database it uses and stops unless it is that file. It then runs migrations and seeders
 (`admin@example.com` / `password123`) and starts PHP's built-in server on port
 8765 (`E2E_PORT`; the PHP binary is `E2E_PHP`). `php artisan serve` is not
 suitable: it restarts PHP without the environment variables, and the new

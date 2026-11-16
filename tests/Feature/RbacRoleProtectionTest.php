@@ -3,9 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Role;
-use App\Services\RoleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -62,13 +60,13 @@ class RbacRoleProtectionTest extends TestCase
         $chief->givePermissionTo(['users.view', 'users.edit', 'backups.download']);
         $this->actingAsUserWith(['permissions.view', 'permissions.edit', 'users.view', 'users.edit']);
 
-        $this->patch(route('admin.permissions.sync'), [
+        $this->patch(route('admin.permissions.toggle'), [
             'role_id' => $chief->id,
             'permission' => 'users.edit',
             'granted' => false,
         ])->assertSessionHasErrors('matrix');
 
-        $this->patch(route('admin.permissions.sync-many'), [
+        $this->patch(route('admin.permissions.toggle-many'), [
             'role_ids' => [$chief->id],
             'permissions' => ['users.view', 'users.edit'],
             'granted' => false,
@@ -82,16 +80,30 @@ class RbacRoleProtectionTest extends TestCase
         $this->seedRolesAndPermissions();
         $chief = Role::create(['name' => 'chief', 'guard_name' => 'web']);
         $chief->givePermissionTo(['users.view', 'backups.download']);
-        $actor = $this->actingAsUserWith(['roles.view', 'roles.edit', 'users.view']);
+        $this->actingAsUserWith(['roles.view', 'roles.edit', 'users.view']);
 
         $this->get(route('admin.roles.edit', $chief))->assertForbidden();
         $this->put(route('admin.roles.update', $chief), ['name' => 'chief', 'permissions' => ['users.view']])
             ->assertForbidden();
         $this->assertSame(['backups.download', 'users.view'], $this->permissionsOf($chief));
+    }
 
-        // The service enforces the rule for any caller, not only the HTTP layer.
-        $this->expectException(ValidationException::class);
-        app(RoleService::class)->update($chief, ['name' => 'chief'], ['users.view'], $actor);
+    public function test_role_deleter_cannot_delete_a_role_holding_permissions_they_lack(): void
+    {
+        $this->seedRolesAndPermissions();
+        $chief = Role::create(['name' => 'chief', 'guard_name' => 'web']);
+        $chief->givePermissionTo(['users.view', 'backups.download']);
+        $this->actingAsUserWith(['roles.view', 'roles.delete', 'users.view']);
+
+        $this->get(route('admin.roles.show', $chief))
+            ->assertInertia(fn (Assert $page) => $page->where('role.can_delete', false));
+        $this->delete(route('admin.roles.destroy', $chief))->assertForbidden();
+        $this->assertNotNull($chief->fresh());
+
+        $helper = Role::create(['name' => 'helper', 'guard_name' => 'web']);
+        $helper->givePermissionTo('users.view');
+        $this->delete(route('admin.roles.destroy', $helper))->assertRedirect();
+        $this->assertNull($helper->fresh());
     }
 
     public function test_role_within_the_actors_permissions_stays_editable(): void
@@ -101,7 +113,7 @@ class RbacRoleProtectionTest extends TestCase
         $helper->givePermissionTo(['users.view', 'media.view']);
         $this->actingAsUserWith(['permissions.view', 'permissions.edit', 'users.view', 'media.view']);
 
-        $this->patch(route('admin.permissions.sync'), [
+        $this->patch(route('admin.permissions.toggle'), [
             'role_id' => $helper->id,
             'permission' => 'media.view',
             'granted' => false,

@@ -29,7 +29,6 @@ const props = defineProps({
         type: Object as PropType<{
             name: string;
             email: string;
-            must_change_password: boolean;
             last_login_at: string | null;
         }>,
         required: true,
@@ -156,15 +155,6 @@ usePageHeader(() => ({
 
 <template>
     <div class="page profile">
-        <div
-            v-if="profile.must_change_password"
-            class="profile__notice"
-            role="alert"
-        >
-            <b>Нужно сменить пароль.</b> Администратор попросил задать новый
-            пароль. Остальные разделы откроются после смены.
-        </div>
-
         <NCard padding="var(--kpi-pad)">
             <h2 class="profile__title">Профиль</h2>
             <form class="profile__form" @submit.prevent="saveProfile">
@@ -195,7 +185,6 @@ usePageHeader(() => ({
                 <NFormField
                     v-if="emailChanged"
                     label="Текущий пароль"
-                    hint="Нужен для смены email"
                     :error="profileForm.errors.current_password"
                     required
                 >
@@ -365,13 +354,6 @@ usePageHeader(() => ({
 <style scoped>
 .profile {
     max-width: 760px;
-}
-.profile__notice {
-    padding: 13px 16px;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--border);
-    background: var(--warn-bg, var(--accent-soft));
-    font-size: 13.5px;
 }
 .profile__title {
     margin: 0 0 16px;
